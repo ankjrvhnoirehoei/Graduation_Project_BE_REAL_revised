@@ -1,20 +1,28 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { AppService } from './app.service';
+import { AppController } from './app.controller';
+import { PostModule } from './post/post.module';
+import { MediaModule } from './media/media.module';
 
 @Module({
   imports: [
-    MongooseModule.forRoot('mongodb://localhost/nest'),
-    // 1. Load .env into process.env
     ConfigModule.forRoot({
-      isGlobal: true,          // makes ConfigService available everywhere
-      envFilePath: '.env',     // relative to project root
+      isGlobal: true,
+      envFilePath: '.env',
     }),
-    // 3. Register feature modules that define schemas/controllers/providers
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        uri: configService.get<string>('MONGO_URI'),
+      }), 
+      inject: [ConfigService],
+    }), 
+    PostModule,
+    MediaModule,
   ],
-  controllers: [],
-  providers: [],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}
