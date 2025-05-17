@@ -8,4 +8,5 @@ export class CreatePostDto {
   readonly location?: string;
   readonly isArchived?: string;
   readonly viewCount: number;
+  readonly share?: number;
 }
