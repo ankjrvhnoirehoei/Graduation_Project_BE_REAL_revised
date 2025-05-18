@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AppController } from './app.controller';
 import { PostModule } from './post/post.module';
 import { MediaModule } from './media/media.module';
+import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { MediaModule } from './media/media.module';
       }), 
       inject: [ConfigService],
     }), 
+    UserModule,
     PostModule,
     MediaModule,
   ],

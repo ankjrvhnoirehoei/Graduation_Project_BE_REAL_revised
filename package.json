@@ -29,6 +29,7 @@
     "@types/dotenv": "^8.2.3",
     "@types/helmet": "^4.0.0",
     "@types/morgan": "^1.9.9",
+    "class-validator": "^0.14.2",
     "dotenv": "^16.5.0",
     "mongoose": "^8.15.0",
     "reflect-metadata": "^0.2.2",

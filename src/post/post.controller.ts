@@ -1,8 +1,8 @@
 import { Controller, Post as HttpPost, Body, Get, Post } from '@nestjs/common';
 import { PostService } from './post.service';
-import { CreatePostDto } from './dto/create-post.dto';
+import { CreatePostDto } from './dto/post.dto';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
-import { CreateMediaDto } from 'src/media/dto/create-media.dto';
+import { CreateMediaDto } from 'src/media/dto/media.dto';
 
 @Controller('posts')
 export class PostController {
