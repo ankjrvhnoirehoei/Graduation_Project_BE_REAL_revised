@@ -41,6 +41,15 @@ export class PostService {
   async findAllWithMedia(): Promise<any[]> {
     return this.postModel.aggregate([
       {
+        $sort: { createdAt: -1 }, 
+      },
+      {
+        $limit: 100,
+      },
+      {
+        $sample: { size: 20 },
+      },
+      {
         $lookup: {
           from: 'media',
           localField: '_id',
@@ -49,7 +58,36 @@ export class PostService {
         },
       },
       {
-        $sort: { createdAt: -1 },
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      {
+        $unwind: '$user',
+      },
+      {
+        $project: {
+          _id: 1,
+          userID: 1,
+          type: 1,
+          caption: 1,
+          isFlagged: 1,
+          nsfw: 1,
+          isEnable: 1,
+          location: 1,
+          isArchived: 1,
+          viewCount: 1,
+          share: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          media: 1,
+          'user._id': 1,
+          'user.handleName': 1,
+          'user.profilePic': 1,
+        },
       },
     ]);
   }
