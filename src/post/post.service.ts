@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { CreatePostDto } from './dto/post.dto';
 import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
@@ -14,9 +14,12 @@ export class PostService {
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
-    const createdPost = new this.postModel(postDto);
-    return createdPost.save();
-  }
+  const createdPost = new this.postModel({
+    ...postDto,
+    userID: new Types.ObjectId(postDto.userID),
+  });
+  return createdPost.save();
+}
 
   async createPostWithMedia(postWithMediaDto: {
     post: CreatePostDto;
