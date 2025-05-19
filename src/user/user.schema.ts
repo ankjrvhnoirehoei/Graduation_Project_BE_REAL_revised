@@ -5,11 +5,11 @@ export type UserDocument = User & Document;
 
 @Schema({ timestamps: true })
 export class User {
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true })
   username: string;
 
-  @Prop()
-  email?: string;
+  @Prop({ required: true, unique: true })
+  email: string;
 
   @Prop({ required: true })
   password: string;
@@ -17,7 +17,7 @@ export class User {
   @Prop()
   phoneNumber?: string;
 
-  @Prop()
+  @Prop({ required: true, unique: true })
   handleName?: string;
 
   @Prop()
@@ -27,7 +27,7 @@ export class User {
   address?: string;
 
   @Prop()
-  gender: string;
+  gender?: string;
 
   @Prop()
   profilePic?: string;
