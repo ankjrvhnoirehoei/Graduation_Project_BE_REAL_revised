@@ -5,7 +5,9 @@ import { MediaService } from './media.service';
 import { MediaController } from './media.controller';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Media.name, schema: MediaSchema }])],
+  imports: [
+    MongooseModule.forFeature([{ name: Media.name, schema: MediaSchema }]),
+  ],
   providers: [MediaService],
   controllers: [MediaController],
   exports: [MediaService],

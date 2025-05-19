@@ -7,7 +7,7 @@ import { User } from './user.schema';
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
-  @Post("create-account")
+  @Post('create-account')
   async createUser(@Body() userDto: UserDto): Promise<User> {
     return this.userService.create(userDto);
   }
@@ -18,7 +18,9 @@ export class UserController {
   }
 
   @Get(':username')
-  async getByUsername(@Param('username') username: string): Promise<User | null> {
+  async getByUsername(
+    @Param('username') username: string,
+  ): Promise<User | null> {
     return this.userService.findOneByUsername(username);
   }
 }
