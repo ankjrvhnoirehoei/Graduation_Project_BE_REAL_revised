@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
+import { ConfigModule } from '@nestjs/config';
+import { DatabaseModule, LoggerModule } from '@app/common';
 import { PostModule } from './post/post.module';
 import { MediaModule } from './media/media.module';
 import { UserModule } from './user/user.module';
@@ -11,13 +11,8 @@ import { UserModule } from './user/user.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    MongooseModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGO_URI'),
-      }),
-      inject: [ConfigService],
-    }),
+    DatabaseModule,
+    LoggerModule,
     UserModule,
     PostModule,
     MediaModule,
