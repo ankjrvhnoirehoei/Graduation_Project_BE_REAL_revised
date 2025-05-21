@@ -6,7 +6,7 @@ export class UserDto {
 
   @IsOptional()
   @IsEmail()
-  readonly email?: string;
+  readonly email: string;
 
   @IsString()
   readonly password: string;
@@ -15,9 +15,8 @@ export class UserDto {
   @IsString()
   readonly phoneNumber?: string;
 
-  @IsOptional()
   @IsString()
-  readonly handleName?: string;
+  readonly handleName: string;
 
   @IsOptional()
   @IsString()
@@ -27,8 +26,9 @@ export class UserDto {
   @IsString()
   readonly address?: string;
 
+  @IsOptional()
   @IsString()
-  readonly gender: string;
+  readonly gender?: string;
 
   @IsOptional()
   readonly profilePic?: string;

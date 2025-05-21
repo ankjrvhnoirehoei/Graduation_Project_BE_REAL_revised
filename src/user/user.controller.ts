@@ -1,6 +1,9 @@
 import { Controller, Post, Body, Get, Param } from '@nestjs/common';
 import { UserService } from './user.service';
-import { UserDto } from './dto/user.sto';
+import { UserDto } from './dto/user.dto';
+import { SignupDto } from './dto/signup.dto';
+import { LoginDto } from './dto/login.dto';
+import { ConflictException, BadRequestException } from '@nestjs/common';
 import { User } from './user.schema';
 
 @Controller('users')
