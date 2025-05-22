@@ -8,10 +8,11 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
-    private readonly config: ConfigService,
+    private readonly configService: ConfigService,
     private readonly userService: UserService, 
   ) {
-    if (!process.env.JWT_ACCESS_SECRET) {
+    const jwtAccessSecret = configService.get<string>('JWT_ACCESS_SECRET');
+    if (!jwtAccessSecret) {
       throw new Error('JWT_ACCESS_SECRET is not defined');
     }
     super({
@@ -19,7 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         req => req?.cookies?.Authentication,
       ]),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_ACCESS_SECRET,
+      secretOrKey: jwtAccessSecret,
     });
   }
 
