@@ -5,6 +5,7 @@ import { PostModule } from './post/post.module';
 import { MediaModule } from './media/media.module';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
+import { CommentModule } from './comment/comment.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { AuthModule } from './auth/auth.module';
     PostModule,
     MediaModule,
     AuthModule,
+    CommentModule,
   ],
 })
 export class AppModule {}
