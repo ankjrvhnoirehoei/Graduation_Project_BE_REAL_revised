@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from './user.schema';
@@ -38,6 +38,12 @@ export class UserService {
     return this.userModel.findById(id);
   }
 
+  async isValidPassword(password: string) {
+    if (password.length < 8) return false;
+    const hasLetter = /[a-zA-Z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    return hasLetter && hasNumber;
+  }
   // Singup
   async signup(dto: SignupDto): Promise<UserDocument> {
     const { username, email, password } = dto;
@@ -64,5 +70,48 @@ export class UserService {
     });
 
     return created.save();
+  }
+
+  // reset password for forgetting password
+  async setResetToken(
+    userId: string,
+    resetTokenHash: string,
+    newPasswordHash: string,
+    expires: Date,
+  ): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    user.set({
+      resetTokenHash,
+      newPasswordHash,
+      resetTokenExpires: expires,
+    });
+    await user.save();
+  }
+
+  /**
+   * Update the user's password and clear reset-related fields.
+   */
+  async updatePassword(userId: string, newPasswordHash: string): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    user.password = newPasswordHash;
+    // Clear reset fields
+    user.resetTokenHash = undefined;
+    user.newPasswordHash = undefined;
+    user.resetTokenExpires = undefined;
+    await user.save();
+  }
+
+  /**
+   * Clears any password reset tokens without changing the password.
+   */
+  async clearResetToken(userId: string): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    user.resetTokenHash = undefined;
+    user.newPasswordHash = undefined;
+    user.resetTokenExpires = undefined;
+    await user.save();
   }
 }

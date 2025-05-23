@@ -40,6 +40,10 @@ export class User {
 
   @Prop({ default: false })
   deletedAt?: boolean;
+
+  @Prop() resetTokenHash?: string;
+  @Prop() newPasswordHash?: string;
+  @Prop() resetTokenExpires?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
