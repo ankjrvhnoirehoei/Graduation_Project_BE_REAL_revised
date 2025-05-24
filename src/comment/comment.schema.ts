@@ -3,10 +3,10 @@ import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Comment extends Document {
-  @Prop({ required: true })
+  @Prop({ required: true, ref: 'User' })
   userID: Types.ObjectId;
 
-  @Prop({ required: true })
+  @Prop({ required: true, ref: 'Post' })
   postID: Types.ObjectId;
 
   @Prop()
