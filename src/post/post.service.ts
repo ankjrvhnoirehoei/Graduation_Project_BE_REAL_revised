@@ -14,12 +14,12 @@ export class PostService {
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
-  const createdPost = new this.postModel({
-    ...postDto,
-    userID: new Types.ObjectId(postDto.userID),
-  });
-  return createdPost.save();
-}
+    const createdPost = new this.postModel({
+      ...postDto,
+      userID: new Types.ObjectId(postDto.userID),
+    });
+    return createdPost.save();
+  }
 
   async createPostWithMedia(postWithMediaDto: {
     post: CreatePostDto;
@@ -44,7 +44,68 @@ export class PostService {
   async findAllWithMedia(): Promise<any[]> {
     return this.postModel.aggregate([
       {
-        $sort: { createdAt: -1 }, 
+        $sort: { createdAt: -1 },
+      },
+      {
+        $limit: 100,
+      },
+      {
+        $sample: { size: 20 },
+      },
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'media',
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      {
+        $unwind: '$user',
+      },
+      {
+        $project: {
+          _id: 1,
+          userID: 1,
+          type: 1,
+          caption: 1,
+          isFlagged: 1,
+          nsfw: 1,
+          isEnable: 1,
+          location: 1,
+          isArchived: 1,
+          viewCount: 1,
+          share: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          media: 1,
+          'user._id': 1,
+          'user.handleName': 1,
+          'user.profilePic': 1,
+        },
+      },
+    ]);
+  }
+
+  async findReelsWithMedia(): Promise<any[]> {
+    return this.postModel.aggregate([
+      {
+        $match: {
+          type: 'reel',
+          isEnable: true,
+          nsfw: false,
+        },
+      },
+      {
+        $sort: { createdAt: -1 },
       },
       {
         $limit: 100,

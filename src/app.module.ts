@@ -5,6 +5,7 @@ import { PostModule } from './post/post.module';
 import { MediaModule } from './media/media.module';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
+import { CommentModule } from './comment/comment.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 
 @Module({
@@ -19,6 +20,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
     PostModule,
     MediaModule,
     AuthModule,
+    CommentModule,
   ],
   providers: [
     {

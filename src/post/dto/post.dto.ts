@@ -1,5 +1,9 @@
+import { IsMongoId } from "class-validator";
+
 export class CreatePostDto {
+  @IsMongoId()
   readonly userID: string;
+  
   readonly type: string;
   readonly caption?: string;
   readonly isFlagged?: boolean;
