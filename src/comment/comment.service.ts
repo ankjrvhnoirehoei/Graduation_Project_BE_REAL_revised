@@ -42,7 +42,7 @@ export class CommentService {
 
   async getCommentsByPost(postID: string): Promise<any[]> {
     const allComments = await this.commentModel.aggregate([
-      { $match: { postID: postID } },
+      { $match: { postID: new Types.ObjectId(postID) } },
 
       {
         $lookup: {
