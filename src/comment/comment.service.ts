@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Comment } from './comment.schema';
 import { CommentDto } from './dto/comment.dto';
 
@@ -11,7 +11,12 @@ export class CommentService {
   ) {}
 
   async createComment(dto: CommentDto): Promise<Comment> {
-    const comment = new this.commentModel(dto);
+    const comment = new this.commentModel({
+      ...dto,
+      userID: new Types.ObjectId(dto.userID),
+      postID: new Types.ObjectId(dto.postID),
+      parentID: dto.parentID ? new Types.ObjectId(dto.parentID) : null,
+    });
     return comment.save();
   }
 
