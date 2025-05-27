@@ -3,9 +3,6 @@ import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Music extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'Post', required: true })
-  postID: Types.ObjectId;
-
   @Prop({ required: true })
   song: string;
 
