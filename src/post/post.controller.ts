@@ -29,4 +29,9 @@ export class PostController {
   async getAllWithMedia() {
     return this.postService.findAllWithMedia();
   }
+
+  @Get('get-all-reel-media')
+  async getAllReelMedia() {
+    return this.postService.findReelsWithMedia();
+  }
 }
