@@ -5,6 +5,7 @@ import { User, UserDocument } from './user.schema';
 import { UserDto } from './dto/user.dto';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
+import { EditUserDto } from './dto/edit-user.dto';
 import { ConflictException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 
@@ -89,9 +90,7 @@ export class UserService {
     await user.save();
   }
 
-  /**
-   * Update the user's password and clear reset-related fields.
-   */
+  // update the user's password and clear reset-related fields
   async updatePassword(userId: string, newPasswordHash: string): Promise<void> {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
@@ -103,9 +102,7 @@ export class UserService {
     await user.save();
   }
 
-  /**
-   * Clears any password reset tokens without changing the password.
-   */
+  // clears any password reset tokens without changing the password
   async clearResetToken(userId: string): Promise<void> {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
@@ -113,5 +110,22 @@ export class UserService {
     user.newPasswordHash = undefined;
     user.resetTokenExpires = undefined;
     await user.save();
+  }
+
+  async findOneByHandle(handleName: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ handleName }).exec();
+  }
+
+  // update user
+  async updateProfile(
+    userId: string,
+    dto: EditUserDto,
+  ): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    // assign only the provided fields
+    Object.assign(user, dto);
+    return user.save();
   }
 }

@@ -126,5 +126,5 @@ export class AuthService {
       user.newPasswordHash
     );
     await this.userService.clearResetToken(user.id);
-}
+  }
 }

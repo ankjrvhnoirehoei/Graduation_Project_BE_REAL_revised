@@ -8,6 +8,8 @@ import { AuthModule } from './auth/auth.module';
 import { CommentModule } from './comment/comment.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { MusicModule } from './music/music.module';
+import { RelationModule } from './relation/relation.module';
+import { ReactionModule } from './reaction/reaction.module';
 
 @Module({
   imports: [
@@ -23,6 +25,8 @@ import { MusicModule } from './music/music.module';
     AuthModule,
     CommentModule,
     MusicModule,
+    RelationModule,
+    ReactionModule,
   ],
   providers: [
     {
