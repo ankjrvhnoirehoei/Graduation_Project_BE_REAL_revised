@@ -37,10 +37,6 @@ export class PostService {
     return { post: createdPost, media: mediaCreated };
   }
 
-  //   async findAll(): Promise<Post[]> {
-  //     return this.postModel.find().exec();
-  //   }
-
   async findAllWithMedia(): Promise<any[]> {
     return this.postModel.aggregate([
       {
