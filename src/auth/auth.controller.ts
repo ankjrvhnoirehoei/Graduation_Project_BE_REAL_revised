@@ -35,7 +35,33 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const user = await this.auth.validateUser(dto.email, dto.password);
+    const user = await this.auth.userService.findOneByEmail(dto.email);
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    // if soft-deleted, short-circuit with recovery info
+    if (user.deletedAt) {
+      const now = new Date();
+      const deletedAt = user.deletedAt;
+      const ms = now.getTime() - deletedAt.getTime();
+      const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+      const isRetrievable = days < 30;
+
+      // (Optionally, hard-delete if more than 30 days have passed)
+      // if (!isRetrievable) {
+      //   await this.auth.userService.permanentDelete(user.id.toString());
+      //   return { message: 'Account is permanently deleted' };
+      // }
+
+      return {
+        deleted: true,
+        daysSinceDeletion: days,
+        isRetrievable,
+        id: user.id.toString(),
+      };
+    }
+
+    // now proceed with normal validate + issueTokens
+    await this.auth.validateUser(dto.email, dto.password);
 
     // detect same-device
     const incoming = req.cookies?.Refresh;

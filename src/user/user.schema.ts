@@ -38,8 +38,8 @@ export class User {
   @Prop()
   refreshToken?: string;
 
-  @Prop({ default: false })
-  deletedAt?: boolean;
+  @Prop({ type: Date, default: undefined })
+  deletedAt?: Date;
 
   @Prop() resetTokenHash?: string;
   @Prop() newPasswordHash?: string;

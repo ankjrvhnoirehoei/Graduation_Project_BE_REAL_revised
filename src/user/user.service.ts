@@ -47,6 +47,22 @@ export class UserService {
     ).exec();
   }
 
+  async permanentDelete(userId: string): Promise<void> {
+    await this.userModel.findByIdAndDelete(userId).exec();
+  }
+
+  async reactivate(userId: string): Promise<User> {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { $unset: { deletedAt: '' } },
+        { new: true },
+      )
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
   async isValidPassword(password: string) {
     if (password.length < 8) return false;
     const hasLetter = /[a-zA-Z]/.test(password);
@@ -143,5 +159,60 @@ export class UserService {
       userId,
       { refreshToken: hash, currentSessionId: sessionId }
     );
+  }
+
+  // fetch public profile fields, filling missing values with empty strings 
+  async getPublicProfile(userId: string) {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) throw new NotFoundException('User not found');
+
+    return {
+      username: user.username || '',
+      phoneNumber: user.phoneNumber || '',
+      handleName: user.handleName || '',
+      bio: user.bio || '',
+      address: user.address || '',
+      gender: user.gender || '',
+      profilePic: user.profilePic || '',
+      isVip: user.isVip,
+    };
+  }
+
+  // Search users by username (approximate) or handleName (exact), limited to `limit` results 
+  async searchUsers(
+    mode: 'username' | 'handle',
+    keyword: string,
+    limit = 50,
+  ): Promise<Array<{ id: string; username: string; handleName: string }>> {
+    const trimmed = keyword.trim();
+    if (mode === 'handle') {
+      // substring match on handleName (case-sensitive)
+      const users = await this.userModel
+        .find({ handleName: { $regex: trimmed } })
+        .limit(limit)
+        .select('username handleName')
+        .exec();
+      return users.map(u => ({ id: u.id.toString(), username: u.username, handleName: u.handleName || 'No matched users found.'}));
+    }
+
+
+    // approximate username search
+    const isMulti = keyword.includes(' ');
+    let filter;
+    if (isMulti) {
+      // split into words and require all
+      const words = keyword.trim().split(/\s+/);
+      filter = { $and: words.map(w => ({ username: { $regex: w, $options: 'i' } })) };
+    } else {
+      filter = { username: { $regex: keyword, $options: 'i' } };
+    }
+
+    const users = await this.userModel
+      .find(filter)
+      .limit(limit)
+      .select('username handleName')
+      .exec();
+
+    return users.map(u => ({ id: u.id.toString(), username: u.username, handleName: u.handleName || 'No matched users found.' }));
   }
 }
