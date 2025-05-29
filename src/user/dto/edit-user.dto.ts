@@ -4,9 +4,13 @@ import {
   MaxLength,
   Matches,
   Validate,
+  MinLength,
+  registerDecorator,
+  ValidationOptions,
+  ValidationArguments,
+  ValidateIf,
 } from 'class-validator';
 import { BadRequestException } from '@nestjs/common';
-import { registerDecorator, ValidationOptions, ValidationArguments } from 'class-validator';
 
 // word-count validator for bio 
 function MaxWords(max: number, validationOptions?: ValidationOptions) {
@@ -25,6 +29,29 @@ function MaxWords(max: number, validationOptions?: ValidationOptions) {
         },
         defaultMessage(args: ValidationArguments) {
           return `${args.property} must not exceed ${args.constraints[0]} words`;
+        },
+      },
+    });
+  };
+}
+
+function Match(property: string, validationOptions?: ValidationOptions) {
+  return (object: Object, propertyName: string) => {
+    registerDecorator({
+      name: 'match',
+      target: object.constructor,
+      propertyName,
+      constraints: [property],
+      options: validationOptions,
+      validator: {
+        validate(value: any, args: ValidationArguments) {
+          const [relatedPropertyName] = args.constraints;
+          const relatedValue = (args.object as any)[relatedPropertyName];
+          return value === relatedValue;
+        },
+        defaultMessage(args: ValidationArguments) {
+          const [relatedPropertyName] = args.constraints;
+          return `${args.property} must match ${relatedPropertyName}`;
         },
       },
     });
@@ -65,4 +92,22 @@ export class EditUserDto {
     message: 'Gender must be one of: male, female, undisclosed',
   })
   gender?: string;
+
+  @ValidateIf(o => o.currentPassword != null || o.newPassword != null || o.confirmPassword != null)
+  @IsString()
+  @MinLength(8, { message: 'Current password must be at least 8 characters' })
+  currentPassword?: string;
+
+  @ValidateIf(o => o.currentPassword != null || o.newPassword != null || o.confirmPassword != null)
+  @IsString()
+  @MinLength(8, { message: 'New password must be at least 8 characters' })
+  @Matches(/(?=.*[A-Za-z])(?=.*\d).+/, {
+    message: 'New password must contain letters and numbers',
+  })
+  newPassword?: string;
+
+  @ValidateIf(o => o.currentPassword != null || o.newPassword != null || o.confirmPassword != null)
+  @IsString()
+  @Match('newPassword', { message: 'Confirm password must match new password' })
+  confirmPassword?: string;
 }

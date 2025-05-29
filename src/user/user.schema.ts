@@ -38,12 +38,15 @@ export class User {
   @Prop()
   refreshToken?: string;
 
-  @Prop({ default: false })
-  deletedAt?: boolean;
+  @Prop({ type: Date, default: undefined })
+  deletedAt?: Date;
 
   @Prop() resetTokenHash?: string;
   @Prop() newPasswordHash?: string;
   @Prop() resetTokenExpires?: Date;
+
+  @Prop({ default: '' })
+  currentSessionId: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
