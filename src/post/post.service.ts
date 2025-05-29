@@ -37,7 +37,7 @@ export class PostService {
     return { post: createdPost, media: mediaCreated };
   }
 
-  async findAllWithMedia(userId: string): Promise<any[]> {
+  async findAllWithMedia(): Promise<any[]> {
     return this.postModel.aggregate([
       { $sort: { createdAt: -1 } },
       { $limit: 100 },
@@ -70,9 +70,6 @@ export class PostService {
       {
         $addFields: {
           likeCount: { $size: '$likes' },
-          isLiked: {
-            $in: [new Types.ObjectId(userId), '$likes.userId'],
-          },
         },
       },
       {
@@ -92,7 +89,6 @@ export class PostService {
           updatedAt: 1,
           media: 1,
           likeCount: 1,
-          isLiked: 1,
           'user._id': 1,
           'user.handleName': 1,
           'user.profilePic': 1,
@@ -101,7 +97,7 @@ export class PostService {
     ]);
   }
 
-  async findReelsWithMedia(userId: string): Promise<any[]> {
+  async findReelsWithMedia(): Promise<any[]> {
     return this.postModel.aggregate([
       {
         $match: {
@@ -141,9 +137,6 @@ export class PostService {
       {
         $addFields: {
           likeCount: { $size: '$likes' },
-          isLiked: {
-            $in: [new Types.ObjectId(userId), '$likes.userId'],
-          },
         },
       },
       {
@@ -163,7 +156,6 @@ export class PostService {
           updatedAt: 1,
           media: 1,
           likeCount: 1,
-          isLiked: 1,
           'user._id': 1,
           'user.handleName': 1,
           'user.profilePic': 1,
