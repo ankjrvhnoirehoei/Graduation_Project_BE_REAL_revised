@@ -2,14 +2,14 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
-export class VideoLike extends Document {
+export class PostLike extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Video', required: true })
+  @Prop({ type: Types.ObjectId, ref: 'Post', required: true })
   videoId: Types.ObjectId;
 }
 
-export const VideoLikeSchema = SchemaFactory.createForClass(VideoLike);
+export const PostLikeSchema = SchemaFactory.createForClass(PostLike);
 
-VideoLikeSchema.index({ userId: 1, videoId: 1 }, { unique: true });
+PostLikeSchema.index({ userId: 1, postId: 1 }, { unique: true });

@@ -37,17 +37,11 @@ export class PostService {
     return { post: createdPost, media: mediaCreated };
   }
 
-  async findAllWithMedia(): Promise<any[]> {
+  async findAllWithMedia(userId: string): Promise<any[]> {
     return this.postModel.aggregate([
-      {
-        $sort: { createdAt: -1 },
-      },
-      {
-        $limit: 100,
-      },
-      {
-        $sample: { size: 20 },
-      },
+      { $sort: { createdAt: -1 } },
+      { $limit: 100 },
+      { $sample: { size: 20 } },
       {
         $lookup: {
           from: 'media',
@@ -64,8 +58,22 @@ export class PostService {
           as: 'user',
         },
       },
+      { $unwind: '$user' },
       {
-        $unwind: '$user',
+        $lookup: {
+          from: 'video_likes',
+          localField: '_id',
+          foreignField: 'videoId',
+          as: 'likes',
+        },
+      },
+      {
+        $addFields: {
+          likeCount: { $size: '$likes' },
+          isLiked: {
+            $in: [new Types.ObjectId(userId), '$likes.userId'],
+          },
+        },
       },
       {
         $project: {
@@ -83,6 +91,8 @@ export class PostService {
           createdAt: 1,
           updatedAt: 1,
           media: 1,
+          likeCount: 1,
+          isLiked: 1,
           'user._id': 1,
           'user.handleName': 1,
           'user.profilePic': 1,
@@ -91,7 +101,7 @@ export class PostService {
     ]);
   }
 
-  async findReelsWithMedia(): Promise<any[]> {
+  async findReelsWithMedia(userId: string): Promise<any[]> {
     return this.postModel.aggregate([
       {
         $match: {
@@ -100,15 +110,9 @@ export class PostService {
           nsfw: false,
         },
       },
-      {
-        $sort: { createdAt: -1 },
-      },
-      {
-        $limit: 100,
-      },
-      {
-        $sample: { size: 20 },
-      },
+      { $sort: { createdAt: -1 } },
+      { $limit: 100 },
+      { $sample: { size: 20 } },
       {
         $lookup: {
           from: 'media',
@@ -125,8 +129,22 @@ export class PostService {
           as: 'user',
         },
       },
+      { $unwind: '$user' },
       {
-        $unwind: '$user',
+        $lookup: {
+          from: 'video_likes',
+          localField: '_id',
+          foreignField: 'videoId',
+          as: 'likes',
+        },
+      },
+      {
+        $addFields: {
+          likeCount: { $size: '$likes' },
+          isLiked: {
+            $in: [new Types.ObjectId(userId), '$likes.userId'],
+          },
+        },
       },
       {
         $project: {
@@ -144,6 +162,8 @@ export class PostService {
           createdAt: 1,
           updatedAt: 1,
           media: 1,
+          likeCount: 1,
+          isLiked: 1,
           'user._id': 1,
           'user.handleName': 1,
           'user.profilePic': 1,
