@@ -10,6 +10,7 @@ import { JwtAuthGuard, JwtRefreshGuard } from '@app/common';
 import { UserDocument } from 'src/user/user.schema';
 import { ForgotPasswordDto } from './dto/forgot.password.dto';
 import { ConfirmForgotDto } from './dto/confirm.password.dto';
+import * as bcrypt from 'bcrypt';
 
 @Controller('auth')
 export class AuthController {
@@ -23,10 +24,7 @@ export class AuthController {
     const user = await this.auth.userService.signup(dto);
     const { accessToken, refreshToken } = await this.auth.issueTokens(user);
     res.cookie('Authentication', accessToken, this.auth.getCookieOptions());
-    res.cookie('Refresh', refreshToken, {
-      ...this.auth.getCookieOptions(),
-      path: '/auth/refresh',
-    });
+    res.cookie('Refresh', refreshToken, this.auth.getCookieOptions());
     const { password, refreshToken: _, ...rest } = user.toObject();
     return rest;
   }
@@ -34,14 +32,29 @@ export class AuthController {
   @Post('login')
   async login(
     @Body() dto: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const user = await this.auth.validateUser(dto.email, dto.password);
+
+    // detect same-device
+    const incoming = req.cookies?.Refresh;
+    let sameDevice = false;
+    if (incoming && user.refreshToken && user.currentSessionId) {
+      const tokenMatches = await bcrypt.compare(incoming, user.refreshToken);
+      if (tokenMatches) {
+        const decoded: any = this.auth.jwtService.decode(incoming);
+        if (decoded?.sessionId === user.currentSessionId) {
+          sameDevice = true;
+        }
+      }
+    }
+
     const { accessToken, refreshToken } = await this.auth.issueTokens(user);
     res.cookie('Authentication', accessToken, this.auth.getCookieOptions());
     res.cookie('Refresh', refreshToken, this.auth.getCookieOptions());
     // const { password, refreshToken: _, ...rest } = user.toObject();
-    return;
+    return {sameDevice};
   }
 
   @UseGuards(JwtRefreshGuard)
@@ -78,11 +91,12 @@ export class AuthController {
     const user = req.user as any;
     // Clear refresh token in database
     await this.auth.clearRefreshToken(user.sub);
-    
+    await this.auth.clearSession(user.sub);
     // Clear cookies
-    res.cookie('Authentication', '', { maxAge: 0 });
-    res.cookie('Refresh', '', { maxAge: 0 });
-    
+    const cookieOpts = this.auth.getCookieOptions();
+    res.clearCookie('Authentication', cookieOpts);
+    res.clearCookie('Refresh', cookieOpts);
+
     return { success: true };
   }
 

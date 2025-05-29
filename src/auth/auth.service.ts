@@ -39,7 +39,9 @@ export class AuthService {
   }
 
   async issueTokens(user: any) {
-    const payload = { sub: user._id.toString(), email: user.email };
+    const sessionId = uuidv4();
+    const payload = { sub: user._id.toString(), email: user.email, sessionId, };
+
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
       expiresIn: '15m',
@@ -51,13 +53,13 @@ export class AuthService {
 
     // save hashed refresh token
     const hash = await bcrypt.hash(refreshToken, 10);
-    await this.userService.setRefreshTokenHash(user._id, hash);
+    await this.userService.setRefreshSession(user._id, sessionId, hash);
 
     return { accessToken, refreshToken };
   }
 
   async issueAccessToken(user: any) {
-    const payload = { sub: user._id.toString(), email: user.email };
+    const payload = { sub: user._id.toString(), email: user.email, sessionId: user.currentSessionId, };
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
       expiresIn: '15m',
@@ -99,6 +101,13 @@ export class AuthService {
 
   async clearRefreshToken(userId: string) {
     return this.userService.setRefreshTokenHash(userId, '');
+  }
+
+  async clearSession(userId: string) {
+    return this.userService.findByIdAndUpdate(userId, {
+      refreshToken: '',
+      currentSessionId: '',
+    });
   }
 
   async initiatePasswordReset(email: string, newPassword: string) {

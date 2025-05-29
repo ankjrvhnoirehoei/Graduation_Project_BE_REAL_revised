@@ -39,6 +39,14 @@ export class UserService {
     return this.userModel.findById(id);
   }
 
+  async findByIdAndUpdate(userId: string, update: Partial<UserDocument>): Promise<UserDocument | null> {
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      update,
+      { new: true, runValidators: true }
+    ).exec();
+  }
+
   async isValidPassword(password: string) {
     if (password.length < 8) return false;
     const hasLetter = /[a-zA-Z]/.test(password);
@@ -127,5 +135,13 @@ export class UserService {
     // assign only the provided fields
     Object.assign(user, dto);
     return user.save();
+  }
+
+  // device session to enforce 1 device per user
+  async setRefreshSession(userId: string, sessionId: string, hash: string) {
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      { refreshToken: hash, currentSessionId: sessionId }
+    );
   }
 }
