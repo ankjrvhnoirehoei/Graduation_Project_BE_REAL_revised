@@ -8,6 +8,9 @@ export class Media {
   @Prop({ type: Types.ObjectId, ref: 'Post', required: true })
   postID: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'Music'})
+  musicID: Types.ObjectId;
+
   @Prop()
   imageUrl?: string;
 

@@ -1,9 +1,6 @@
-import { IsMongoId, IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsMongoId, IsOptional, IsString, IsBoolean, MinLength } from 'class-validator';
 
 export class CommentDto {
-  @IsMongoId()
-  readonly userID: string;
-
   @IsMongoId()
   readonly postID: string;
 
@@ -12,9 +9,11 @@ export class CommentDto {
   readonly parentID?: string;
 
   @IsString()
+  @MinLength(1)
   readonly content: string;
 
   @IsOptional()
+  @IsString()
   readonly mediaUrl?: string;
 
   @IsOptional()
