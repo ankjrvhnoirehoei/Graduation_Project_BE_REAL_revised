@@ -39,10 +39,7 @@ export class AuthController {
     const user = await this.auth.validateUser(dto.email, dto.password);
     const { accessToken, refreshToken } = await this.auth.issueTokens(user);
     res.cookie('Authentication', accessToken, this.auth.getCookieOptions());
-    res.cookie('Refresh', refreshToken, {
-      ...this.auth.getCookieOptions(),
-      path: '/auth/refresh',
-    });
+    res.cookie('Refresh', refreshToken, this.auth.getCookieOptions());
     // const { password, refreshToken: _, ...rest } = user.toObject();
     return;
   }
@@ -55,12 +52,8 @@ export class AuthController {
   ) {
     const incoming = req.cookies.Refresh;
     const { userId } = req.user as any;
-    const tokens = await this.auth.refreshTokens(userId, incoming);
-    res.cookie('Authentication', tokens.accessToken, this.auth.getCookieOptions());
-    res.cookie('Refresh', tokens.refreshToken, {
-      ...this.auth.getCookieOptions(),
-      path: '/auth/refresh',
-    });
+    const newAccessToken = await this.auth.validateRefreshToken(userId, incoming);
+    res.cookie('Authentication', newAccessToken, this.auth.getCookieOptions());
     return { success: true };
   }
 
@@ -72,7 +65,7 @@ export class AuthController {
     const user = req.user as UserDocument;
     console.log('user: ', user);
     if (!user) throw new UnauthorizedException('User not found');
-    const { password, refreshToken: _, ...rest } = user.toObject();
+    const { password, _id, refreshToken: _, ...rest } = user.toObject();
     return rest;
   }
 
