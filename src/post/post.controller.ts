@@ -1,29 +1,22 @@
-import { Controller, Post as HttpPost, Body, Get, Post } from '@nestjs/common';
+import { Controller, Post as HttpPost, Body, Get, Post, UseGuards } from '@nestjs/common';
 import { PostService } from './post.service';
-import { CreatePostDto } from './dto/post.dto';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
-import { CreateMediaDto } from 'src/media/dto/media.dto';
+import { JwtRefreshAuthGuard } from 'src/auth/strategies/jwt-refresh.guard';
+import { CurrentUser } from '@app/common';
 
 @Controller('posts')
+@UseGuards(JwtRefreshAuthGuard)
 export class PostController {
   constructor(private readonly postService: PostService) {}
 
-  @Post('simple')
-  async create(@Body() createPostDto: CreatePostDto) {
-    return this.postService.create(createPostDto);
-  }
-
   @Post('with-media')
   async createPostWithMedia(
-    @Body() postWithMediaDto: { post: CreatePostDto; media: CreateMediaDto[] },
+    @Body() postWithMediaDto: CreatePostWithMediaDto,
+    @CurrentUser() user: any,
   ) {
-    return this.postService.createPostWithMedia(postWithMediaDto);
+    postWithMediaDto.post.userID = user._id;
+    return this.postService.createPostWithMediaAndMusic(postWithMediaDto);
   }
-
-  //   @Get()
-  //   async findAll() {
-  //     return this.postService.findAll();
-  //   }
 
   @Get('get-all-with-media')
   async getAllWithMedia() {
