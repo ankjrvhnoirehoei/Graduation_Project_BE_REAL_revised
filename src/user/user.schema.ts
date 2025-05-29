@@ -44,6 +44,9 @@ export class User {
   @Prop() resetTokenHash?: string;
   @Prop() newPasswordHash?: string;
   @Prop() resetTokenExpires?: Date;
+
+  @Prop({ default: '' })
+  currentSessionId: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
