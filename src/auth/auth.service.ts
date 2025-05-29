@@ -56,6 +56,15 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  async issueAccessToken(user: any) {
+    const payload = { sub: user._id.toString(), email: user.email };
+    const accessToken = this.jwtService.sign(payload, {
+      secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+      expiresIn: '15m',
+    });
+    return accessToken;
+  }
+
   async validateUser(email: string, pass: string): Promise<UserDocument> {
     const user = await this.userService.findOneByEmail(email);
     if (!user) throw new UnauthorizedException('Invalid credentials');
@@ -63,6 +72,16 @@ export class AuthService {
     const valid = await bcrypt.compare(pass, user.password);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
     return user;
+  }
+
+  async validateRefreshToken(userId: string, incoming: string) {
+    const user = await this.userService.findById(userId);
+    if (!user) throw new UnauthorizedException('User not found');
+    if (!user.refreshToken) throw new UnauthorizedException('No session');
+    const match = await bcrypt.compare(incoming, user.refreshToken);
+    if (!match) throw new UnauthorizedException('Invalid refresh token');
+    // issue a new access
+    return this.issueAccessToken(user);
   }
 
   async refreshTokens(userId: string, incoming: string) {
