@@ -10,7 +10,6 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { MusicModule } from './music/music.module';
 import { RelationModule } from './relation/relation.module';
 import { ReactionModule } from './reaction/reaction.module';
-import { PostLikeModule } from './videoLikes/post_likes.module';
 
 @Module({
   imports: [
@@ -28,7 +27,6 @@ import { PostLikeModule } from './videoLikes/post_likes.module';
     MusicModule,
     RelationModule,
     ReactionModule,
-    PostLikeModule,
   ],
   providers: [
     {
