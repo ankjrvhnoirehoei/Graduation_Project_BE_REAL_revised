@@ -1,5 +1,12 @@
 import {
-  Controller, Post, Get, Body, Req, Res, UseGuards, Put,
+  Controller,
+  Post,
+  Get,
+  Body,
+  Req,
+  Res,
+  UseGuards,
+  Put,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
@@ -80,7 +87,7 @@ export class AuthController {
     res.cookie('Authentication', accessToken, this.auth.getCookieOptions());
     res.cookie('Refresh', refreshToken, this.auth.getCookieOptions());
     // const { password, refreshToken: _, ...rest } = user.toObject();
-    return {sameDevice};
+    return { sameDevice, accessToken, refreshToken };
   }
 
   @UseGuards(JwtRefreshGuard)
@@ -91,7 +98,10 @@ export class AuthController {
   ) {
     const incoming = req.cookies.Refresh;
     const { userId } = req.user as any;
-    const newAccessToken = await this.auth.validateRefreshToken(userId, incoming);
+    const newAccessToken = await this.auth.validateRefreshToken(
+      userId,
+      incoming,
+    );
     res.cookie('Authentication', newAccessToken, this.auth.getCookieOptions());
     return { success: true };
   }
@@ -110,10 +120,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('logout')
-  async logout(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const user = req.user as any;
     // Clear refresh token in database
     await this.auth.clearRefreshToken(user.sub);
@@ -127,17 +134,13 @@ export class AuthController {
   }
 
   @Put('forgot-password')
-  async forgotPassword(
-    @Body() dto: ForgotPasswordDto,
-  ) {
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
     await this.auth.initiatePasswordReset(dto.email, dto.newPassword);
     return { message: 'Confirmation code sent to email' };
   }
 
   @Put('confirm-password')
-  async confirmForgotPassword(
-    @Body() dto: ConfirmForgotDto,
-  ) {
+  async confirmForgotPassword(@Body() dto: ConfirmForgotDto) {
     await this.auth.confirmPasswordReset(dto.email, dto.code);
     return { message: 'Password updated successfully' };
   }
