@@ -5,6 +5,7 @@ import {
   Get,
   UseGuards,
   UnauthorizedException,
+  Req,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
@@ -51,11 +52,18 @@ export class UserController {
 
   @Post('check-refresh-token')
   @UseGuards(JwtRefreshAuthGuard)
-  async checkRefreshToken(@CurrentUser() userPayload: any) {
-    const { sub: userId, refreshToken } = userPayload;
+  async checkRefreshToken(
+    @CurrentUser('sub') userId: string,
+    @Req() req: any,
+  ) {
+    const authHeader = req.headers['authorization'] || req.headers.authorization;
+    const tokenFromClient = authHeader?.replace('Bearer ', '');
+    if (!tokenFromClient) {
+      throw new UnauthorizedException('No token provided');
+    }
     const isValid = await this.userService.validateRefreshToken(
       userId,
-      refreshToken,
+      tokenFromClient,
     );
     if (!isValid) {
       throw new UnauthorizedException('Invalid refresh token');
