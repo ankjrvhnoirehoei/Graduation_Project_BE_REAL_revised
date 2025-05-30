@@ -35,8 +35,9 @@ export class PostService {
       musicCreated = await this.musicService.create(postWithMediaDto.music);
     }
 
-    const postData = {
+    const postData: any = {
       ...postWithMediaDto.post,
+      userID: new Types.ObjectId(postWithMediaDto.post.userID),
       musicID: musicCreated ? musicCreated._id : undefined,
     };
 
