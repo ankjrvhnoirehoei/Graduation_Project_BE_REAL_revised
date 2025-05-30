@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
@@ -50,9 +54,13 @@ export class UserService {
   }
 
   async getUserById(userId: string): Promise<Partial<User>> {
+    console.log('[getUserById] Called with userId:', userId);
+
     const user = await this.userModel.findById(userId).lean();
+    console.log('[getUserById] Fetched user:', user);
 
     if (!user) {
+      console.warn('[getUserById] User not found!');
       throw new NotFoundException('User not found');
     }
 

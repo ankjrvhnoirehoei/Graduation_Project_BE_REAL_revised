@@ -32,6 +32,10 @@ export class UserController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async getProfile(@CurrentUser('sub') userId: string) {
-    return this.userService.getUserById(userId);
+    console.log('[GET /users/me] userId from token:', userId);
+
+    const user = await this.userService.getUserById(userId);
+    console.log('[GET /users/me] user from DB:', user);
+    return user;
   }
 }
