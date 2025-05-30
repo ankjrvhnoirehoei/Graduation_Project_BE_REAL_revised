@@ -1,4 +1,4 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
@@ -47,5 +47,16 @@ export class UserService {
     });
 
     return newUser.save();
+  }
+
+  async getUserById(userId: string): Promise<Partial<User>> {
+    const user = await this.userModel.findById(userId).lean();
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const { password, refreshToken, ...safeUser } = user;
+    return safeUser;
   }
 }
