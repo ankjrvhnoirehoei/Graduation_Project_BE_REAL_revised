@@ -10,7 +10,10 @@ import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from 'src/auth/dto/login.dto';
 import { AuthService } from 'src/auth/auth.service';
-import { JwtAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
+import {
+  JwtAuthGuard,
+  JwtRefreshAuthGuard,
+} from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
 @Controller('users')
@@ -47,23 +50,24 @@ export class UserController {
   }
 
   @Post('check-refresh-token')
-  @UseGuards(JwtAuthGuard)
-  async checkRefreshToken(
-    @Body('refreshToken') refreshToken: string,
-    @CurrentUser('sub') userId: string,
-  ) {
+  @UseGuards(JwtRefreshAuthGuard)
+  async checkRefreshToken(@CurrentUser() userPayload: any) {
+    const { sub: userId, refreshToken } = userPayload;
+
     const isValid = await this.userService.validateRefreshToken(
       userId,
       refreshToken,
     );
+
     if (!isValid) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+
     return { valid: true, message: 'Token is valid' };
   }
 
   @Post('logout')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtRefreshAuthGuard)
   async logout(@CurrentUser('sub') userId: string) {
     await this.userService.logout(userId);
     return { message: 'Logout successful' };
