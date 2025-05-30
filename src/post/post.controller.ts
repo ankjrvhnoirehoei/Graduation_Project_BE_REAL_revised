@@ -20,8 +20,7 @@ export class PostController {
   @Post('with-media')
   @UseGuards(JwtRefreshAuthGuard)
   async createPostWithMedia(
-    @Body()
-    postWithMediaDto: { post: CreatePostDto; media: any[]; music?: any },
+    @Body() postWithMediaDto: CreatePostWithMediaDto,
     @CurrentUser('sub') userId: string,
   ) {
     postWithMediaDto.post.userID = userId;
