@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Patch,
   Body,
   Param,
   UseGuards,
@@ -10,6 +9,7 @@ import {
 import { CommentService } from './comment.service';
 import { CommentDto } from './dto/comment.dto';
 import { CurrentUser } from '@app/common';
+import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 
 @Controller('comments')
 export class CommentController {
@@ -21,6 +21,7 @@ export class CommentController {
   }
 
   @Post('add')
+  @UseGuards(JwtRefreshAuthGuard)
   async createComment(@Body() dto: CommentDto, @CurrentUser() user: any) {
     return this.commentService.createComment(dto, user._id);
   }

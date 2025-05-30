@@ -1,13 +1,15 @@
-import { Controller, Post as HttpPost, Body, Get, Post } from '@nestjs/common';
+import { Controller, Post as HttpPost, Body, Get, Post, UseGuards } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
 import { CurrentUser } from '@app/common';
+import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 
 @Controller('posts')
 export class PostController {
   constructor(private readonly postService: PostService) {}
 
   @Post('with-media')
+  @UseGuards(JwtRefreshAuthGuard)
   async createPostWithMedia(
     @Body() postWithMediaDto: CreatePostWithMediaDto,
     @CurrentUser() user: any,

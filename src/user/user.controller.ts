@@ -53,16 +53,13 @@ export class UserController {
   @UseGuards(JwtRefreshAuthGuard)
   async checkRefreshToken(@CurrentUser() userPayload: any) {
     const { sub: userId, refreshToken } = userPayload;
-
     const isValid = await this.userService.validateRefreshToken(
       userId,
       refreshToken,
     );
-
     if (!isValid) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-
     return { valid: true, message: 'Token is valid' };
   }
 
