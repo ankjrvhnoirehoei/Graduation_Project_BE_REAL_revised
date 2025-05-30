@@ -54,6 +54,11 @@ export class PostService {
 
   async findAllWithMedia(): Promise<any[]> {
     return this.postModel.aggregate([
+      {
+        $match: {
+          type: { $in: ['reel', 'post'] },
+        },
+      },
       { $sort: { createdAt: -1 } },
       { $limit: 100 },
       { $sample: { size: 20 } },

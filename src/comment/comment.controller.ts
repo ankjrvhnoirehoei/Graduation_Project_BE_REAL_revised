@@ -22,7 +22,7 @@ export class CommentController {
 
   @Post('add')
   @UseGuards(JwtRefreshAuthGuard)
-  async createComment(@Body() dto: CommentDto, @CurrentUser() user: any) {
-    return this.commentService.createComment(dto, user._id);
+  async createComment(@Body() dto: CommentDto, @CurrentUser('sub') userId: string) {
+    return this.commentService.createComment(dto, userId);
   }
 }

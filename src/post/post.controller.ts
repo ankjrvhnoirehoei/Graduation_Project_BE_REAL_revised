@@ -1,8 +1,17 @@
-import { Controller, Post as HttpPost, Body, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post as HttpPost,
+  Body,
+  Get,
+  Post,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
 import { CurrentUser } from '@app/common';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
+import { CreatePostDto } from './dto/post.dto';
 
 @Controller('posts')
 export class PostController {
@@ -11,10 +20,12 @@ export class PostController {
   @Post('with-media')
   @UseGuards(JwtRefreshAuthGuard)
   async createPostWithMedia(
-    @Body() postWithMediaDto: CreatePostWithMediaDto,
-    @CurrentUser() user: any,
+    @Body()
+    postWithMediaDto: { post: CreatePostDto; media: any[]; music?: any },
+    @CurrentUser('sub') userId: string,
   ) {
-    postWithMediaDto.post.userID = user._id;
+    postWithMediaDto.post.userID = userId;
+
     return this.postService.createPostWithMediaAndMusic(postWithMediaDto);
   }
 
