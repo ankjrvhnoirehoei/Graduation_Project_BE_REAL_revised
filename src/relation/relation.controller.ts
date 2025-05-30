@@ -1,9 +1,7 @@
 import {
   Controller,
   Post,
-  Delete,
   Get,
-  Param,
   UseGuards,
   Request,
   BadRequestException,

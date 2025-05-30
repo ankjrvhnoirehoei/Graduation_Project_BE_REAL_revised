@@ -4,7 +4,6 @@ import { Relation, RelationSchema } from './relation.schema';
 import { RelationService } from './relation.service';
 import { RelationController } from './relation.controller';
 import { JwtModule } from '@nestjs/jwt';
-import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { ConfigService } from '@nestjs/config';
 
 @Module({
