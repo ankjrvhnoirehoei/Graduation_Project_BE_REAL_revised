@@ -1,4 +1,11 @@
-import { Controller, Post, Body, Get, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  UseGuards,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from 'src/auth/dto/login.dto';
@@ -37,5 +44,28 @@ export class UserController {
     const user = await this.userService.getUserById(userId);
     console.log('[GET /users/me] user from DB:', user);
     return user;
+  }
+
+  @Post('check-refresh-token')
+  @UseGuards(JwtAuthGuard)
+  async checkRefreshToken(
+    @Body('refreshToken') refreshToken: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    const isValid = await this.userService.validateRefreshToken(
+      userId,
+      refreshToken,
+    );
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    return { valid: true, message: 'Token is valid' };
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  async logout(@CurrentUser('sub') userId: string) {
+    await this.userService.logout(userId);
+    return { message: 'Logout successful' };
   }
 }

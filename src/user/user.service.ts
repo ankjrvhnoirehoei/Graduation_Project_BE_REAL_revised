@@ -67,4 +67,21 @@ export class UserService {
     const { _id, password, refreshToken, ...safeUser } = user;
     return safeUser;
   }
+
+  async validateRefreshToken(userId: string, token: string): Promise<boolean> {
+    const user = await this.userModel.findById(userId).lean();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user.refreshToken === token;
+  }
+
+  async logout(userId: string): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    user.refreshToken = '';
+    await user.save();
+  }
 }
