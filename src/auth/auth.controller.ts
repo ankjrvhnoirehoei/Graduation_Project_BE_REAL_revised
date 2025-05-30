@@ -30,8 +30,8 @@ export class AuthController {
   ) {
     const user = await this.auth.userService.signup(dto);
     const { accessToken, refreshToken } = await this.auth.issueTokens(user);
-    res.cookie('Authentication', accessToken, this.auth.getCookieOptions());
-    res.cookie('Refresh', refreshToken, this.auth.getCookieOptions());
+    // res.cookie('Authentication', accessToken, this.auth.getCookieOptions());
+    // res.cookie('Refresh', refreshToken, this.auth.getCookieOptions());
     const { password, refreshToken: _, ...rest } = user.toObject();
     return rest;
   }
@@ -84,8 +84,8 @@ export class AuthController {
     }
 
     const { accessToken, refreshToken } = await this.auth.issueTokens(user);
-    res.cookie('Authentication', accessToken, this.auth.getCookieOptions());
-    res.cookie('Refresh', refreshToken, this.auth.getCookieOptions());
+    // res.cookie('Authentication', accessToken, this.auth.getCookieOptions());
+    // res.cookie('Refresh', refreshToken, this.auth.getCookieOptions());
     // const { password, refreshToken: _, ...rest } = user.toObject();
     return { sameDevice, accessToken, refreshToken };
   }
@@ -102,7 +102,7 @@ export class AuthController {
       userId,
       incoming,
     );
-    res.cookie('Authentication', newAccessToken, this.auth.getCookieOptions());
+    // res.cookie('Authentication', newAccessToken, this.auth.getCookieOptions());
     return { success: true };
   }
 
@@ -126,9 +126,9 @@ export class AuthController {
     await this.auth.clearRefreshToken(user.sub);
     await this.auth.clearSession(user.sub);
     // Clear cookies
-    const cookieOpts = this.auth.getCookieOptions();
-    res.clearCookie('Authentication', cookieOpts);
-    res.clearCookie('Refresh', cookieOpts);
+    // const cookieOpts = this.auth.getCookieOptions();
+    // res.clearCookie('Authentication', cookieOpts);
+    // res.clearCookie('Refresh', cookieOpts);
 
     return { success: true };
   }

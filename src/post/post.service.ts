@@ -5,7 +5,6 @@ import { CreatePostDto } from './dto/post.dto';
 import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
-import { CreatePostWithMediaDto } from './dto/post-media.dto';
 import { MusicService } from 'src/music/music.service';
 import { MusicDto } from 'src/music/dto/music.dto';
 import { Music } from 'src/music/music.schema';
