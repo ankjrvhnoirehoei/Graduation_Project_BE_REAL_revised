@@ -1,15 +1,8 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Param,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { CommentService } from './comment.service';
 import { CommentDto } from './dto/comment.dto';
-import { CurrentUser } from '@app/common';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
 @Controller('comments')
 export class CommentController {
@@ -22,7 +15,10 @@ export class CommentController {
 
   @Post('add')
   @UseGuards(JwtRefreshAuthGuard)
-  async createComment(@Body() dto: CommentDto, @CurrentUser('sub') userId: string) {
+  async createComment(
+    @Body() dto: CommentDto,
+    @CurrentUser('sub') userId: string,
+  ) {
     return this.commentService.createComment(dto, userId);
   }
 }
