@@ -22,26 +22,6 @@ export class CommentService {
     return comment.save();
   }
 
-  async likeComment(commentId: string, userId: string): Promise<Comment> {
-    const comment = await this.commentModel.findById(commentId);
-    if (!comment) throw new NotFoundException('Comment not found');
-
-    if (!comment.likedBy.includes(userId)) {
-      comment.likedBy.push(userId);
-    }
-
-    return comment.save();
-  }
-
-  async unlikeComment(commentId: string, userId: string): Promise<Comment> {
-    const comment = await this.commentModel.findById(commentId);
-    if (!comment) throw new NotFoundException('Comment not found');
-
-    comment.likedBy = comment.likedBy.filter((id) => id.toString() !== userId);
-
-    return comment.save();
-  }
-
   async getCommentsByPost(postID: string): Promise<any[]> {
     const allComments = await this.commentModel.aggregate([
       { $match: { postID: new Types.ObjectId(postID) } },

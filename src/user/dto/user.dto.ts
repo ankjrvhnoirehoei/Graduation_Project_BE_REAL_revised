@@ -1,45 +1,55 @@
-import { IsEmail, IsOptional, IsString, IsBoolean } from 'class-validator';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  IsBoolean,
+  IsNotEmpty,
+} from 'class-validator';
 
 export class UserDto {
   @IsString()
-  readonly username: string;
+  username: string;
 
-  @IsOptional()
   @IsEmail()
-  readonly email: string;
+  @IsNotEmpty()
+  email: string;
 
   @IsString()
-  readonly password: string;
+  @IsNotEmpty()
+  password: string;
 
   @IsOptional()
   @IsString()
-  readonly phoneNumber?: string;
+  phoneNumber?: string;
 
   @IsString()
-  readonly handleName: string;
+  handleName: string;
 
   @IsOptional()
   @IsString()
-  readonly bio?: string;
+  bio?: string;
 
   @IsOptional()
   @IsString()
-  readonly address?: string;
+  address?: string;
 
   @IsOptional()
   @IsString()
-  readonly gender?: string;
+  gender?: string;
 
   @IsOptional()
-  readonly profilePic?: string;
+  profilePic?: string;
+
+  @IsOptional()
+  dateOfBirth?: string;
 
   @IsBoolean()
-  readonly isVip: boolean;
+  isVip: boolean;
 
   @IsString()
-  readonly refreshToken?: string;
+  refreshToken?: string;
 
   @IsOptional()
   @IsBoolean()
-  readonly deletedAt?: boolean;
+  deletedAt?: boolean;
 }

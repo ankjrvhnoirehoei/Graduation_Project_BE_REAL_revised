@@ -4,13 +4,12 @@ import { DatabaseModule, LoggerModule, LoggingInterceptor } from '@app/common';
 import { PostModule } from './post/post.module';
 import { MediaModule } from './media/media.module';
 import { UserModule } from './user/user.module';
-import { AuthModule } from './auth/auth.module';
 import { CommentModule } from './comment/comment.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { MusicModule } from './music/music.module';
 import { RelationModule } from './relation/relation.module';
 import { ReactionModule } from './reaction/reaction.module';
-import { RelationshipModule } from './relationship/relationship.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -23,12 +22,11 @@ import { RelationshipModule } from './relationship/relationship.module';
     UserModule,
     PostModule,
     MediaModule,
-    AuthModule,
     CommentModule,
     MusicModule,
     RelationModule,
     ReactionModule,
-    RelationshipModule,
+    AuthModule,
   ],
   providers: [
     {
