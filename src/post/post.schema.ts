@@ -32,8 +32,8 @@ export class Post {
   @Prop()
   isArchived?: string;
 
-  @Prop({ required: true, default: 0 })
-  viewCount: number;
+  @Prop({ default: 0 })
+  viewCount?: number;
 }
 
 export const PostSchema = SchemaFactory.createForClass(Post);

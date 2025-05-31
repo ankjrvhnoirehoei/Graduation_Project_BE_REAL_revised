@@ -14,6 +14,6 @@ export class CreatePostDto {
   isEnable: boolean;
   location?: string;
   isArchived?: string;
-  viewCount: number;
+  viewCount?: number;
   share?: number;
 }

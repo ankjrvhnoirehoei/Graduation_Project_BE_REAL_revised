@@ -24,13 +24,15 @@ export class PostController {
     @Body() postWithMediaDto: CreatePostWithMediaDto,
     @CurrentUser('sub') userId: string,
   ) {
-    if (!userId || typeof userId !== 'string') {
-    throw new BadRequestException('Invalid userId from token');
-  }
+    const mergedPostWithMediaDto: CreatePostWithMediaDto = {
+      ...postWithMediaDto,
+      post: {
+        ...postWithMediaDto.post,
+        userID: userId,
+      },
+    };
 
-  postWithMediaDto.post.userID = userId;
-
-    return this.postService.createPostWithMediaAndMusic(postWithMediaDto);
+    return this.postService.createPostWithMediaAndMusic(mergedPostWithMediaDto);
   }
 
   @Get('get-all-with-media')

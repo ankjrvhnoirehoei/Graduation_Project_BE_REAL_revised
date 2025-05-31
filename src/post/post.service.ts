@@ -26,36 +26,39 @@ export class PostService {
   }
 
   async createPostWithMediaAndMusic(postWithMediaDto: {
-    post: CreatePostDto;
-    media: CreateMediaDto[];
-    music?: MusicDto;
-  }): Promise<{ post: Post; media: any[]; music?: Music }> {
-    let musicCreated: Music | any = null;
-    if (postWithMediaDto.music) {
-      musicCreated = await this.musicService.create(postWithMediaDto.music);
-    }
-
-    if (!Types.ObjectId.isValid(postWithMediaDto.post.userID)) {
-      throw new BadRequestException('Invalid userID format');
-    }
-
-    const postData: any = {
-      ...postWithMediaDto.post,
-      userID: new Types.ObjectId(postWithMediaDto.post.userID),
-      musicID: musicCreated ? musicCreated._id : undefined,
-    };
-
-    const createdPost: any = await this.create(postData);
-    const postId = createdPost._id;
-
-    const mediaCreated = await Promise.all(
-      postWithMediaDto.media.map((media) =>
-        this.mediaService.create({ ...media, postID: postId }),
-      ),
-    );
-
-    return { post: createdPost, media: mediaCreated, music: musicCreated };
+  post: CreatePostDto;
+  media: CreateMediaDto[];
+  music?: MusicDto;
+}): Promise<{ post: Post; media: any[]; music?: Music }> {
+  const userId = postWithMediaDto.post.userID;
+  if (!Types.ObjectId.isValid(userId)) {
+    throw new BadRequestException('Invalid userId from token');
   }
+
+  let musicCreated: Music | null = null;
+  if (postWithMediaDto.music) {
+    musicCreated = await this.musicService.create(postWithMediaDto.music);
+  }
+
+  const postData: any = {
+    ...postWithMediaDto.post,
+    userID: new Types.ObjectId(userId),
+    musicID: musicCreated ? musicCreated._id : undefined,
+    viewCount: postWithMediaDto.post.viewCount ?? 0,
+    isEnable: postWithMediaDto.post.isEnable ?? true,
+  };
+
+  const createdPost: any = await this.create(postData);
+  const postId = createdPost._id;
+
+  const mediaCreated = await Promise.all(
+    postWithMediaDto.media.map((media) =>
+      this.mediaService.create({ ...media, postID: postId }),
+    ),
+  );
+
+  return { post: createdPost, media: mediaCreated, music: musicCreated ?? undefined };
+}
 
   async findAllWithMedia(): Promise<any[]> {
     return this.postModel.aggregate([
