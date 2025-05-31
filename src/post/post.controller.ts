@@ -5,14 +5,11 @@ import {
   Get,
   Post,
   UseGuards,
-  Req,
-  BadRequestException,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
-import { CurrentUser } from '@app/common';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
-import { CreatePostDto } from './dto/post.dto';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
 @Controller('posts')
 export class PostController {
