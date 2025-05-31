@@ -6,6 +6,7 @@ import {
   Post,
   UseGuards,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
@@ -23,7 +24,11 @@ export class PostController {
     @Body() postWithMediaDto: CreatePostWithMediaDto,
     @CurrentUser('sub') userId: string,
   ) {
-    postWithMediaDto.post.userID = userId;
+    if (!userId || typeof userId !== 'string') {
+    throw new BadRequestException('Invalid userId from token');
+  }
+
+  postWithMediaDto.post.userID = userId;
 
     return this.postService.createPostWithMediaAndMusic(postWithMediaDto);
   }

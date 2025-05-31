@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { CreatePostDto } from './dto/post.dto';
@@ -33,6 +33,10 @@ export class PostService {
     let musicCreated: Music | any = null;
     if (postWithMediaDto.music) {
       musicCreated = await this.musicService.create(postWithMediaDto.music);
+    }
+
+    if (!Types.ObjectId.isValid(postWithMediaDto.post.userID)) {
+      throw new BadRequestException('Invalid userID format');
     }
 
     const postData: any = {
