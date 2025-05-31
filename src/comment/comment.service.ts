@@ -12,8 +12,8 @@ export class CommentService {
 
   async createComment(dto: CommentDto, userID: string): Promise<Comment> {
     const comment = new this.commentModel({
-      userID: new Types.ObjectId(userID),
-      postID: new Types.ObjectId(dto.postID),
+      userID: userID,
+      postID: dto.postID,
       parentID: dto.parentID ? new Types.ObjectId(dto.parentID) : null,
       content: dto.content,
       mediaUrl: dto.mediaUrl,
