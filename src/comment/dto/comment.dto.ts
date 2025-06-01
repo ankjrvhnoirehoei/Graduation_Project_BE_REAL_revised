@@ -2,21 +2,21 @@ import { IsMongoId, IsOptional, IsString, IsBoolean, MinLength } from 'class-val
 
 export class CommentDto {
   @IsMongoId()
-  readonly postID: string;
+  postID: string;
 
   @IsOptional()
   @IsMongoId()
-  readonly parentID?: string;
+  parentID?: string;
 
   @IsString()
   @MinLength(1)
-  readonly content: string;
+  content: string;
 
   @IsOptional()
   @IsString()
-  readonly mediaUrl?: string;
+  mediaUrl?: string;
 
   @IsOptional()
   @IsBoolean()
-  readonly isDeleted?: boolean;
+  isDeleted?: boolean;
 }

@@ -8,6 +8,9 @@ export class Post {
   @Prop({ required: true })
   userID: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'Music'})
+  musicID: Types.ObjectId;
+
   @Prop({ required: true })
   type: string;
 
@@ -29,8 +32,8 @@ export class Post {
   @Prop()
   isArchived?: string;
 
-  @Prop({ required: true })
-  viewCount: number;
+  @Prop({ default: 0 })
+  viewCount?: number;
 }
 
 export const PostSchema = SchemaFactory.createForClass(Post);
