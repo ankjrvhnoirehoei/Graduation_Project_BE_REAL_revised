@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
   Req,
   Query,
+  ConflictException,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
@@ -77,10 +78,11 @@ export class UserController {
     return { message: 'Logout successful' };
   }
 
-  @Get('check-email')
-  async checkEmail(
-    @Query('email') email: string,
-  ): Promise<{ exists: boolean }> {
+  @Post('check-email')
+  async checkEmail(@Body('email') email: string): Promise<{ exists: boolean }> {
+    if (!email) {
+      throw new ConflictException('Email is required');
+    }
     const exists = await this.userService.checkEmailExists(email);
     return { exists };
   }
