@@ -1,16 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { CreatePostDto } from './dto/post.dto';
 import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
+import { MusicService } from 'src/music/music.service';
+import { MusicDto } from 'src/music/dto/music.dto';
+import { Music } from 'src/music/music.schema';
 
 @Injectable()
 export class PostService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
+    private readonly musicService: MusicService,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -21,27 +25,52 @@ export class PostService {
     return createdPost.save();
   }
 
-  async createPostWithMedia(postWithMediaDto: {
-    post: CreatePostDto;
-    media: CreateMediaDto[];
-  }): Promise<{ post: Post; media: any[] }> {
-    const createdPost: any = await this.create(postWithMediaDto.post);
-    const postId = createdPost._id;
-
-    const mediaCreated = await Promise.all(
-      postWithMediaDto.media.map((media) =>
-        this.mediaService.create({ ...media, postID: postId }),
-      ),
-    );
-
-    return { post: createdPost, media: mediaCreated };
+  async createPostWithMediaAndMusic(postWithMediaDto: {
+  post: CreatePostDto;
+  media: CreateMediaDto[];
+  music?: MusicDto;
+}): Promise<{ post: Post; media: any[]; music?: Music }> {
+  const userId = postWithMediaDto.post.userID;
+  if (!Types.ObjectId.isValid(userId)) {
+    throw new BadRequestException('Invalid userId from token');
   }
+
+  let musicCreated: Music | null = null;
+  if (postWithMediaDto.music) {
+    musicCreated = await this.musicService.create(postWithMediaDto.music);
+  }
+
+  const postData: any = {
+    ...postWithMediaDto.post,
+    userID: new Types.ObjectId(userId),
+    musicID: musicCreated ? musicCreated._id : undefined,
+    viewCount: postWithMediaDto.post.viewCount ?? 0,
+    isEnable: postWithMediaDto.post.isEnable ?? true,
+  };
+
+  const createdPost: any = await this.create(postData);
+  const postId = createdPost._id;
+
+  const mediaCreated = await Promise.all(
+    postWithMediaDto.media.map((media) =>
+      this.mediaService.create({ ...media, postID: postId }),
+    ),
+  );
+
+  return { post: createdPost, media: mediaCreated, music: musicCreated ?? undefined };
+}
 
   async findAllWithMedia(): Promise<any[]> {
     return this.postModel.aggregate([
+      {
+        $match: {
+          type: { $in: ['reel', 'post'] },
+        },
+      },
       { $sort: { createdAt: -1 } },
       { $limit: 100 },
       { $sample: { size: 20 } },
+
       {
         $lookup: {
           from: 'media',
@@ -50,6 +79,7 @@ export class PostService {
           as: 'media',
         },
       },
+
       {
         $lookup: {
           from: 'users',
@@ -59,6 +89,7 @@ export class PostService {
         },
       },
       { $unwind: '$user' },
+
       {
         $lookup: {
           from: 'video_likes',
@@ -72,6 +103,17 @@ export class PostService {
           likeCount: { $size: '$likes' },
         },
       },
+
+      {
+        $lookup: {
+          from: 'music',
+          localField: 'musicID',
+          foreignField: '_id',
+          as: 'music',
+        },
+      },
+      { $unwind: { path: '$music', preserveNullAndEmptyArrays: true } },
+
       {
         $project: {
           _id: 1,
@@ -89,6 +131,7 @@ export class PostService {
           updatedAt: 1,
           media: 1,
           likeCount: 1,
+          music: 1,
           'user._id': 1,
           'user.handleName': 1,
           'user.profilePic': 1,

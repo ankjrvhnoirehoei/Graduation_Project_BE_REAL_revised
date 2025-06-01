@@ -1,19 +1,10 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Body,
-  Param,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { CommentService } from './comment.service';
 import { CommentDto } from './dto/comment.dto';
-import { CurrentUser } from '@app/common';
-import { JwtAuthGuard } from 'src/auth/strategies/jwt-auth.guard';
+import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
 @Controller('comments')
-@UseGuards(JwtAuthGuard)
 export class CommentController {
   constructor(private readonly commentService: CommentService) {}
 
@@ -23,20 +14,11 @@ export class CommentController {
   }
 
   @Post('add')
-  async createComment(@Body() dto: CommentDto, @CurrentUser() user: any) {
-    return this.commentService.createComment(dto, user._id);
-  }
-
-  @Patch(':id/like')
-  async likeComment(@Param('id') commentId: string, @CurrentUser() user: any) {
-    return this.commentService.likeComment(commentId, user._id);
-  }
-
-  @Patch(':id/unlike')
-  async unlikeComment(
-    @Param('id') commentId: string,
-    @CurrentUser() user: any,
+  @UseGuards(JwtRefreshAuthGuard)
+  async createComment(
+    @Body() dto: CommentDto,
+    @CurrentUser('sub') userId: string,
   ) {
-    return this.commentService.unlikeComment(commentId, user._id);
+    return this.commentService.createComment(dto, userId);
   }
 }
