@@ -96,9 +96,9 @@ export class PostService {
 
       {
         $lookup: {
-          from: 'video_likes',
+          from: 'postlikes',
           localField: '_id',
-          foreignField: 'videoId',
+          foreignField: 'postId',
           as: 'likes',
         },
       },
@@ -175,7 +175,7 @@ export class PostService {
       { $unwind: '$user' },
       {
         $lookup: {
-          from: 'like_posts',
+          from: 'postlikes',
           localField: '_id',
           foreignField: 'postId',
           as: 'likes',
