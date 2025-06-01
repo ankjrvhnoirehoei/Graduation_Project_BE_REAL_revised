@@ -7,16 +7,9 @@ import { JwtAuthGuard } from '@app/common';
 import { GetStoriesByIdsDto } from './dto/get-stories.dto'
 
 @Controller('stories')
-@UseGuards(JwtAuthGuard)
+// @UseGuards(JwtAuthGuard)
 export class StoryController {
   constructor(private readonly storyService: StoryService) {}
-
-  @Post('by-ids')
-  async findStoriesByIds(
-    @Body() body: GetStoriesByIdsDto
-  ) {
-    return this.storyService.findStoryById(body.storyIds);
-  }
 
   @Get('user/:userId')
   async getStoriesByUser(
@@ -32,12 +25,18 @@ export class StoryController {
     return this.storyService.findHighlightsByUser(userId);
   }
 
-  @Get('following')
+  @Get('following/:userId')
   async getFollowingStories(
-    @Request() req
+    @Param('userId') userId: string
   ) {
-    const userId = (req.user as any)._id.toString();
     return await this.storyService.getStoryFollowing(userId);
+  }
+
+  @Post('by-ids')
+  async findStoriesByIds(
+    @Body() body: GetStoriesByIdsDto
+  ) {
+    return this.storyService.findStoryById(body.storyIds);
   }
 
   // stories/create
