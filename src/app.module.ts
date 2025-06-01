@@ -5,11 +5,11 @@ import { PostModule } from './post/post.module';
 import { MediaModule } from './media/media.module';
 import { UserModule } from './user/user.module';
 import { CommentModule } from './comment/comment.module';
-import { APP_INTERCEPTOR } from '@nestjs/core';
 import { MusicModule } from './music/music.module';
 import { RelationModule } from './relation/relation.module';
 import { ReactionModule } from './reaction/reaction.module';
 import { StoryModule } from './story/story.module';
+import { PostLikeModule } from './like_post/like_post.module';
 
 @Module({
   imports: [
@@ -27,6 +27,7 @@ import { StoryModule } from './story/story.module';
     RelationModule,
     ReactionModule,
     StoryModule,
+    PostLikeModule,
   ],
   // providers: [
   //   {
