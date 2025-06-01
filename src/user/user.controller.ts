@@ -6,6 +6,7 @@ import {
   UseGuards,
   UnauthorizedException,
   Req,
+  Query,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
@@ -52,11 +53,9 @@ export class UserController {
 
   @Post('check-refresh-token')
   @UseGuards(JwtRefreshAuthGuard)
-  async checkRefreshToken(
-    @CurrentUser('sub') userId: string,
-    @Req() req: any,
-  ) {
-    const authHeader = req.headers['authorization'] || req.headers.authorization;
+  async checkRefreshToken(@CurrentUser('sub') userId: string, @Req() req: any) {
+    const authHeader =
+      req.headers['authorization'] || req.headers.authorization;
     const tokenFromClient = authHeader?.replace('Bearer ', '');
     if (!tokenFromClient) {
       throw new UnauthorizedException('No token provided');
@@ -76,5 +75,13 @@ export class UserController {
   async logout(@CurrentUser('sub') userId: string) {
     await this.userService.logout(userId);
     return { message: 'Logout successful' };
+  }
+
+  @Get('check-email')
+  async checkEmail(
+    @Query('email') email: string,
+  ): Promise<{ exists: boolean }> {
+    const exists = await this.userService.checkEmailExists(email);
+    return { exists };
   }
 }

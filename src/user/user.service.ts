@@ -84,4 +84,9 @@ export class UserService {
     user.refreshToken = '';
     await user.save();
   }
+
+  async checkEmailExists(email: string): Promise<boolean> {
+    const user = await this.userModel.findOne({ email }).lean();
+    return !!user;
+  }
 }
