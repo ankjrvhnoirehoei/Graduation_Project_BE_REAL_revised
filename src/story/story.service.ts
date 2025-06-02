@@ -3,16 +3,16 @@ import { CreateStoryDto } from './dto/create-story.dto';
 import { StoryRepository } from './story.repository';
 import { Types } from 'mongoose';
 import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
-import { Type } from 'class-transformer';
 import { UpdateStoryDto } from './dto/update-story.dto';
 import { RelationService } from 'src/relation/relation.service';
-// import { UpdateStoryDto } from './dto/update-story.dto';
+import { UserService } from 'src/user/user.service';
 
 @Injectable()
 export class StoryService {
   constructor(
     private readonly storyRepo: StoryRepository,
-    private readonly relationServ: RelationService
+    private readonly relationServ: RelationService,
+    private readonly userService: UserService,
   ) {}
 
   async findStoriesByUser(userId: string) {
@@ -66,9 +66,41 @@ export class StoryService {
       return acc;
     }, {});
   
-    const res = followingUserIds.map(followingId => ({
-      following_id: followingId,
-      stories: storiesByUserId[followingId] || [],
+    // Lấy thông tin người dùng cho mỗi following user
+    const userProfiles = await Promise.all(
+      followingUserIds.map(async (userId) => {
+        try {
+          const profile = await this.userService.getPublicProfile(userId);
+          return {
+            userId,
+            profile
+          };
+        } catch (error) {
+          console.error(`Error fetching profile for user ${userId}:`, error);
+          return {
+            userId,
+            profile: {
+              handleName: '',
+              profilePic: ''
+            }
+          };
+        }
+      })
+    );
+
+    // Tạo map để dễ dàng truy cập profile
+    const userProfileMap = userProfiles.reduce((map, item) => {
+      map[item.userId] = item.profile;
+      return map;
+    }, {});
+  
+    const res = followingUserIds.map(item_id => ({
+      following_id: {
+        _id: item_id,
+        handleName: userProfileMap[item_id]?.handleName || '',
+        profilePic: userProfileMap[item_id].profilePic,
+      },
+      stories: storiesByUserId[item_id] || [],
     }));
   
     return res;
