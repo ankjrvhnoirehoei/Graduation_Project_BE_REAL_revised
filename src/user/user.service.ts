@@ -15,7 +15,7 @@ export class UserService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
   async register(registerDto: RegisterDto): Promise<User> {
-    const { email, password } = registerDto;
+    const { email, password, profilePic } = registerDto;
     const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
       throw new ConflictException('Email already in use');
@@ -48,6 +48,9 @@ export class UserService {
       handleName: handleName,
       isVip: false,
       deletedAt: false,
+      profilePic:
+        profilePic ||
+        'https://i.pinimg.com/736x/3c/67/75/3c67757cef723535a7484a6c7bfbfc43.jpg',
     });
 
     return newUser.save();
@@ -108,19 +111,16 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    const user = await this.userModel
-      .findById(userId)
-      .lean()
-      .select({
-        username: 1,
-        phoneNumber: 1,
-        handleName: 1,
-        bio: 1,
-        address: 1,
-        gender: 1,
-        profilePic: 1,
-        isVip: 1,
-      });
+    const user = await this.userModel.findById(userId).lean().select({
+      username: 1,
+      phoneNumber: 1,
+      handleName: 1,
+      bio: 1,
+      address: 1,
+      gender: 1,
+      profilePic: 1,
+      isVip: 1,
+    });
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -136,5 +136,5 @@ export class UserService {
       profilePic: user.profilePic || '',
       isVip: user.isVip || false,
     };
-  }  
+  }
 }
