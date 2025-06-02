@@ -4,8 +4,4 @@ export class UpdateStoryDto {
    @IsString()
    @IsNotEmpty()
    _id: string;
-
-   @IsString()
-   @IsNotEmpty()
-   viewerId: string;
 }

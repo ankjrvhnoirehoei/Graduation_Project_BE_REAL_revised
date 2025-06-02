@@ -13,7 +13,7 @@ export class StoryService {
     private readonly storyRepo: StoryRepository,
     private readonly relationServ: RelationService,
     private readonly userService: UserService,
-  ) {}
+  ) { }
 
   async findStoriesByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
@@ -42,21 +42,21 @@ export class StoryService {
   async getStoryFollowing(userId: string) {
     const followingRelations = await this.relationServ.findByUserAndFilter(userId, 'following');
     if (followingRelations.length === 0) { return []; }
-  
+
     const followingUserIds = followingRelations.map(relation => {
       const userOneIdStr = relation.userOneID.toString();
       const userTwoIdStr = relation.userTwoID.toString();
       return userOneIdStr === userId ? userTwoIdStr : userOneIdStr;
     });
-  
+
     const followingObjectIds = followingUserIds.map(id => new Types.ObjectId(id));
-  
+
     const stories = await this.storyRepo.find({
       userId: { $in: followingObjectIds },
       type: 'stories',
       isArchived: false
     });
-  
+
     const storiesByUserId = stories.reduce((acc, story) => {
       const userIdStr = story.userId.toString();
       if (!acc[userIdStr]) {
@@ -65,7 +65,7 @@ export class StoryService {
       acc[userIdStr].push(story._id);
       return acc;
     }, {});
-  
+
     const userProfiles = await Promise.all(
       followingUserIds.map(async (userId) => {
         try {
@@ -92,22 +92,21 @@ export class StoryService {
       map[item.userId] = item.profile;
       return map;
     }, {});
-  
+
     const res = followingUserIds.map(item_id => ({
       _id: item_id,
       handleName: userProfileMap[item_id]?.handleName || '',
       profilePic: userProfileMap[item_id]?.profilePic || '',
       stories: storiesByUserId[item_id] || [],
     }));
-  
+
     return res;
   }
 
-  async createStory(storyDto: CreateStoryDto) {
-    const uid = new Types.ObjectId(storyDto.userId);
+  async createStory(uid: string, storyDto: CreateStoryDto) {
     return this.storyRepo.create({
       ...storyDto,
-      userId: uid,
+      userId: new Types.ObjectId(uid),
       type: "stories",
       isArchived: false,
       viewerId: [],
@@ -117,20 +116,23 @@ export class StoryService {
     });
   }
 
-  async seenStory(storyDto: UpdateStoryDto) {
-  const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
+  async seenStory(
+    uid: string,
+    storyDto: UpdateStoryDto
+  ) {
+    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id  });
 
-    const viewerId = new Types.ObjectId(storyDto.viewerId);
+    const viewerId = new Types.ObjectId(uid);
 
     const hasViewed = existingStory.viewerId?.some(id => id.equals(viewerId));
-    
+
     const updateData: any = {};
-    
+
     if (!hasViewed) {
       updateData.$inc = { viewsCount: 1 };
       updateData.$push = { viewerId: viewerId };
     }
-    
+
     if (Object.keys(updateData).length === 0) {
       return existingStory;
     }
@@ -139,13 +141,12 @@ export class StoryService {
       { _id: storyDto._id },
       updateData,
     );
-}
+  }
 
-  async createHighlightStory(storyDto: CreateHighlightStoryDto) {
-    const uid = new Types.ObjectId(storyDto.userId);
+  async createHighlightStory(uid: string, storyDto: CreateHighlightStoryDto) {
     return this.storyRepo.create({
       ...storyDto,
-      userId: uid,
+      userId: new Types.ObjectId(uid),
       type: "highlights",
       viewsCount: 0,
       isArchived: true,
