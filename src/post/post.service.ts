@@ -64,7 +64,8 @@ export class PostService {
     };
   }
 
-  async findAllWithMedia(): Promise<any[]> {
+  async findAllWithMedia(userId: string): Promise<any[]> {
+    const currentUserObjectId = new Types.ObjectId(userId);
     return this.postModel.aggregate([
       {
         $match: {
@@ -110,6 +111,33 @@ export class PostService {
 
       {
         $lookup: {
+          from: 'postlikes',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postId', '$$postId'] },
+                    { $eq: ['$userId', currentUserObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'userLikeEntry',
+        },
+      },
+      {
+        $addFields: {
+          likedByCurrentUser: {
+            $gt: [{ $size: '$userLikeEntry' }, 0],
+          },
+        },
+      },
+
+      {
+        $lookup: {
           from: 'music',
           localField: 'musicID',
           foreignField: '_id',
@@ -135,6 +163,7 @@ export class PostService {
           updatedAt: 1,
           media: 1,
           likeCount: 1,
+          likedByCurrentUser: 1,
           music: 1,
           'user._id': 1,
           'user.handleName': 1,
@@ -144,7 +173,8 @@ export class PostService {
     ]);
   }
 
-  async findReelsWithMedia(): Promise<any[]> {
+  async findReelsWithMedia(userId: string): Promise<any[]> {
+    const currentUserObjectId = new Types.ObjectId(userId);
     return this.postModel.aggregate([
       {
         $match: {
@@ -186,6 +216,194 @@ export class PostService {
           likeCount: { $size: '$likes' },
         },
       },
+
+      {
+        $lookup: {
+          from: 'postlikes',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postId', '$$postId'] },
+                    { $eq: ['$userId', currentUserObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'userLikeEntry',
+        },
+      },
+      {
+        $addFields: {
+          likedByCurrentUser: {
+            $gt: [{ $size: '$userLikeEntry' }, 0],
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          userID: 1,
+          type: 1,
+          caption: 1,
+          isFlagged: 1,
+          nsfw: 1,
+          isEnable: 1,
+          location: 1,
+          isArchived: 1,
+          viewCount: 1,
+          share: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          media: 1,
+          likedByCurrentUser: 1,
+          likeCount: 1,
+          'user._id': 1,
+          'user.handleName': 1,
+          'user.profilePic': 1,
+        },
+      },
+    ]);
+  }
+
+    async findAllWithMediaGuest(): Promise<any[]> {
+    return this.postModel.aggregate([
+      {
+        $match: {
+          type: { $in: ['reel', 'post'] },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $limit: 100 },
+      { $sample: { size: 20 } },
+
+      // Media lookup
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'media',
+        },
+      },
+
+      // User lookup
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+
+      // Like count
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likes',
+        },
+      },
+      {
+        $addFields: {
+          likeCount: { $size: '$likes' },
+        },
+      },
+
+      // Music lookup
+      {
+        $lookup: {
+          from: 'music',
+          localField: 'musicID',
+          foreignField: '_id',
+          as: 'music',
+        },
+      },
+      { $unwind: { path: '$music', preserveNullAndEmptyArrays: true } },
+
+      // Project final fields
+      {
+        $project: {
+          _id: 1,
+          userID: 1,
+          type: 1,
+          caption: 1,
+          isFlagged: 1,
+          nsfw: 1,
+          isEnable: 1,
+          location: 1,
+          isArchived: 1,
+          viewCount: 1,
+          share: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          media: 1,
+          likeCount: 1,
+          music: 1,
+          'user._id': 1,
+          'user.handleName': 1,
+          'user.profilePic': 1,
+        },
+      },
+    ]);
+  }
+
+  async findReelsWithMediaGuest(): Promise<any[]> {    
+    return this.postModel.aggregate([
+      {
+        $match: {
+          type: 'reel',
+          isEnable: true,
+          nsfw: false,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $limit: 100 },
+      { $sample: { size: 20 } },
+
+      // Media lookup
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'media',
+        },
+      },
+
+      // User lookup
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+
+      // Like count
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likes',
+        },
+      },
+      {
+        $addFields: {
+          likeCount: { $size: '$likes' },
+        },
+      },
+
+      // Project final fields
       {
         $project: {
           _id: 1,
@@ -209,5 +427,201 @@ export class PostService {
         },
       },
     ]);
+  }
+
+  
+  // returns up to 50 'post'‐type documents for the given user, plus a total count
+  async getUserPostsWithMedia(
+    userId: string,
+  ): Promise<{ total: number; items: any[] }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID format');
+    }
+    const objectUserId = new Types.ObjectId(userId);
+
+    // count total number of 'post'‐type documents for this user
+    const total = await this.postModel.countDocuments({
+      userID: objectUserId,
+      type: 'post',
+    });
+
+    // fetch up to 50 of them with lookups
+    const items = await this.postModel
+      .aggregate([
+        // match only 'post' type for this user
+        {
+          $match: {
+            userID: objectUserId,
+            type: 'post',
+          },
+        },
+        { $sort: { createdAt: -1 } },
+        { $limit: 50 },
+
+        // lookup media documents attached to each post
+        {
+          $lookup: {
+            from: 'media',
+            localField: '_id',
+            foreignField: 'postID',
+            as: 'media',
+          },
+        },
+
+        // lookup likes just to compute likeCount
+        {
+          $lookup: {
+            from: 'postlikes',
+            localField: '_id',
+            foreignField: 'postId',
+            as: 'likes',
+          },
+        },
+        {
+          $addFields: {
+            likeCount: { $size: '$likes' },
+          },
+        },
+
+        // lookup music if any
+        {
+          $lookup: {
+            from: 'music',
+            localField: 'musicID',
+            foreignField: '_id',
+            as: 'music',
+          },
+        },
+        {
+          $unwind: {
+            path: '$music',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+
+        {
+          $project: {
+            _id: 1,
+            userID: 1,
+            type: 1,
+            caption: 1,
+            isFlagged: 1,
+            nsfw: 1,
+            isEnable: 1,
+            location: 1,
+            isArchived: 1,
+            viewCount: 1,
+            share: 1,
+            createdAt: 1,
+            updatedAt: 1,
+
+            media: 1,
+            likeCount: 1,
+            music: 1,
+          },
+        },
+      ])
+      .exec();
+
+    return { total, items };
+  }
+
+  // returns up to 50 'reel'‐type documents for the given user, plus a total count.
+  async getUserReelsWithMedia(
+    userId: string,
+  ): Promise<{ total: number; items: any[] }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID format');
+    }
+    const objectUserId = new Types.ObjectId(userId);
+
+    // count total 'reel'‐type documents for this user
+    const total = await this.postModel.countDocuments({
+      userID: objectUserId,
+      type: 'reel',
+    });
+
+    // fetch up to 50 of them with lookups
+    const items = await this.postModel
+      .aggregate([
+        // match only 'reel' type for this user, and exclude NSFW/disabled if desired
+        {
+          $match: {
+            userID: objectUserId,
+            type: 'reel',
+          },
+        },
+        { $sort: { createdAt: -1 } },
+        { $limit: 50 },
+
+        // lookup media
+        {
+          $lookup: {
+            from: 'media',
+            localField: '_id',
+            foreignField: 'postID',
+            as: 'media',
+          },
+        },
+
+        // lookup likes to compute likeCount
+        {
+          $lookup: {
+            from: 'postlikes',
+            localField: '_id',
+            foreignField: 'postId',
+            as: 'likes',
+          },
+        },
+        {
+          $addFields: {
+            likeCount: { $size: '$likes' },
+          },
+        },
+
+        // no need to lookup user here—front‐end knows whose reels these are
+
+        // lookup music if any
+        {
+          $lookup: {
+            from: 'music',
+            localField: 'musicID',
+            foreignField: '_id',
+            as: 'music',
+          },
+        },
+        {
+          $unwind: {
+            path: '$music',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+
+        // project fields
+        {
+          $project: {
+            _id: 1,
+            userID: 1,
+            type: 1,
+            caption: 1,
+            isFlagged: 1,
+            nsfw: 1,
+            isEnable: 1,
+            location: 1,
+            isArchived: 1,
+            viewCount: 1,
+            share: 1,
+            createdAt: 1,
+            updatedAt: 1,
+
+            media: 1,
+            likeCount: 1,
+            music: 1,
+          },
+        },
+      ])
+      .exec();
+
+    return { total, items };
   }
 }
