@@ -41,27 +41,37 @@ export class StoryService {
 
   async getStoryFollowing(userId: string) {
     const followingRelations = await this.relationServ.findByUserAndFilter(userId, 'following');
-    if (followingRelations.length === 0) { return [] }
-
+    if (followingRelations.length === 0) { return []; }
+  
     const followingUserIds = followingRelations.map(relation => {
       const userOneIdStr = relation.userOneID.toString();
       const userTwoIdStr = relation.userTwoID.toString();
-
       return userOneIdStr === userId ? userTwoIdStr : userOneIdStr;
     });
-
+  
     const followingObjectIds = followingUserIds.map(id => new Types.ObjectId(id));
-
+  
     const stories = await this.storyRepo.find({
       userId: { $in: followingObjectIds },
       type: 'stories',
-      isArchived: false,
+      isArchived: false
     });
-
-    // Sort theo thời gian tạo mới nhất
-    // stories.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    return stories;
+  
+    const storiesByUserId = stories.reduce((acc, story) => {
+      const userIdStr = story.userId.toString();
+      if (!acc[userIdStr]) {
+        acc[userIdStr] = [];
+      }
+      acc[userIdStr].push(story._id);
+      return acc;
+    }, {});
+  
+    const res = followingUserIds.map(followingId => ({
+      following_id: followingId,
+      stories: storiesByUserId[followingId] || [],
+    }));
+  
+    return res;
   }
 
   async createStory(storyDto: CreateStoryDto) {
