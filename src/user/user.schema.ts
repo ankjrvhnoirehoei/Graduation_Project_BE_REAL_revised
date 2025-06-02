@@ -5,11 +5,11 @@ export type UserDocument = User & Document;
 
 @Schema({ timestamps: true })
 export class User {
-  @Prop({ required: true })
+  @Prop()
   username: string;
 
-  @Prop({ required: true, unique: true })
-  email: string;
+  @Prop()
+  email?: string;
 
   @Prop({ required: true })
   password: string;
@@ -17,8 +17,8 @@ export class User {
   @Prop()
   phoneNumber?: string;
 
-  @Prop({ required: true, unique: true })
-  handleName?: string;
+  @Prop()
+  handleName: string;
 
   @Prop()
   bio?: string;
@@ -32,21 +32,17 @@ export class User {
   @Prop()
   profilePic?: string;
 
+  @Prop()
+  dateOfBirth?: string;
+
   @Prop({ default: false })
   isVip: boolean;
 
   @Prop()
   refreshToken?: string;
 
-  @Prop({ type: Date, default: undefined })
-  deletedAt?: Date;
-
-  @Prop() resetTokenHash?: string;
-  @Prop() newPasswordHash?: string;
-  @Prop() resetTokenExpires?: Date;
-
-  @Prop({ default: '' })
-  currentSessionId: string;
+  @Prop({ default: false })
+  deletedAt?: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

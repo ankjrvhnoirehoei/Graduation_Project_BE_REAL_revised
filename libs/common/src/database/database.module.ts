@@ -8,7 +8,7 @@ import { ModelDefinition, MongooseModule } from '@nestjs/mongoose';
       useFactory: (configService: ConfigService) => ({
         uri: configService.get('MONGO_URI'),
         connectionFactory: (connection) => {
-          connection.set('debug', true);
+          connection.set('debug', false);
           return connection;
         },
       }),

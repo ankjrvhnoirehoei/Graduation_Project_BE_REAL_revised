@@ -1,23 +1,22 @@
-import { IsMongoId, IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsMongoId, IsOptional, IsString, IsBoolean, MinLength } from 'class-validator';
 
 export class CommentDto {
   @IsMongoId()
-  readonly userID: string;
-
-  @IsMongoId()
-  readonly postID: string;
+  postID: string;
 
   @IsOptional()
   @IsMongoId()
-  readonly parentID?: string;
+  parentID?: string;
 
   @IsString()
-  readonly content: string;
+  @MinLength(1)
+  content: string;
 
   @IsOptional()
-  readonly mediaUrl?: string;
+  @IsString()
+  mediaUrl?: string;
 
   @IsOptional()
   @IsBoolean()
-  readonly isDeleted?: boolean;
+  isDeleted?: boolean;
 }

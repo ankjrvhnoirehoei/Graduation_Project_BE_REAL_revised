@@ -10,33 +10,15 @@ export class CommentService {
     @InjectModel(Comment.name) private commentModel: Model<Comment>,
   ) {}
 
-  async createComment(dto: CommentDto): Promise<Comment> {
+  async createComment(dto: CommentDto, userID: string): Promise<Comment> {
     const comment = new this.commentModel({
-      ...dto,
-      userID: new Types.ObjectId(dto.userID),
+      userID: new Types.ObjectId(userID),
       postID: new Types.ObjectId(dto.postID),
       parentID: dto.parentID ? new Types.ObjectId(dto.parentID) : null,
+      content: dto.content,
+      mediaUrl: dto.mediaUrl,
+      isDeleted: dto.isDeleted ?? false,
     });
-    return comment.save();
-  }
-
-  async likeComment(commentId: string, userId: string): Promise<Comment> {
-    const comment = await this.commentModel.findById(commentId);
-    if (!comment) throw new NotFoundException('Comment not found');
-
-    if (!comment.likedBy.includes(userId)) {
-      comment.likedBy.push(userId);
-    }
-
-    return comment.save();
-  }
-
-  async unlikeComment(commentId: string, userId: string): Promise<Comment> {
-    const comment = await this.commentModel.findById(commentId);
-    if (!comment) throw new NotFoundException('Comment not found');
-
-    comment.likedBy = comment.likedBy.filter((id) => id !== userId);
-
     return comment.save();
   }
 

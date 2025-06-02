@@ -1,0 +1,117 @@
+import { Injectable } from '@nestjs/common';
+import { CreateStoryDto } from './dto/create-story.dto';
+import { StoryRepository } from './story.repository';
+import { Types } from 'mongoose';
+import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
+import { Type } from 'class-transformer';
+import { UpdateStoryDto } from './dto/update-story.dto';
+import { RelationService } from 'src/relation/relation.service';
+// import { UpdateStoryDto } from './dto/update-story.dto';
+
+@Injectable()
+export class StoryService {
+  constructor(
+    private readonly storyRepo: StoryRepository,
+    private readonly relationServ: RelationService
+  ) {}
+
+  async findStoriesByUser(userId: string) {
+    const uid = new Types.ObjectId(userId);
+    return this.storyRepo.find({
+      userId: uid,
+      type: 'stories',
+      isArchived: false
+    });
+  }
+  async findHighlightsByUser(userId: string) {
+    const uid = new Types.ObjectId(userId);
+    return this.storyRepo.find({
+      userId: uid,
+      type: 'highlights',
+    });
+  }
+
+  async findStoryById(ids: string[]) {
+    const objectIds = ids.map(id => new Types.ObjectId(id));
+    const stories = await this.storyRepo.find({
+      _id: { $in: objectIds }
+    });
+    return stories;
+  }
+
+  async getStoryFollowing(userId: string) {
+    const followingRelations = await this.relationServ.findByUserAndFilter(userId, 'following');
+    if (followingRelations.length === 0) { return [] }
+
+    const followingUserIds = followingRelations.map(relation => {
+      const userOneIdStr = relation.userOneID.toString();
+      const userTwoIdStr = relation.userTwoID.toString();
+
+      return userOneIdStr === userId ? userTwoIdStr : userOneIdStr;
+    });
+
+    const followingObjectIds = followingUserIds.map(id => new Types.ObjectId(id));
+
+    const stories = await this.storyRepo.find({
+      userId: { $in: followingObjectIds },
+      type: 'stories',
+      isArchived: false,
+    });
+
+    // Sort theo thời gian tạo mới nhất
+    // stories.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return stories;
+  }
+
+  async createStory(storyDto: CreateStoryDto) {
+    const uid = new Types.ObjectId(storyDto.userId);
+    return this.storyRepo.create({
+      ...storyDto,
+      userId: uid,
+      type: "stories",
+      isArchived: false,
+      viewerId: [],
+      viewsCount: 0,
+      collectionName: '',
+      storyId: [],
+    });
+  }
+
+  async seenStory(storyDto: UpdateStoryDto) {
+  const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
+
+    const viewerId = new Types.ObjectId(storyDto.viewerId);
+
+    const hasViewed = existingStory.viewerId?.some(id => id.equals(viewerId));
+    
+    const updateData: any = {};
+    
+    if (!hasViewed) {
+      updateData.$inc = { viewsCount: 1 };
+      updateData.$push = { viewerId: viewerId };
+    }
+    
+    if (Object.keys(updateData).length === 0) {
+      return existingStory;
+    }
+
+    return await this.storyRepo.findOneAndUpdate(
+      { _id: storyDto._id },
+      updateData,
+    );
+}
+
+  async createHighlightStory(storyDto: CreateHighlightStoryDto) {
+    const uid = new Types.ObjectId(storyDto.userId);
+    return this.storyRepo.create({
+      ...storyDto,
+      userId: uid,
+      type: "highlights",
+      viewsCount: 0,
+      isArchived: true,
+      viewerId: [],
+      mediaUrl: '',
+    });
+  }
+}

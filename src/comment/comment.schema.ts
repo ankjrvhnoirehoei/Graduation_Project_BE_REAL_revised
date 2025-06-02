@@ -9,7 +9,7 @@ export class Comment extends Document {
   @Prop({ required: true, ref: 'Post' })
   postID: Types.ObjectId;
 
-  @Prop()
+  @Prop({ ref: 'Comment' })
   parentID?: Types.ObjectId;
 
   @Prop({ required: true })
