@@ -10,6 +10,7 @@ import { RelationModule } from './relation/relation.module';
 import { ReactionModule } from './reaction/reaction.module';
 import { StoryModule } from './story/story.module';
 import { PostLikeModule } from './like_post/like_post.module';
+import { UserHiddenPostModule } from './hide_post/hide_post.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { PostLikeModule } from './like_post/like_post.module';
     ReactionModule,
     StoryModule,
     PostLikeModule,
+    UserHiddenPostModule,
   ],
   // providers: [
   //   {
