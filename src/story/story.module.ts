@@ -4,17 +4,16 @@ import { StoryController } from './story.controller';
 import { StoryRepository } from './story.repository';
 import { DatabaseModule } from '@app/common';
 import { Story, StorySchema } from './schema/story.schema';
-import { AuthModule } from 'src/auth/auth.module';
 import { RelationModule } from 'src/relation/relation.module';
+import { UserModule } from 'src/user/user.module';
 
 @Module({
   imports: [
     DatabaseModule.forFeature([
       { name: Story.name, schema: StorySchema },
     ]),
-    AuthModule,
     RelationModule,
-    AuthModule,
+    UserModule,
   ],
   controllers: [StoryController],
   providers: [StoryService, StoryRepository],
