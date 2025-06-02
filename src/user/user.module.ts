@@ -4,11 +4,18 @@ import { User, UserSchema } from './user.schema';
 import { UserService } from './user.service';
 import { UserController } from './user.controller';
 import { AuthModule } from 'src/auth/auth.module';
+import { JwtModule } from '@nestjs/jwt';
+import { RelationModule } from '../relation/relation.module'; 
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     forwardRef(() => AuthModule),
+    JwtModule.register({
+      secret: process.env.JWT_ACCESS_SECRET,
+      signOptions: { expiresIn: '15m' },
+    }),
+    RelationModule, 
   ],
   providers: [UserService],
   controllers: [UserController],

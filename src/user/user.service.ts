@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { User, UserDocument } from './user.schema';
 import { v4 as uuidv4 } from 'uuid';
@@ -89,4 +89,52 @@ export class UserService {
     const user = await this.userModel.findOne({ email }).lean();
     return !!user;
   }
+
+  /**
+   * fetches another user's public info by their userId.
+   * returns an object with exactly these fields (defaulting to '' or false if absent)
+   */
+  async getPublicProfile(userId: string): Promise<{
+    username: string;
+    phoneNumber: string;
+    handleName: string;
+    bio: string;
+    address: string;
+    gender: string;
+    profilePic: string;
+    isVip: boolean;
+  }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new NotFoundException('User not found');
+    }
+
+    const user = await this.userModel
+      .findById(userId)
+      .lean()
+      .select({
+        username: 1,
+        phoneNumber: 1,
+        handleName: 1,
+        bio: 1,
+        address: 1,
+        gender: 1,
+        profilePic: 1,
+        isVip: 1,
+      });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      username: user.username || '',
+      phoneNumber: user.phoneNumber || '',
+      handleName: user.handleName || '',
+      bio: user.bio || '',
+      address: user.address || '',
+      gender: user.gender || '',
+      profilePic: user.profilePic || '',
+      isVip: user.isVip || false,
+    };
+  }  
 }
