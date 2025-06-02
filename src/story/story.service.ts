@@ -66,7 +66,6 @@ export class StoryService {
       return acc;
     }, {});
   
-    // Lấy thông tin người dùng cho mỗi following user
     const userProfiles = await Promise.all(
       followingUserIds.map(async (userId) => {
         try {
@@ -95,11 +94,9 @@ export class StoryService {
     }, {});
   
     const res = followingUserIds.map(item_id => ({
-      following_id: {
-        _id: item_id,
-        handleName: userProfileMap[item_id]?.handleName || '',
-        profilePic: userProfileMap[item_id].profilePic,
-      },
+      _id: item_id,
+      handleName: userProfileMap[item_id]?.handleName || '',
+      profilePic: userProfileMap[item_id]?.profilePic || '',
       stories: storiesByUserId[item_id] || [],
     }));
   
