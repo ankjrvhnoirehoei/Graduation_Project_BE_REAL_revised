@@ -79,10 +79,12 @@ export class PostService {
 
   async findAllWithMedia(userId: string): Promise<any[]> {
     const currentUserObjectId = new Types.ObjectId(userId);
+
     return this.postModel.aggregate([
       {
         $match: {
           type: { $in: ['reel', 'post'] },
+          isEnable: true,
         },
       },
       { $sort: { createdAt: -1 } },
@@ -97,7 +99,6 @@ export class PostService {
           as: 'media',
         },
       },
-
       {
         $lookup: {
           from: 'users',
@@ -107,7 +108,6 @@ export class PostService {
         },
       },
       { $unwind: '$user' },
-
       {
         $lookup: {
           from: 'postlikes',
@@ -121,7 +121,6 @@ export class PostService {
           likeCount: { $size: '$likes' },
         },
       },
-
       {
         $lookup: {
           from: 'postlikes',
@@ -143,12 +142,9 @@ export class PostService {
       },
       {
         $addFields: {
-          likedByCurrentUser: {
-            $gt: [{ $size: '$userLikeEntry' }, 0],
-          },
+          isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
         },
       },
-
       {
         $lookup: {
           from: 'music',
@@ -158,7 +154,6 @@ export class PostService {
         },
       },
       { $unwind: { path: '$music', preserveNullAndEmptyArrays: true } },
-
       {
         $project: {
           _id: 1,
@@ -176,7 +171,7 @@ export class PostService {
           updatedAt: 1,
           media: 1,
           likeCount: 1,
-          likedByCurrentUser: 1,
+          isLike: 1,
           music: 1,
           'user._id': 1,
           'user.handleName': 1,
@@ -188,6 +183,7 @@ export class PostService {
 
   async findReelsWithMedia(userId: string): Promise<any[]> {
     const currentUserObjectId = new Types.ObjectId(userId);
+
     return this.postModel.aggregate([
       {
         $match: {
@@ -229,7 +225,6 @@ export class PostService {
           likeCount: { $size: '$likes' },
         },
       },
-
       {
         $lookup: {
           from: 'postlikes',
@@ -251,9 +246,7 @@ export class PostService {
       },
       {
         $addFields: {
-          likedByCurrentUser: {
-            $gt: [{ $size: '$userLikeEntry' }, 0],
-          },
+          isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
         },
       },
       {
@@ -272,7 +265,7 @@ export class PostService {
           createdAt: 1,
           updatedAt: 1,
           media: 1,
-          likedByCurrentUser: 1,
+          isLike: 1,
           likeCount: 1,
           'user._id': 1,
           'user.handleName': 1,
@@ -282,172 +275,11 @@ export class PostService {
     ]);
   }
 
-    async findAllWithMediaGuest(): Promise<any[]> {
-    return this.postModel.aggregate([
-      {
-        $match: {
-          type: { $in: ['reel', 'post'] },
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      { $limit: 100 },
-      { $sample: { size: 20 } },
-
-      // Media lookup
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        },
-      },
-
-      // User lookup
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: '$user' },
-
-      // Like count
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes',
-        },
-      },
-      {
-        $addFields: {
-          likeCount: { $size: '$likes' },
-        },
-      },
-
-      // Music lookup
-      {
-        $lookup: {
-          from: 'music',
-          localField: 'musicID',
-          foreignField: '_id',
-          as: 'music',
-        },
-      },
-      { $unwind: { path: '$music', preserveNullAndEmptyArrays: true } },
-
-      // Project final fields
-      {
-        $project: {
-          _id: 1,
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          location: 1,
-          isArchived: 1,
-          viewCount: 1,
-          share: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          media: 1,
-          likeCount: 1,
-          music: 1,
-          'user._id': 1,
-          'user.handleName': 1,
-          'user.profilePic': 1,
-        },
-      },
-    ]);
-  }
-
-  async findReelsWithMediaGuest(): Promise<any[]> {    
-    return this.postModel.aggregate([
-      {
-        $match: {
-          type: 'reel',
-          isEnable: true,
-          nsfw: false,
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      { $limit: 100 },
-      { $sample: { size: 20 } },
-
-      // Media lookup
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        },
-      },
-
-      // User lookup
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: '$user' },
-
-      // Like count
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes',
-        },
-      },
-      {
-        $addFields: {
-          likeCount: { $size: '$likes' },
-        },
-      },
-
-      // Project final fields
-      {
-        $project: {
-          _id: 1,
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          location: 1,
-          isArchived: 1,
-          viewCount: 1,
-          share: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          media: 1,
-          likeCount: 1,
-          'user._id': 1,
-          'user.handleName': 1,
-          'user.profilePic': 1,
-        },
-      },
-    ]);
-  }
-
-  
   // returns up to 50 'post'‐type documents for the given user, plus a total count
   async getUserPostsWithMedia(
     userId: string,
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<{ total: number; items: any[] }> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid user ID format');
@@ -546,7 +378,7 @@ export class PostService {
   async getUserReelsWithMedia(
     userId: string,
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<{ total: number; items: any[] }> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid user ID format');
