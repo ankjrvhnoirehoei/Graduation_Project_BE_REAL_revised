@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { StoryService } from './story.service';
 import { StoryController } from './story.controller';
 import { StoryRepository } from './story.repository';
-import { DatabaseModule } from '@app/common';
+import { DatabaseModule, JwtAuthGuard, JwtRefreshGuard } from '@app/common';
 import { Story, StorySchema } from './schema/story.schema';
 import { RelationModule } from 'src/relation/relation.module';
 import { UserModule } from 'src/user/user.module';
