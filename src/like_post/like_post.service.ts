@@ -11,6 +11,8 @@ export class PostLikeService {
     private postLikeModel: Model<PostLikeDocument>,
     @InjectModel(Post.name)
     private postModel: Model<PostDocument>,
+    @InjectModel('User') // Add User model injection
+    private userModel: Model<any>,
   ) {}
 
   async like(postId: string, userId: string): Promise<void> {
@@ -100,4 +102,26 @@ export class PostLikeService {
       currentPage: page
     };
   }  
+  async getPostLikers(postId: string) {
+    // Find all likes for the given post
+    const likes = await this.postLikeModel
+      .find({ postId })
+      .select('userId')
+      .lean();
+
+    const userIds = likes.map(like => like.userId);
+
+    // Get user details for each like
+    const users = await this.userModel
+      .find({ _id: { $in: userIds } })
+      .select('username handleName profilePic')
+      .lean();
+
+    return users.map(user => ({
+      userId: user._id,
+      username: user.username,
+      handleName: user.handleName,
+      profilePic: user.profilePic || '',
+    }));
+  }
 }

@@ -67,4 +67,14 @@ export class PostLikeController {
       }
     };
   }
+
+  @Get('likers/:postId')
+  @UseGuards(JwtRefreshAuthGuard)
+  async getPostLikers(@Param('postId') postId: string) {
+    const likers = await this.postLikeService.getPostLikers(postId);
+    return {
+      message: 'Post likers retrieved successfully',
+      data: likers
+    };
+  }
 }

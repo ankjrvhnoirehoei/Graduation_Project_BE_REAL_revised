@@ -64,6 +64,19 @@ export class PostService {
     };
   }
 
+  async getPostType(postId: string): Promise<'post' | 'reel' | 'music'> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new BadRequestException('Invalid post ID format');
+    }
+
+    const post = await this.postModel.findById(postId).select('type').lean();
+    if (!post) {
+      throw new BadRequestException('Post not found');
+    }
+
+    return post.type as 'post' | 'reel' | 'music';
+  }
+
   async findAllWithMedia(userId: string): Promise<any[]> {
     const currentUserObjectId = new Types.ObjectId(userId);
     return this.postModel.aggregate([
@@ -433,22 +446,24 @@ export class PostService {
   // returns up to 50 'post'‐type documents for the given user, plus a total count
   async getUserPostsWithMedia(
     userId: string,
+    page: number = 1,
+    limit: number = 20
   ): Promise<{ total: number; items: any[] }> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid user ID format');
     }
     const objectUserId = new Types.ObjectId(userId);
+    const skip = (page - 1) * limit;
 
-    // count total number of 'post'‐type documents for this user
+    // count total number of 'post'-type documents for this user
     const total = await this.postModel.countDocuments({
       userID: objectUserId,
       type: 'post',
     });
 
-    // fetch up to 50 of them with lookups
+    // fetch paginated results with lookups
     const items = await this.postModel
       .aggregate([
-        // match only 'post' type for this user
         {
           $match: {
             userID: objectUserId,
@@ -456,7 +471,8 @@ export class PostService {
           },
         },
         { $sort: { createdAt: -1 } },
-        { $limit: 50 },
+        { $skip: skip },
+        { $limit: limit },
 
         // lookup media documents attached to each post
         {
@@ -529,22 +545,22 @@ export class PostService {
   // returns up to 50 'reel'‐type documents for the given user, plus a total count.
   async getUserReelsWithMedia(
     userId: string,
+    page: number = 1,
+    limit: number = 20
   ): Promise<{ total: number; items: any[] }> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid user ID format');
     }
     const objectUserId = new Types.ObjectId(userId);
+    const skip = (page - 1) * limit;
 
-    // count total 'reel'‐type documents for this user
     const total = await this.postModel.countDocuments({
       userID: objectUserId,
       type: 'reel',
     });
 
-    // fetch up to 50 of them with lookups
     const items = await this.postModel
       .aggregate([
-        // match only 'reel' type for this user, and exclude NSFW/disabled if desired
         {
           $match: {
             userID: objectUserId,
@@ -552,7 +568,8 @@ export class PostService {
           },
         },
         { $sort: { createdAt: -1 } },
-        { $limit: 50 },
+        { $skip: skip },
+        { $limit: limit },
 
         // lookup media
         {

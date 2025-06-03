@@ -14,5 +14,6 @@ import { MusicModule } from 'src/music/music.module';
   ],
   controllers: [PostController],
   providers: [PostService],
+  exports: [PostService],
 })
 export class PostModule {}

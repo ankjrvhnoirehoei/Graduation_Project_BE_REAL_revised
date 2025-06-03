@@ -11,6 +11,8 @@ import { ReactionModule } from './reaction/reaction.module';
 import { StoryModule } from './story/story.module';
 import { PostLikeModule } from './like_post/like_post.module';
 import { UserHiddenPostModule } from './hide_post/hide_post.module';
+import { BookmarkPlaylistModule } from './bookmark-playlist/bookmark-playlist.module';
+import { BookmarkItemModule } from './bookmark-item/bookmark-item.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { UserHiddenPostModule } from './hide_post/hide_post.module';
     StoryModule,
     PostLikeModule,
     UserHiddenPostModule,
+    BookmarkPlaylistModule,
+    BookmarkItemModule,
   ],
   // providers: [
   //   {
