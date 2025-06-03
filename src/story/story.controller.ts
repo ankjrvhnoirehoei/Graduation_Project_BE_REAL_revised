@@ -1,35 +1,37 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ValidationPipe, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, UseGuards, Query } from '@nestjs/common';
 import { StoryService } from './story.service';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { UpdateStoryDto } from './dto/update-story.dto';
 import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
-import { JwtAuthGuard } from '@app/common';
-import { GetStoriesByIdsDto } from './dto/get-stories.dto'
+import { GetStoriesByIdsDto } from './dto/get-stories.dto';
+import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
+import { CurrentUser } from'src/common/decorators/current-user.decorator';
 
 @Controller('stories')
-// @UseGuards(JwtAuthGuard)
+@UseGuards(JwtRefreshAuthGuard)
 export class StoryController {
   constructor(private readonly storyService: StoryService) {}
 
-  @Get('user/:userId')
+  @Get('user')
   async getStoriesByUser(
-    @Param('userId') userId: string
+    @CurrentUser('sub') userId: string,
   ) {
     return this.storyService.findStoriesByUser(userId);
   }
 
-  @Get('highlights/user/:userId')
+  @Get('highlights/user')
   async findHighlights(
-    @Param('userId') userId: string
+    @CurrentUser('sub') userId: string,
   ) {
     return this.storyService.findHighlightsByUser(userId);
   }
 
-  @Get('following/:userId')
+  @Get('following')
   async getFollowingStories(
-    @Param('userId') userId: string
+    @CurrentUser('sub') userId: string,
+    @Query() query,
   ) {
-    return await this.storyService.getStoryFollowing(userId);
+      return await this.storyService.getStoryFollowing(userId, query.page);
   }
 
   @Post('by-ids')
@@ -39,25 +41,27 @@ export class StoryController {
     return this.storyService.findStoryById(body.storyIds);
   }
 
-  // stories/create
   @Post('create')
   async createStory(
+    @CurrentUser('sub') userId: string,
     @Body() storyDto: CreateStoryDto
   ){
-    return this.storyService.createStory(storyDto);
+    return this.storyService.createStory(userId, storyDto);
   }
 
   @Post('create-highlight')
   async createHighlightStory(
+    @CurrentUser('sub') userId: string,
     @Body() storyDto: CreateHighlightStoryDto
   ){
-    return this.storyService.createHighlightStory(storyDto);
+    return this.storyService.createHighlightStory(userId, storyDto);
   }
 
   @Patch('seen')
   async seenStory(
+    @CurrentUser('sub') userId: string,
     @Body() storyDto: UpdateStoryDto
   ) {
-    return this.storyService.seenStory(storyDto);
+    return this.storyService.seenStory(userId, storyDto);
   }
 }

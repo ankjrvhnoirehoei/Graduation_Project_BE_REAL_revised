@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { User, UserDocument } from './user.schema';
 import { v4 as uuidv4 } from 'uuid';
@@ -15,7 +15,7 @@ export class UserService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
   async register(registerDto: RegisterDto): Promise<User> {
-    const { email, password } = registerDto;
+    const { email, password, profilePic } = registerDto;
     const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
       throw new ConflictException('Email already in use');
@@ -48,6 +48,9 @@ export class UserService {
       handleName: handleName,
       isVip: false,
       deletedAt: false,
+      profilePic:
+        profilePic ||
+        'https://i.pinimg.com/736x/3c/67/75/3c67757cef723535a7484a6c7bfbfc43.jpg',
     });
 
     return newUser.save();
@@ -83,5 +86,55 @@ export class UserService {
     }
     user.refreshToken = '';
     await user.save();
+  }
+
+  async checkEmailExists(email: string): Promise<boolean> {
+    const user = await this.userModel.findOne({ email }).lean();
+    return !!user;
+  }
+
+  /**
+   * fetches another user's public info by their userId.
+   * returns an object with exactly these fields (defaulting to '' or false if absent)
+   */
+  async getPublicProfile(userId: string): Promise<{
+    username: string;
+    phoneNumber: string;
+    handleName: string;
+    bio: string;
+    address: string;
+    gender: string;
+    profilePic: string;
+    isVip: boolean;
+  }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new NotFoundException('User not found');
+    }
+
+    const user = await this.userModel.findById(userId).lean().select({
+      username: 1,
+      phoneNumber: 1,
+      handleName: 1,
+      bio: 1,
+      address: 1,
+      gender: 1,
+      profilePic: 1,
+      isVip: 1,
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      username: user.username || '',
+      phoneNumber: user.phoneNumber || '',
+      handleName: user.handleName || '',
+      bio: user.bio || '',
+      address: user.address || '',
+      gender: user.gender || '',
+      profilePic: user.profilePic || '',
+      isVip: user.isVip || false,
+    };
   }
 }
