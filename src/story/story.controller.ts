@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ValidationPipe, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, UseGuards, Query } from '@nestjs/common';
 import { StoryService } from './story.service';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { UpdateStoryDto } from './dto/update-story.dto';
@@ -6,6 +6,7 @@ import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
 import { GetStoriesByIdsDto } from './dto/get-stories.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from'src/common/decorators/current-user.decorator';
+import { getFollowingStories } from './dto/get-flwing.dto';
 
 @Controller('stories')
 @UseGuards(JwtRefreshAuthGuard)
@@ -29,8 +30,9 @@ export class StoryController {
   @Get('following')
   async getFollowingStories(
     @CurrentUser('sub') userId: string,
+    @Query() query: getFollowingStories
   ) {
-    return await this.storyService.getStoryFollowing(userId);
+      return await this.storyService.getStoryFollowing(userId, query.page);
   }
 
   @Post('by-ids')
