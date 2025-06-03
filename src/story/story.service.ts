@@ -39,69 +39,91 @@ export class StoryService {
     return stories;
   }
 
-  async getStoryFollowing(userId: string) {
+  async getStoryFollowing(userId: string, page: number) {
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    const currentUserStories = await this.findStoriesByUser(userId);
+    const currentUserProfile = await this.userService.getPublicProfile(userId);
+
     const followingRelations = await this.relationServ.findByUserAndFilter(userId, 'following');
-    if (followingRelations.length === 0) { return []; }
+    if (followingRelations.length === 0) {
+        return currentUserStories.length > 0 ? [{
+            _id: userId,
+            handleName: currentUserProfile.handleName,
+            profilePic: currentUserProfile.profilePic,
+            stories: currentUserStories.map(story => story._id)
+        }] : [];
+    }
 
     const followingUserIds = followingRelations.map(relation => {
-      const userOneIdStr = relation.userOneID.toString();
-      const userTwoIdStr = relation.userTwoID.toString();
-      return userOneIdStr === userId ? userTwoIdStr : userOneIdStr;
+        const userOneIdStr = relation.userOneID.toString();
+        const userTwoIdStr = relation.userTwoID.toString();
+        return userOneIdStr === userId ? userTwoIdStr : userOneIdStr;
     });
 
-    const followingObjectIds = followingUserIds.map(id => new Types.ObjectId(id));
+    const paginatedUserIds = followingUserIds.slice(skip, skip + limit - 1);
+
+    const followingObjectIds = paginatedUserIds.map(id => new Types.ObjectId(id));
 
     const stories = await this.storyRepo.find({
-      userId: { $in: followingObjectIds },
-      type: 'stories',
-      isArchived: false
+        userId: { $in: followingObjectIds },
+        type: 'stories',
+        isArchived: false
     });
 
     const storiesByUserId = stories.reduce((acc, story) => {
-      const userIdStr = story.userId.toString();
-      if (!acc[userIdStr]) {
-        acc[userIdStr] = [];
-      }
-      acc[userIdStr].push(story._id);
-      return acc;
+        const userIdStr = story.userId.toString();
+        if (!acc[userIdStr]) {
+            acc[userIdStr] = [];
+        }
+        acc[userIdStr].push(story._id);
+        return acc;
     }, {});
 
     const userProfiles = await Promise.all(
-      followingUserIds.map(async (userId) => {
-        try {
-          const profile = await this.userService.getPublicProfile(userId);
-          return {
-            userId,
-            profile
-          };
-        } catch (error) {
-          console.error(`Error fetching profile for user ${userId}:`, error);
-          return {
-            userId,
-            profile: {
-              handleName: '',
-              profilePic: ''
+        paginatedUserIds.map(async (userId) => {
+            try {
+                const profile = await this.userService.getPublicProfile(userId);
+                return {
+                    userId,
+                    profile
+                };
+            } catch (error) {
+                console.error(`Error fetching profile for user ${userId}:`, error);
+                return {
+                    userId,
+                    profile: {
+                        handleName: '',
+                        profilePic: ''
+                    }
+                };
             }
-          };
-        }
-      })
+        })
     );
 
-    // Tạo map để dễ dàng truy cập profile
     const userProfileMap = userProfiles.reduce((map, item) => {
-      map[item.userId] = item.profile;
-      return map;
+        map[item.userId] = item.profile;
+        return map;
     }, {});
 
-    const res = followingUserIds.map(item_id => ({
-      _id: item_id,
-      handleName: userProfileMap[item_id]?.handleName || '',
-      profilePic: userProfileMap[item_id]?.profilePic || '',
-      stories: storiesByUserId[item_id] || [],
+    const followingStories = paginatedUserIds.map(item_id => ({
+        _id: item_id,
+        handleName: userProfileMap[item_id]?.handleName || '',
+        profilePic: userProfileMap[item_id]?.profilePic || '',
+        stories: storiesByUserId[item_id] || [],
     }));
 
-    return res;
-  }
+    if (currentUserStories.length > 0) {
+        followingStories.unshift({
+            _id: userId,
+            handleName: currentUserProfile.handleName,
+            profilePic: currentUserProfile.profilePic,
+            stories: currentUserStories.map(story => story._id)
+        });
+    }
+  return followingStories;
+}
 
   async createStory(uid: string, storyDto: CreateStoryDto) {
     return this.storyRepo.create({
