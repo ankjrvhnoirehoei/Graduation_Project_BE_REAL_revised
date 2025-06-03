@@ -176,4 +176,25 @@ export class StoryService {
       mediaUrl: '',
     });
   }
+  
+  async archiveStory(uid: string, storyDto: UpdateStoryDto) {
+    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id  });
+    const uids = new Types.ObjectId(uid);
+    if (!existingStory.userId.equals(uids)) {
+      return "You can't archive this story"
+    }
+
+    const updateData: any = {
+      isArchived: true,
+    };
+
+    if (Object.keys(updateData).length === 0) {
+      return existingStory;
+    }
+
+    return await this.storyRepo.findOneAndUpdate(
+      { _id: storyDto._id },
+      updateData,
+    );
+  }
 }

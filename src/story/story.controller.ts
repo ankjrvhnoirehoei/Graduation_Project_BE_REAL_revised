@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, UseGuards, Query, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, UseGuards, Query, Param, ValidationPipe } from '@nestjs/common';
 import { StoryService } from './story.service';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { UpdateStoryDto } from './dto/update-story.dto';
@@ -36,7 +36,7 @@ export class StoryController {
 
   @Post('by-ids')
   async findStoriesByIds(
-    @Body() body: GetStoriesByIdsDto
+    @Body(new ValidationPipe()) body: GetStoriesByIdsDto
   ) {
     return this.storyService.findStoryById(body.storyIds);
   }
@@ -44,7 +44,7 @@ export class StoryController {
   @Post('create')
   async createStory(
     @CurrentUser('sub') userId: string,
-    @Body() storyDto: CreateStoryDto
+    @Body(new ValidationPipe()) storyDto: CreateStoryDto
   ){
     return this.storyService.createStory(userId, storyDto);
   }
@@ -52,7 +52,7 @@ export class StoryController {
   @Post('create-highlight')
   async createHighlightStory(
     @CurrentUser('sub') userId: string,
-    @Body() storyDto: CreateHighlightStoryDto
+    @Body(new ValidationPipe()) storyDto: CreateHighlightStoryDto
   ){
     return this.storyService.createHighlightStory(userId, storyDto);
   }
@@ -60,8 +60,16 @@ export class StoryController {
   @Patch('seen')
   async seenStory(
     @CurrentUser('sub') userId: string,
-    @Body() storyDto: UpdateStoryDto
+    @Body(new ValidationPipe()) storyDto: UpdateStoryDto
   ) {
     return this.storyService.seenStory(userId, storyDto);
+  }
+
+  @Patch('archive')
+  async archiveStory(
+    @CurrentUser('sub') userId: string,
+    @Body(new ValidationPipe()) storyDto: UpdateStoryDto
+  ) {
+    return this.storyService.archiveStory(userId, storyDto);
   }
 }
