@@ -15,10 +15,14 @@ import { RelationType } from './relation.schema';
 import { UpsertRelationDto } from './dto/upsert-relation.dto';
 import { ListRelationDto }   from './dto/list-relation.dto';
 import { GetFollowersDto } from './dto/get-followers.dto';
+import { UserService } from '../user/user.service';
 
 @Controller('relations')
 export class RelationController {
-  constructor(private readonly relationService: RelationService) {}
+  constructor(
+    private readonly relationService: RelationService,
+    private readonly userService: UserService,  
+  ) {}
 
   /**
    * PUT /relations/relation-action
@@ -74,18 +78,29 @@ export class RelationController {
     const { userId } = dto;
 
     // fetch all relationship records where someone follows `userId`
-    const records = await this.relationService.findByUserAndFilter(
+    const followerRecords = await this.relationService.findByUserAndFilter(
       userId,
       'followers',
     );
+    // fetch all relationship records where `userId` follows
+    const followingRecords = await this.relationService.findByUserAndFilter(
+    userId,
+    'following',
+  );
+
+    const allRecords = [...followerRecords, ...followingRecords];
 
     // map each record to the follower's ID
-    const followers = records.map(r => {
+    const followsID = allRecords.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // if userId is in userTwoID, follower is userOneID; otherwise follower is userTwoID
       return u2 === userId ? u1 : u2;
     });
+
+    const followers = await Promise.all(
+      followsID.map((id) => this.userService.getUserById(id)),
+    );
 
     return { userId, followers };
   }
