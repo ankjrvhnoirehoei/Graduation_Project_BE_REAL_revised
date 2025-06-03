@@ -153,6 +153,14 @@ export class PostService {
           as: 'music',
         },
       },
+      {
+        $lookup: {
+          from: 'comments',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'comments',
+        },
+      },
       { $unwind: { path: '$music', preserveNullAndEmptyArrays: true } },
       {
         $project: {
@@ -218,6 +226,14 @@ export class PostService {
           localField: '_id',
           foreignField: 'postId',
           as: 'likes',
+        },
+      },
+      {
+        $lookup: {
+          from: 'comments',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'comments',
         },
       },
       {
