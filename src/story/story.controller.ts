@@ -6,7 +6,6 @@ import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
 import { GetStoriesByIdsDto } from './dto/get-stories.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from'src/common/decorators/current-user.decorator';
-import { getFollowingStories } from './dto/get-flwing.dto';
 
 @Controller('stories')
 @UseGuards(JwtRefreshAuthGuard)
@@ -30,7 +29,7 @@ export class StoryController {
   @Get('following')
   async getFollowingStories(
     @CurrentUser('sub') userId: string,
-    @Query() query: getFollowingStories
+    @Query() query,
   ) {
       return await this.storyService.getStoryFollowing(userId, query.page);
   }
