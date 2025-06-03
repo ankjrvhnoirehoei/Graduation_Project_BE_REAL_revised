@@ -156,14 +156,6 @@ export class PostService {
       {
         $lookup: {
           from: 'comments',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'comments',
-        },
-      },
-      {
-        $lookup: {
-          from: 'comments',
           let: { postId: '$_id' },
           pipeline: [
             {
@@ -250,14 +242,6 @@ export class PostService {
           localField: '_id',
           foreignField: 'postId',
           as: 'likes',
-        },
-      },
-      {
-        $lookup: {
-          from: 'comments',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'comments',
         },
       },
       {
