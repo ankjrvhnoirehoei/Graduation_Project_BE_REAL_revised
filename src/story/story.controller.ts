@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, UseGuards, Query, Param } from '@nestjs/common';
 import { StoryService } from './story.service';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { UpdateStoryDto } from './dto/update-story.dto';
@@ -19,9 +19,9 @@ export class StoryController {
     return this.storyService.findStoriesByUser(userId);
   }
 
-  @Get('highlights/user')
+  @Get('highlights/user/:userId')
   async findHighlights(
-    @CurrentUser('sub') userId: string,
+    @Param('userId') userId: string,
   ) {
     return this.storyService.findHighlightsByUser(userId);
   }

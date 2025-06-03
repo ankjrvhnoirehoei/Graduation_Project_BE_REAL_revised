@@ -48,12 +48,12 @@ export class StoryService {
 
     const followingRelations = await this.relationServ.findByUserAndFilter(userId, 'following');
     if (followingRelations.length === 0) {
-        return currentUserStories.length > 0 ? [{
+        return [{
             _id: userId,
             handleName: currentUserProfile.handleName,
             profilePic: currentUserProfile.profilePic,
             stories: currentUserStories.map(story => story._id)
-        }] : [];
+        }];
     }
 
     const followingUserIds = followingRelations.map(relation => {
