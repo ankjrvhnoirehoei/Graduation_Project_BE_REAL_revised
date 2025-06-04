@@ -137,13 +137,13 @@ export class PostService {
       {
         $lookup: {
           from: 'comments',
-          let: { postId: '$_id' },
+          let: { postID: '$_id' },
           pipeline: [
             {
               $match: {
                 $expr: {
                   $and: [
-                    { $eq: ['$postID', '$$postId'] },
+                    { $eq: ['$postID', '$$postID'] },
                     { $eq: ['$isDeleted', false] },
                   ],
                 },
@@ -287,13 +287,13 @@ export class PostService {
       {
         $lookup: {
           from: 'comments',
-          let: { postId: '$_id' },
+          let: { postID: '$_id' },
           pipeline: [
             {
               $match: {
                 $expr: {
                   $and: [
-                    { $eq: ['$postID', '$$postId'] },
+                    { $eq: ['$postID', '$$postID'] },
                     { $eq: ['$isDeleted', false] },
                   ],
                 },
