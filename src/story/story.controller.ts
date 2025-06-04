@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, UseGuards, Query, Param, ValidationPipe } from '@nestjs/common';
 import { StoryService } from './story.service';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { UpdateStoryDto } from './dto/update-story.dto';
@@ -6,7 +6,6 @@ import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
 import { GetStoriesByIdsDto } from './dto/get-stories.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from'src/common/decorators/current-user.decorator';
-import { getFollowingStories } from './dto/get-flwing.dto';
 
 @Controller('stories')
 @UseGuards(JwtRefreshAuthGuard)
@@ -20,9 +19,9 @@ export class StoryController {
     return this.storyService.findStoriesByUser(userId);
   }
 
-  @Get('highlights/user')
+  @Get('highlights/user/:userId')
   async findHighlights(
-    @CurrentUser('sub') userId: string,
+    @Param('userId') userId: string,
   ) {
     return this.storyService.findHighlightsByUser(userId);
   }
@@ -30,14 +29,14 @@ export class StoryController {
   @Get('following')
   async getFollowingStories(
     @CurrentUser('sub') userId: string,
-    @Query() query: getFollowingStories
+    @Query() query,
   ) {
       return await this.storyService.getStoryFollowing(userId, query.page);
   }
 
   @Post('by-ids')
   async findStoriesByIds(
-    @Body() body: GetStoriesByIdsDto
+    @Body(new ValidationPipe()) body: GetStoriesByIdsDto
   ) {
     return this.storyService.findStoryById(body.storyIds);
   }
@@ -45,7 +44,7 @@ export class StoryController {
   @Post('create')
   async createStory(
     @CurrentUser('sub') userId: string,
-    @Body() storyDto: CreateStoryDto
+    @Body(new ValidationPipe()) storyDto: CreateStoryDto
   ){
     return this.storyService.createStory(userId, storyDto);
   }
@@ -53,7 +52,7 @@ export class StoryController {
   @Post('create-highlight')
   async createHighlightStory(
     @CurrentUser('sub') userId: string,
-    @Body() storyDto: CreateHighlightStoryDto
+    @Body(new ValidationPipe()) storyDto: CreateHighlightStoryDto
   ){
     return this.storyService.createHighlightStory(userId, storyDto);
   }
@@ -61,8 +60,16 @@ export class StoryController {
   @Patch('seen')
   async seenStory(
     @CurrentUser('sub') userId: string,
-    @Body() storyDto: UpdateStoryDto
+    @Body(new ValidationPipe()) storyDto: UpdateStoryDto
   ) {
     return this.storyService.seenStory(userId, storyDto);
+  }
+
+  @Patch('archive')
+  async archiveStory(
+    @CurrentUser('sub') userId: string,
+    @Body(new ValidationPipe()) storyDto: UpdateStoryDto
+  ) {
+    return this.storyService.archiveStory(userId, storyDto);
   }
 }

@@ -48,12 +48,12 @@ export class StoryService {
 
     const followingRelations = await this.relationServ.findByUserAndFilter(userId, 'following');
     if (followingRelations.length === 0) {
-        return currentUserStories.length > 0 ? [{
+        return [{
             _id: userId,
             handleName: currentUserProfile.handleName,
             profilePic: currentUserProfile.profilePic,
             stories: currentUserStories.map(story => story._id)
-        }] : [];
+        }];
     }
 
     const followingUserIds = followingRelations.map(relation => {
@@ -175,5 +175,26 @@ export class StoryService {
       viewerId: [],
       mediaUrl: '',
     });
+  }
+  
+  async archiveStory(uid: string, storyDto: UpdateStoryDto) {
+    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id  });
+    const uids = new Types.ObjectId(uid);
+    if (!existingStory.userId.equals(uids)) {
+      return "You can't archive this story"
+    }
+
+    const updateData: any = {
+      isArchived: true,
+    };
+
+    if (Object.keys(updateData).length === 0) {
+      return existingStory;
+    }
+
+    return await this.storyRepo.findOneAndUpdate(
+      { _id: storyDto._id },
+      updateData,
+    );
   }
 }
