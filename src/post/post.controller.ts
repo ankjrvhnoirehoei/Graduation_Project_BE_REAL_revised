@@ -34,10 +34,10 @@ export class PostController {
     return this.postService.createPostWithMediaAndMusic(mergedPostWithMediaDto);
   }
 
-  @Get('get-all-with-media')
-  async getAllWithMedia(@CurrentUser('sub') userId: string) {
-    return this.postService.findAllWithMedia(userId);
-  }
+  // @Get('get-all-with-media')
+  // async getAllWithMedia(@CurrentUser('sub') userId: string) {
+  //   return this.postService.findAllWithMedia(userId);
+  // }
 
   @Get('get-all-reel-media')
   async getAllReelMedia(@CurrentUser('sub') userId: string) {

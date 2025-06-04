@@ -77,153 +77,153 @@ export class PostService {
     return post.type as 'post' | 'reel' | 'music';
   }
 
-  async findAllWithMedia(userId: string): Promise<any[]> {
-    const currentUserObjectId = new Types.ObjectId(userId);
+  // async findAllWithMedia(userId: string): Promise<any[]> {
+  //   const currentUserObjectId = new Types.ObjectId(userId);
 
-    return this.postModel.aggregate([
-      {
-        $lookup: {
-          from: 'hidden_posts',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postId'] },
-                    { $eq: ['$userID', currentUserObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'hidden',
-        },
-      },
-      {
-        $match: {
-          isEnable: true,
-          nsfw: false,
-          hidden: { $eq: [] },
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      { $limit: 100 },
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: '$user' },
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes',
-        },
-      },
-      {
-        $lookup: {
-          from: 'comments',
-          let: { postID: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postID'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'comments',
-        },
-      },
-      {
-        $addFields: {
-          commentCount: { $size: '$comments' },
-          likeCount: { $size: '$likes' },
-        },
-      },
-      {
-        $lookup: {
-          from: 'postlikes',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', currentUserObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'userLikeEntry',
-        },
-      },
-      {
-        $addFields: {
-          isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
-        },
-      },
-      {
-        $lookup: {
-          from: 'music',
-          localField: 'musicID',
-          foreignField: '_id',
-          as: 'music',
-        },
-      },
-      {
-        $unwind: {
-          path: '$music',
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $project: {
-          _id: 1,
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          location: 1,
-          isArchived: 1,
-          viewCount: 1,
-          share: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          media: 1,
-          isLike: 1,
-          likeCount: 1,
-          commentCount: 1,
-          music: 1,
-          'user._id': 1,
-          'user.handleName': 1,
-          'user.profilePic': 1,
-        },
-      },
-    ]);
-  }
+  //   return this.postModel.aggregate([
+  //     {
+  //       $lookup: {
+  //         from: 'hidden_posts',
+  //         let: { postId: '$_id' },
+  //         pipeline: [
+  //           {
+  //             $match: {
+  //               $expr: {
+  //                 $and: [
+  //                   { $eq: ['$postID', '$$postId'] },
+  //                   { $eq: ['$userID', currentUserObjectId] },
+  //                 ],
+  //               },
+  //             },
+  //           },
+  //         ],
+  //         as: 'hidden',
+  //       },
+  //     },
+  //     {
+  //       $match: {
+  //         isEnable: true,
+  //         nsfw: false,
+  //         hidden: { $eq: [] },
+  //       },
+  //     },
+  //     { $sort: { createdAt: -1 } },
+  //     { $limit: 100 },
+  //     {
+  //       $lookup: {
+  //         from: 'media',
+  //         localField: '_id',
+  //         foreignField: 'postID',
+  //         as: 'media',
+  //       },
+  //     },
+  //     {
+  //       $lookup: {
+  //         from: 'users',
+  //         localField: 'userID',
+  //         foreignField: '_id',
+  //         as: 'user',
+  //       },
+  //     },
+  //     { $unwind: '$user' },
+  //     {
+  //       $lookup: {
+  //         from: 'postlikes',
+  //         localField: '_id',
+  //         foreignField: 'postId',
+  //         as: 'likes',
+  //       },
+  //     },
+  //     {
+  //       $lookup: {
+  //         from: 'comments',
+  //         let: { postID: '$_id' },
+  //         pipeline: [
+  //           {
+  //             $match: {
+  //               $expr: {
+  //                 $and: [
+  //                   { $eq: ['$postID', '$$postID'] },
+  //                   { $eq: ['$isDeleted', false] },
+  //                 ],
+  //               },
+  //             },
+  //           },
+  //         ],
+  //         as: 'comments',
+  //       },
+  //     },
+  //     {
+  //       $addFields: {
+  //         commentCount: { $size: '$comments' },
+  //         likeCount: { $size: '$likes' },
+  //       },
+  //     },
+  //     {
+  //       $lookup: {
+  //         from: 'postlikes',
+  //         let: { postId: '$_id' },
+  //         pipeline: [
+  //           {
+  //             $match: {
+  //               $expr: {
+  //                 $and: [
+  //                   { $eq: ['$postId', '$$postId'] },
+  //                   { $eq: ['$userId', currentUserObjectId] },
+  //                 ],
+  //               },
+  //             },
+  //           },
+  //         ],
+  //         as: 'userLikeEntry',
+  //       },
+  //     },
+  //     {
+  //       $addFields: {
+  //         isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
+  //       },
+  //     },
+  //     {
+  //       $lookup: {
+  //         from: 'music',
+  //         localField: 'musicID',
+  //         foreignField: '_id',
+  //         as: 'music',
+  //       },
+  //     },
+  //     {
+  //       $unwind: {
+  //         path: '$music',
+  //         preserveNullAndEmptyArrays: true,
+  //       },
+  //     },
+  //     {
+  //       $project: {
+  //         _id: 1,
+  //         userID: 1,
+  //         type: 1,
+  //         caption: 1,
+  //         isFlagged: 1,
+  //         nsfw: 1,
+  //         isEnable: 1,
+  //         location: 1,
+  //         isArchived: 1,
+  //         viewCount: 1,
+  //         share: 1,
+  //         createdAt: 1,
+  //         updatedAt: 1,
+  //         media: 1,
+  //         isLike: 1,
+  //         likeCount: 1,
+  //         commentCount: 1,
+  //         music: 1,
+  //         'user._id': 1,
+  //         'user.handleName': 1,
+  //         'user.profilePic': 1,
+  //       },
+  //     },
+  //   ]);
+  // }
 
   async findReelsWithMedia(userId: string): Promise<any[]> {
     const currentUserObjectId = new Types.ObjectId(userId);
