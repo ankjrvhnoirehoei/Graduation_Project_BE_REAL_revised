@@ -3,17 +3,17 @@ import { CreateStoryDto } from './dto/create-story.dto';
 import { StoryRepository } from './story.repository';
 import { Types } from 'mongoose';
 import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
-import { Type } from 'class-transformer';
 import { UpdateStoryDto } from './dto/update-story.dto';
 import { RelationService } from 'src/relation/relation.service';
-// import { UpdateStoryDto } from './dto/update-story.dto';
+import { UserService } from 'src/user/user.service';
 
 @Injectable()
 export class StoryService {
   constructor(
     private readonly storyRepo: StoryRepository,
-    private readonly relationServ: RelationService
-  ) {}
+    private readonly relationServ: RelationService,
+    private readonly userService: UserService,
+  ) { }
 
   async findStoriesByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
@@ -39,36 +39,96 @@ export class StoryService {
     return stories;
   }
 
-  async getStoryFollowing(userId: string) {
+  async getStoryFollowing(userId: string, page: number) {
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    const currentUserStories = await this.findStoriesByUser(userId);
+    const currentUserProfile = await this.userService.getPublicProfile(userId);
+
     const followingRelations = await this.relationServ.findByUserAndFilter(userId, 'following');
-    if (followingRelations.length === 0) { return [] }
+    if (followingRelations.length === 0) {
+        return [{
+            _id: userId,
+            handleName: currentUserProfile.handleName,
+            profilePic: currentUserProfile.profilePic,
+            stories: currentUserStories.map(story => story._id)
+        }];
+    }
 
     const followingUserIds = followingRelations.map(relation => {
-      const userOneIdStr = relation.userOneID.toString();
-      const userTwoIdStr = relation.userTwoID.toString();
-
-      return userOneIdStr === userId ? userTwoIdStr : userOneIdStr;
+        const userOneIdStr = relation.userOneID.toString();
+        const userTwoIdStr = relation.userTwoID.toString();
+        return userOneIdStr === userId ? userTwoIdStr : userOneIdStr;
     });
 
-    const followingObjectIds = followingUserIds.map(id => new Types.ObjectId(id));
+    const paginatedUserIds = followingUserIds.slice(skip, skip + limit - 1);
+
+    const followingObjectIds = paginatedUserIds.map(id => new Types.ObjectId(id));
 
     const stories = await this.storyRepo.find({
-      userId: { $in: followingObjectIds },
-      type: 'stories',
-      isArchived: false,
+        userId: { $in: followingObjectIds },
+        type: 'stories',
+        isArchived: false
     });
 
-    // Sort theo thời gian tạo mới nhất
-    // stories.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const storiesByUserId = stories.reduce((acc, story) => {
+        const userIdStr = story.userId.toString();
+        if (!acc[userIdStr]) {
+            acc[userIdStr] = [];
+        }
+        acc[userIdStr].push(story._id);
+        return acc;
+    }, {});
 
-    return stories;
-  }
+    const userProfiles = await Promise.all(
+        paginatedUserIds.map(async (userId) => {
+            try {
+                const profile = await this.userService.getPublicProfile(userId);
+                return {
+                    userId,
+                    profile
+                };
+            } catch (error) {
+                console.error(`Error fetching profile for user ${userId}:`, error);
+                return {
+                    userId,
+                    profile: {
+                        handleName: '',
+                        profilePic: ''
+                    }
+                };
+            }
+        })
+    );
 
-  async createStory(storyDto: CreateStoryDto) {
-    const uid = new Types.ObjectId(storyDto.userId);
+    const userProfileMap = userProfiles.reduce((map, item) => {
+        map[item.userId] = item.profile;
+        return map;
+    }, {});
+
+    const followingStories = paginatedUserIds.map(item_id => ({
+        _id: item_id,
+        handleName: userProfileMap[item_id]?.handleName || '',
+        profilePic: userProfileMap[item_id]?.profilePic || '',
+        stories: storiesByUserId[item_id] || [],
+    }));
+
+    if (currentUserStories.length > 0) {
+        followingStories.unshift({
+            _id: userId,
+            handleName: currentUserProfile.handleName,
+            profilePic: currentUserProfile.profilePic,
+            stories: currentUserStories.map(story => story._id)
+        });
+    }
+  return followingStories;
+}
+
+  async createStory(uid: string, storyDto: CreateStoryDto) {
     return this.storyRepo.create({
       ...storyDto,
-      userId: uid,
+      userId: new Types.ObjectId(uid),
       type: "stories",
       isArchived: false,
       viewerId: [],
@@ -78,20 +138,23 @@ export class StoryService {
     });
   }
 
-  async seenStory(storyDto: UpdateStoryDto) {
-  const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
+  async seenStory(
+    uid: string,
+    storyDto: UpdateStoryDto
+  ) {
+    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id  });
 
-    const viewerId = new Types.ObjectId(storyDto.viewerId);
+    const viewerId = new Types.ObjectId(uid);
 
     const hasViewed = existingStory.viewerId?.some(id => id.equals(viewerId));
-    
+
     const updateData: any = {};
-    
+
     if (!hasViewed) {
       updateData.$inc = { viewsCount: 1 };
       updateData.$push = { viewerId: viewerId };
     }
-    
+
     if (Object.keys(updateData).length === 0) {
       return existingStory;
     }
@@ -100,18 +163,38 @@ export class StoryService {
       { _id: storyDto._id },
       updateData,
     );
-}
+  }
 
-  async createHighlightStory(storyDto: CreateHighlightStoryDto) {
-    const uid = new Types.ObjectId(storyDto.userId);
+  async createHighlightStory(uid: string, storyDto: CreateHighlightStoryDto) {
     return this.storyRepo.create({
       ...storyDto,
-      userId: uid,
+      userId: new Types.ObjectId(uid),
       type: "highlights",
       viewsCount: 0,
       isArchived: true,
       viewerId: [],
       mediaUrl: '',
     });
+  }
+  
+  async archiveStory(uid: string, storyDto: UpdateStoryDto) {
+    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id  });
+    const uids = new Types.ObjectId(uid);
+    if (!existingStory.userId.equals(uids)) {
+      return "You can't archive this story"
+    }
+
+    const updateData: any = {
+      isArchived: true,
+    };
+
+    if (Object.keys(updateData).length === 0) {
+      return existingStory;
+    }
+
+    return await this.storyRepo.findOneAndUpdate(
+      { _id: storyDto._id },
+      updateData,
+    );
   }
 }

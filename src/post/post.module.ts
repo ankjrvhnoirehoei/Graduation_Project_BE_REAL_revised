@@ -16,5 +16,6 @@ import { MuxModule } from 'src/mux/mux.module';
   ],
   controllers: [PostController],
   providers: [PostService],
+  exports: [PostService],
 })
 export class PostModule {}
