@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { CreatePostDto } from './dto/post.dto';
@@ -8,6 +8,7 @@ import { CreateMediaDto } from 'src/media/dto/media.dto';
 import { MusicService } from 'src/music/music.service';
 import { MusicDto } from 'src/music/dto/music.dto';
 import { Music } from 'src/music/music.schema';
+import { MuxService } from 'src/mux/mux.service';
 
 @Injectable()
 export class PostService {
@@ -15,6 +16,7 @@ export class PostService {
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
     private readonly musicService: MusicService,
+    private readonly muxService: MuxService,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -26,39 +28,56 @@ export class PostService {
   }
 
   async createPostWithMediaAndMusic(postWithMediaDto: {
-  post: CreatePostDto;
-  media: CreateMediaDto[];
-  music?: MusicDto;
-}): Promise<{ post: Post; media: any[]; music?: Music }> {
-  const userId = postWithMediaDto.post.userID;
-  if (!Types.ObjectId.isValid(userId)) {
-    throw new BadRequestException('Invalid userId from token');
+    post: CreatePostDto;
+    media: CreateMediaDto[];
+    music?: MusicDto;
+  }): Promise<{ post: Post; media: any[]; music?: Music }> {
+    const logger = new Logger('PostService');
+
+    const userId = postWithMediaDto.post.userID;
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid userId from token');
+    }
+
+    let musicCreated: Music | null = null;
+    if (postWithMediaDto.music) {
+      musicCreated = await this.musicService.create(postWithMediaDto.music);
+    }
+
+    const postData: any = {
+      ...postWithMediaDto.post,
+      userID: new Types.ObjectId(userId),
+      musicID: musicCreated ? musicCreated._id : undefined,
+      viewCount: postWithMediaDto.post.viewCount ?? 0,
+      isEnable: postWithMediaDto.post.isEnable ?? true,
+    };
+
+    const createdPost = await this.create(postData);
+    const postId = (createdPost as any)._id;
+
+    const mediaCreated = await Promise.all(
+      postWithMediaDto.media.map(async (media) => {
+        let finalVideoUrl = media.videoUrl;
+
+        if (media.videoUrl) {
+          const muxResult = await this.muxService.uploadVideo(media.videoUrl);
+          finalVideoUrl = muxResult.m3u8Url;
+        }
+
+        return this.mediaService.create({
+          ...media,
+          postID: postId,
+          videoUrl: finalVideoUrl,
+        });
+      }),
+    );
+
+    return {
+      post: createdPost,
+      media: mediaCreated,
+      music: musicCreated ?? undefined,
+    };
   }
-
-  let musicCreated: Music | null = null;
-  if (postWithMediaDto.music) {
-    musicCreated = await this.musicService.create(postWithMediaDto.music);
-  }
-
-  const postData: any = {
-    ...postWithMediaDto.post,
-    userID: new Types.ObjectId(userId),
-    musicID: musicCreated ? musicCreated._id : undefined,
-    viewCount: postWithMediaDto.post.viewCount ?? 0,
-    isEnable: postWithMediaDto.post.isEnable ?? true,
-  };
-
-  const createdPost: any = await this.create(postData);
-  const postId = createdPost._id;
-
-  const mediaCreated = await Promise.all(
-    postWithMediaDto.media.map((media) =>
-      this.mediaService.create({ ...media, postID: postId }),
-    ),
-  );
-
-  return { post: createdPost, media: mediaCreated, music: musicCreated ?? undefined };
-}
 
   async findAllWithMedia(): Promise<any[]> {
     return this.postModel.aggregate([
