@@ -10,10 +10,14 @@ export class StreamService {
     try {
       const response = await axios.post(
         `https://api.cloudflare.com/client/v4/accounts/${this.ACCOUNT_ID}/stream/direct_upload`,
-        {},
+        {
+          maxDurationSeconds: 3600,
+          requireSignedURLs: false,
+        },
         {
           headers: {
             Authorization: `Bearer ${this.API_TOKEN}`,
+            'Content-Type': 'application/json',
           },
         },
       );
@@ -28,7 +32,9 @@ export class StreamService {
         'Error creating direct upload URL:',
         error.response?.data || error.message,
       );
-      throw new InternalServerErrorException('Internal server error');
+      throw new InternalServerErrorException(
+        error.response?.data || 'Internal server error',
+      );
     }
   }
 }
