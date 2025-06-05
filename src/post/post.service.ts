@@ -97,15 +97,33 @@ export class PostService {
 
     return this.postModel.aggregate([
       {
+        $lookup: {
+          from: 'hidden_posts',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postId'] },
+                    { $eq: ['$userID', currentUserObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'hidden',
+        },
+      },
+      {
         $match: {
-          type: { $in: ['reel', 'post'] },
           isEnable: true,
+          nsfw: false,
+          hidden: { $eq: [] },
         },
       },
       { $sort: { createdAt: -1 } },
       { $limit: 100 },
-      { $sample: { size: 20 } },
-
       {
         $lookup: {
           from: 'media',
@@ -132,7 +150,27 @@ export class PostService {
         },
       },
       {
+        $lookup: {
+          from: 'comments',
+          let: { postID: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postID'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'comments',
+        },
+      },
+      {
         $addFields: {
+          commentCount: { $size: '$comments' },
           likeCount: { $size: '$likes' },
         },
       },
@@ -169,30 +207,11 @@ export class PostService {
         },
       },
       {
-        $lookup: {
-          from: 'comments',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postId'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'comments',
+        $unwind: {
+          path: '$music',
+          preserveNullAndEmptyArrays: true,
         },
       },
-      {
-        $addFields: {
-          commentCount: { $size: '$comments' },
-        },
-      },
-      { $unwind: { path: '$music', preserveNullAndEmptyArrays: true } },
       {
         $project: {
           _id: 1,
@@ -209,8 +228,9 @@ export class PostService {
           createdAt: 1,
           updatedAt: 1,
           media: 1,
-          likeCount: 1,
           isLike: 1,
+          likeCount: 1,
+          commentCount: 1,
           music: 1,
           'user._id': 1,
           'user.handleName': 1,
@@ -225,10 +245,30 @@ export class PostService {
 
     return this.postModel.aggregate([
       {
+        $lookup: {
+          from: 'hidden_posts',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postId'] },
+                    { $eq: ['$userID', currentUserObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'hidden',
+        },
+      },
+      {
         $match: {
           type: 'reel',
           isEnable: true,
           nsfw: false,
+          hidden: { $eq: [] },
         },
       },
       { $sort: { createdAt: -1 } },
@@ -262,13 +302,13 @@ export class PostService {
       {
         $lookup: {
           from: 'comments',
-          let: { postId: '$_id' },
+          let: { postID: '$_id' },
           pipeline: [
             {
               $match: {
                 $expr: {
                   $and: [
-                    { $eq: ['$postID', '$$postId'] },
+                    { $eq: ['$postID', '$$postID'] },
                     { $eq: ['$isDeleted', false] },
                   ],
                 },
@@ -281,10 +321,6 @@ export class PostService {
       {
         $addFields: {
           commentCount: { $size: '$comments' },
-        },
-      },
-      {
-        $addFields: {
           likeCount: { $size: '$likes' },
         },
       },
@@ -313,6 +349,20 @@ export class PostService {
         },
       },
       {
+        $lookup: {
+          from: 'music',
+          localField: 'musicID',
+          foreignField: '_id',
+          as: 'music',
+        },
+      },
+      {
+        $unwind: {
+          path: '$music',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
         $project: {
           _id: 1,
           userID: 1,
@@ -330,6 +380,8 @@ export class PostService {
           media: 1,
           isLike: 1,
           likeCount: 1,
+          commentCount: 1,
+          music: 1,
           'user._id': 1,
           'user.handleName': 1,
           'user.profilePic': 1,
