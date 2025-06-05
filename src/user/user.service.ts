@@ -137,4 +137,85 @@ export class UserService {
       isVip: user.isVip || false,
     };
   }
+
+  /**
+   * run a paginated search on Users collection
+   *   'username' mode: split keyword on spaces, requiring all tokens in username (case-insensitive)
+   *   'handleName' mode: remove all whitespace from keyword, then do a case-insensitive substring match on handleName
+   */
+  async searchUsersRawPaginated(
+    keyword: string,
+    mode: 'username' | 'handleName',
+    page: number,
+    limit: number,
+  ): Promise<{ items: Partial<User>[]; totalCount: number }> {
+    // build the 'match' stage based on mode
+    let matchStage: Record<string, any> = { deletedAt: { $eq: false } };
+
+    if (mode === 'username') {
+      // multi‐word, case‐insensitive: each token must appear somewhere in `username`
+      const tokens = keyword
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 0);
+
+      if (tokens.length > 1) {
+        const andClauses = tokens.map((tok) => ({
+          username: { $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+        }));
+        matchStage = { ...matchStage, $and: andClauses };
+      } else {
+        // single token
+        const single = tokens[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        matchStage = {
+          ...matchStage,
+          username: { $regex: single, $options: 'i' },
+        };
+      }
+    } else {
+      // mode === 'handleName'
+      // remove all whitespace from keyword
+      const searchKey = keyword.replace(/\s+/g, '').toLowerCase();
+      // case‐insensitive substring match on handleName
+      matchStage = {
+        ...matchStage,
+        handleName: { $regex: searchKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+      };
+    }
+
+    const skipCount = (page - 1) * limit;
+
+    const pipeline = [
+      { $match: matchStage },
+      { $sort: { createdAt: -1 as -1 } },
+      {
+        $facet: {
+          metadata: [{ $count: 'totalCount' }],
+          data: [
+            {
+              $project: {
+                _id: 1,
+                username: 1,
+                phoneNumber: 1,
+                handleName: 1,
+                bio: 1,
+                address: 1,
+                gender: 1,
+                profilePic: 1,
+                isVip: 1,
+              },
+            },
+            { $skip: skipCount },
+            { $limit: limit },
+          ],
+        },
+      },
+    ];
+
+    const [aggResult] = await this.userModel.aggregate(pipeline).exec();
+    const totalCount =
+      aggResult.metadata.length > 0 ? aggResult.metadata[0].totalCount : 0;
+    return { items: aggResult.data, totalCount };
+  }
 }

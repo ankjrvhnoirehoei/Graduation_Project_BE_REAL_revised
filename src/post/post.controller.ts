@@ -7,11 +7,14 @@ import {
   UseGuards,
   BadRequestException,
   Query,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { SearchDto } from './dto/search.dto';
 
 @Controller('posts')
 @UseGuards(JwtRefreshAuthGuard)
@@ -109,5 +112,26 @@ export class PostController {
     }
 
     return response;
+  }
+
+  @Post('search')
+  async searchByCaption(
+    @Body() { keyword }: SearchDto,
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ) {
+    const trimmed = keyword?.trim();
+    if (!trimmed) {
+      throw new BadRequestException('Keyword must not be empty');
+    }
+
+    return this.postService.searchByCaptionPaginated(userId, trimmed, page, limit);
+  }
+
+  @Get('tags')
+  async getRecentTags(@CurrentUser('sub') userId: string) {
+    const tags = await this.postService.getRecentTags(userId);
+    return { tags }; 
   }
 }
