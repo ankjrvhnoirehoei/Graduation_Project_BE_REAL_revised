@@ -23,10 +23,10 @@ export class StreamService {
       );
 
       if (response.data.success) {
-        const { uploadURL, id } = response.data.result;
+        const { uploadURL, uid } = response.data;
         return {
           uploadURL,
-          key: id,
+          key: uid,
         };
       } else {
         throw new InternalServerErrorException('Failed to get upload URL');
