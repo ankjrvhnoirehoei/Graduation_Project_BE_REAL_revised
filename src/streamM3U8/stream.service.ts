@@ -6,7 +6,7 @@ export class StreamService {
   private ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
   private API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 
-  async createDirectUploadUrl(): Promise<string> {
+  async createDirectUploadUrl(): Promise<{ uploadURL: string; key: string }> {
     try {
       const response = await axios.post(
         `https://api.cloudflare.com/client/v4/accounts/${this.ACCOUNT_ID}/stream/direct_upload`,
@@ -23,7 +23,11 @@ export class StreamService {
       );
 
       if (response.data.success) {
-        return response.data.result.uploadURL;
+        const { uploadURL, id } = response.data.result;
+        return {
+          uploadURL,
+          key: id,
+        };
       } else {
         throw new InternalServerErrorException('Failed to get upload URL');
       }
