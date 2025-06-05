@@ -96,30 +96,26 @@ export class PostService {
     const currentUserObjectId = new Types.ObjectId(userId);
 
     return this.postModel.aggregate([
+      // Lấy hidden posts của user
       {
         $lookup: {
           from: 'hidden_posts',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postId'] },
-                    { $eq: ['$userID', currentUserObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
+          localField: '_id',
+          foreignField: 'postID',
           as: 'hidden',
         },
       },
+      // Loại bỏ các bài viết bị user ẩn
       {
         $match: {
+          $expr: {
+            $not: {
+              $in: [currentUserObjectId, '$hidden.userID'],
+            },
+          },
           isEnable: true,
           nsfw: false,
-          hidden: { $eq: [] },
+          type: { $in: ['post', 'reel'] }, // hoặc bỏ nếu không cần lọc theo type
         },
       },
       { $sort: { createdAt: -1 } },
@@ -247,33 +243,26 @@ export class PostService {
       {
         $lookup: {
           from: 'hidden_posts',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postId'] },
-                    { $eq: ['$userID', currentUserObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
+          localField: '_id',
+          foreignField: 'postID',
           as: 'hidden',
         },
       },
       {
         $match: {
+          $expr: {
+            $not: {
+              $in: [currentUserObjectId, '$hidden.userID'],
+            },
+          },
           type: 'reel',
           isEnable: true,
           nsfw: false,
-          hidden: { $eq: [] },
         },
       },
       { $sort: { createdAt: -1 } },
       { $limit: 100 },
-      { $sample: { size: 20 } },
+      { $sample: { size: 20 } }, // Random hóa kết quả
       {
         $lookup: {
           from: 'media',
@@ -625,7 +614,7 @@ export class PostService {
     }
     const currentUserObjectId = new Types.ObjectId(userId);
 
-    // build the caption‐matching condition 
+    // build the caption‐matching condition
     const keywordLower = keyword.toLowerCase();
     const tokens = keywordLower.split(/\s+/).filter((w) => w.length > 0);
 
@@ -633,7 +622,10 @@ export class PostService {
     if (tokens.length > 1) {
       // multi-word: require each token anywhere in the caption (case‐insensitive)
       const andClauses = tokens.map((tok) => ({
-        caption: { $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+        caption: {
+          $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+          $options: 'i',
+        },
       }));
       captionMatch = { $and: andClauses };
     } else {
@@ -739,7 +731,7 @@ export class PostService {
       { $match: { hidden: { $eq: [] } } },
 
       // sort by creation date (most recent first)
-      {  $sort: { createdAt: -1 as -1 }},
+      { $sort: { createdAt: -1 as -1 } },
 
       // use a $facet to get BOTH a totalCount and the 'data page'
       {
@@ -886,9 +878,8 @@ export class PostService {
 
     // run aggregation
     const [aggResult] = await this.postModel.aggregate(pipeline).exec();
-    const totalCount = (aggResult.metadata.length > 0)
-      ? aggResult.metadata[0].totalCount
-      : 0;
+    const totalCount =
+      aggResult.metadata.length > 0 ? aggResult.metadata[0].totalCount : 0;
 
     return { totalCount, items: aggResult.data };
   }
