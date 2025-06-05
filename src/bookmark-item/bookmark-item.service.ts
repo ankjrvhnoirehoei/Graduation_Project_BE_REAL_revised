@@ -21,20 +21,35 @@ export class BookmarkItemService {
   // returns all non-deleted items in a given playlist
   async findAllByPlaylist(
     playlistId: string,
-  ): Promise<BookmarkItem[]> {
+    page: number = 1,
+    limit: number = 20,
+  ): Promise<{ items: BookmarkItem[]; total: number }> {
     if (!Types.ObjectId.isValid(playlistId)) {
       throw new BadRequestException('Invalid playlist ID format.');
     }
 
-    return this.itemModel
+    const skip = (page - 1) * limit;
+    const playlistObjectId = new Types.ObjectId(playlistId);
+
+    // Get total count
+    const total = await this.itemModel.countDocuments({
+      playlistID: playlistObjectId,
+      isDeleted: false,
+    });
+
+    // Get paginated items
+    const items = await this.itemModel
       .find({
-        playlistID: new Types.ObjectId(playlistId),
+        playlistID: playlistObjectId,
         isDeleted: false,
       })
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .exec();
-  }
 
+    return { items, total };
+  }
   // validate that a playlist belongs to the given user, used to create or delete
   async validatePlaylistOwnership(
     playlistId: string,
