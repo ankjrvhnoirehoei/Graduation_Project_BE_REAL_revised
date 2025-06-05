@@ -23,9 +23,9 @@ export class StreamService {
       );
 
       if (response.data.success) {
-        const { uploadURL, uid } = response.data;
+        const { uploadURL, uid } = response.data.result;
         return {
-          uploadURL,
+          uploadURL: uploadURL,
           key: uid,
         };
       } else {
