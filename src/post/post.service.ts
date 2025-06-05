@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model, Types, PipelineStage } from 'mongoose';
 import { CreatePostDto } from './dto/post.dto';
 import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
@@ -8,6 +8,7 @@ import { CreateMediaDto } from 'src/media/dto/media.dto';
 import { MusicService } from 'src/music/music.service';
 import { MusicDto } from 'src/music/dto/music.dto';
 import { Music } from 'src/music/music.schema';
+import { MuxService } from 'src/mux/mux.service';
 
 @Injectable()
 export class PostService {
@@ -15,6 +16,7 @@ export class PostService {
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
     private readonly musicService: MusicService,
+    private readonly muxService: MuxService,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -30,6 +32,8 @@ export class PostService {
     media: CreateMediaDto[];
     music?: MusicDto;
   }): Promise<{ post: Post; media: any[]; music?: Music }> {
+    const logger = new Logger('PostService');
+
     const userId = postWithMediaDto.post.userID;
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid userId from token');
@@ -48,13 +52,24 @@ export class PostService {
       isEnable: postWithMediaDto.post.isEnable ?? true,
     };
 
-    const createdPost: any = await this.create(postData);
-    const postId = createdPost._id;
+    const createdPost = await this.create(postData);
+    const postId = (createdPost as any)._id;
 
     const mediaCreated = await Promise.all(
-      postWithMediaDto.media.map((media) =>
-        this.mediaService.create({ ...media, postID: postId }),
-      ),
+      postWithMediaDto.media.map(async (media) => {
+        let finalVideoUrl = media.videoUrl;
+
+        if (media.videoUrl) {
+          const muxResult = await this.muxService.uploadVideo(media.videoUrl);
+          finalVideoUrl = muxResult.m3u8Url;
+        }
+
+        return this.mediaService.create({
+          ...media,
+          postID: postId,
+          videoUrl: finalVideoUrl,
+        });
+      }),
     );
 
     return {
@@ -79,16 +94,36 @@ export class PostService {
 
   async findAllWithMedia(userId: string): Promise<any[]> {
     const currentUserObjectId = new Types.ObjectId(userId);
+
     return this.postModel.aggregate([
       {
+        $lookup: {
+          from: 'hidden_posts',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postId'] },
+                    { $eq: ['$userID', currentUserObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'hidden',
+        },
+      },
+      {
         $match: {
-          type: { $in: ['reel', 'post'] },
+          isEnable: true,
+          nsfw: false,
+          hidden: { $eq: [] },
         },
       },
       { $sort: { createdAt: -1 } },
       { $limit: 100 },
-      { $sample: { size: 20 } },
-
       {
         $lookup: {
           from: 'media',
@@ -97,7 +132,6 @@ export class PostService {
           as: 'media',
         },
       },
-
       {
         $lookup: {
           from: 'users',
@@ -107,7 +141,6 @@ export class PostService {
         },
       },
       { $unwind: '$user' },
-
       {
         $lookup: {
           from: 'postlikes',
@@ -117,11 +150,30 @@ export class PostService {
         },
       },
       {
+        $lookup: {
+          from: 'comments',
+          let: { postID: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postID'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'comments',
+        },
+      },
+      {
         $addFields: {
+          commentCount: { $size: '$comments' },
           likeCount: { $size: '$likes' },
         },
       },
-
       {
         $lookup: {
           from: 'postlikes',
@@ -143,12 +195,9 @@ export class PostService {
       },
       {
         $addFields: {
-          likedByCurrentUser: {
-            $gt: [{ $size: '$userLikeEntry' }, 0],
-          },
+          isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
         },
       },
-
       {
         $lookup: {
           from: 'music',
@@ -157,8 +206,12 @@ export class PostService {
           as: 'music',
         },
       },
-      { $unwind: { path: '$music', preserveNullAndEmptyArrays: true } },
-
+      {
+        $unwind: {
+          path: '$music',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
       {
         $project: {
           _id: 1,
@@ -175,8 +228,9 @@ export class PostService {
           createdAt: 1,
           updatedAt: 1,
           media: 1,
+          isLike: 1,
           likeCount: 1,
-          likedByCurrentUser: 1,
+          commentCount: 1,
           music: 1,
           'user._id': 1,
           'user.handleName': 1,
@@ -188,12 +242,33 @@ export class PostService {
 
   async findReelsWithMedia(userId: string): Promise<any[]> {
     const currentUserObjectId = new Types.ObjectId(userId);
+
     return this.postModel.aggregate([
+      {
+        $lookup: {
+          from: 'hidden_posts',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postId'] },
+                    { $eq: ['$userID', currentUserObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'hidden',
+        },
+      },
       {
         $match: {
           type: 'reel',
           isEnable: true,
           nsfw: false,
+          hidden: { $eq: [] },
         },
       },
       { $sort: { createdAt: -1 } },
@@ -225,11 +300,30 @@ export class PostService {
         },
       },
       {
+        $lookup: {
+          from: 'comments',
+          let: { postID: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postID'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'comments',
+        },
+      },
+      {
         $addFields: {
+          commentCount: { $size: '$comments' },
           likeCount: { $size: '$likes' },
         },
       },
-
       {
         $lookup: {
           from: 'postlikes',
@@ -251,85 +345,9 @@ export class PostService {
       },
       {
         $addFields: {
-          likedByCurrentUser: {
-            $gt: [{ $size: '$userLikeEntry' }, 0],
-          },
+          isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
         },
       },
-      {
-        $project: {
-          _id: 1,
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          location: 1,
-          isArchived: 1,
-          viewCount: 1,
-          share: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          media: 1,
-          likedByCurrentUser: 1,
-          likeCount: 1,
-          'user._id': 1,
-          'user.handleName': 1,
-          'user.profilePic': 1,
-        },
-      },
-    ]);
-  }
-
-    async findAllWithMediaGuest(): Promise<any[]> {
-    return this.postModel.aggregate([
-      {
-        $match: {
-          type: { $in: ['reel', 'post'] },
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      { $limit: 100 },
-      { $sample: { size: 20 } },
-
-      // Media lookup
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        },
-      },
-
-      // User lookup
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: '$user' },
-
-      // Like count
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes',
-        },
-      },
-      {
-        $addFields: {
-          likeCount: { $size: '$likes' },
-        },
-      },
-
-      // Music lookup
       {
         $lookup: {
           from: 'music',
@@ -338,9 +356,12 @@ export class PostService {
           as: 'music',
         },
       },
-      { $unwind: { path: '$music', preserveNullAndEmptyArrays: true } },
-
-      // Project final fields
+      {
+        $unwind: {
+          path: '$music',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
       {
         $project: {
           _id: 1,
@@ -357,7 +378,9 @@ export class PostService {
           createdAt: 1,
           updatedAt: 1,
           media: 1,
+          isLike: 1,
           likeCount: 1,
+          commentCount: 1,
           music: 1,
           'user._id': 1,
           'user.handleName': 1,
@@ -367,87 +390,11 @@ export class PostService {
     ]);
   }
 
-  async findReelsWithMediaGuest(): Promise<any[]> {    
-    return this.postModel.aggregate([
-      {
-        $match: {
-          type: 'reel',
-          isEnable: true,
-          nsfw: false,
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      { $limit: 100 },
-      { $sample: { size: 20 } },
-
-      // Media lookup
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        },
-      },
-
-      // User lookup
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: '$user' },
-
-      // Like count
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes',
-        },
-      },
-      {
-        $addFields: {
-          likeCount: { $size: '$likes' },
-        },
-      },
-
-      // Project final fields
-      {
-        $project: {
-          _id: 1,
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          location: 1,
-          isArchived: 1,
-          viewCount: 1,
-          share: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          media: 1,
-          likeCount: 1,
-          'user._id': 1,
-          'user.handleName': 1,
-          'user.profilePic': 1,
-        },
-      },
-    ]);
-  }
-
-  
   // returns up to 50 'post'‐type documents for the given user, plus a total count
   async getUserPostsWithMedia(
     userId: string,
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<{ total: number; items: any[] }> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid user ID format');
@@ -546,7 +493,7 @@ export class PostService {
   async getUserReelsWithMedia(
     userId: string,
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<{ total: number; items: any[] }> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid user ID format');
@@ -640,5 +587,408 @@ export class PostService {
       .exec();
 
     return { total, items };
+  }
+
+  async searchByCaptionPaginated(
+    userId: string,
+    keyword: string,
+    page: number,
+    limit: number,
+  ): Promise<{
+    message: string;
+    posts: {
+      items: any[];
+      pagination: {
+        currentPage: number;
+        totalPages: number;
+        totalCount: number;
+        limit: number;
+        hasNextPage: boolean;
+        hasPrevPage: boolean;
+      };
+    };
+    reels: {
+      items: any[];
+      pagination: {
+        currentPage: number;
+        totalPages: number;
+        totalCount: number;
+        limit: number;
+        hasNextPage: boolean;
+        hasPrevPage: boolean;
+      };
+    };
+  }> {
+    // validate the user ID
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid userId');
+    }
+    const currentUserObjectId = new Types.ObjectId(userId);
+
+    // build the caption‐matching condition 
+    const keywordLower = keyword.toLowerCase();
+    const tokens = keywordLower.split(/\s+/).filter((w) => w.length > 0);
+
+    let captionMatch: Record<string, any>;
+    if (tokens.length > 1) {
+      // multi-word: require each token anywhere in the caption (case‐insensitive)
+      const andClauses = tokens.map((tok) => ({
+        caption: { $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+      }));
+      captionMatch = { $and: andClauses };
+    } else {
+      // single word: just one regex
+      const escaped = tokens[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      captionMatch = { caption: { $regex: escaped, $options: 'i' } };
+    }
+
+    //    non‐reel  =>  type: { $ne: 'reel' }
+    //    reels     =>  type: 'reel'
+    //
+    // each uses a $facet so we get BOTH a totalCount and a paginated data array in one shot
+
+    const [postsResult, reelsResult] = await Promise.all([
+      this._searchBucket(
+        currentUserObjectId,
+        captionMatch,
+        { $ne: 'reel' },
+        page,
+        limit,
+      ),
+      this._searchBucket(
+        currentUserObjectId,
+        captionMatch,
+        'reel',
+        page,
+        limit,
+      ),
+    ]);
+
+    // compute 'totalPages', 'hasNextPage', 'hasPrevPage' for each bucket
+    const computePagination = (totalCount: number) => {
+      const totalPages = Math.ceil(totalCount / limit) || 1;
+      return {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      };
+    };
+
+    return {
+      message: 'Search results retrieved successfully',
+      posts: {
+        items: postsResult.items,
+        pagination: computePagination(postsResult.totalCount),
+      },
+      reels: {
+        items: reelsResult.items,
+        pagination: computePagination(reelsResult.totalCount),
+      },
+    };
+  }
+
+  /**
+   * a helper that runs an aggregation 'bucket':
+   *   `typeFilter` can be either a string (e.g. 'reel') or an object (e.g. { $ne: 'reel' })
+   *   it returns { totalCount, items: [ one page of data ] }
+   */
+  private async _searchBucket(
+    currentUserObjectId: Types.ObjectId,
+    captionMatch: Record<string, any>,
+    typeFilter: string | Record<string, any>,
+    page: number,
+    limit: number,
+  ): Promise<{ totalCount: number; items: any[] }> {
+    // calculate how many docs to skip
+    const skipCount = (page - 1) * limit;
+
+    const pipeline = [
+      // only consider enabled, non‐NSFW, matching captions, and matching typeFilter
+      {
+        $match: {
+          isEnable: true,
+          nsfw: false,
+          type: typeFilter,
+          ...captionMatch,
+        },
+      },
+
+      // exclude anything the current user has 'hidden'
+      {
+        $lookup: {
+          from: 'hidden_posts',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postId'] },
+                    { $eq: ['$userID', currentUserObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'hidden',
+        },
+      },
+      { $match: { hidden: { $eq: [] } } },
+
+      // sort by creation date (most recent first)
+      {  $sort: { createdAt: -1 as -1 }},
+
+      // use a $facet to get BOTH a totalCount and the 'data page'
+      {
+        $facet: {
+          metadata: [{ $count: 'totalCount' }],
+          data: [
+            // lookup media array
+            {
+              $lookup: {
+                from: 'media',
+                localField: '_id',
+                foreignField: 'postID',
+                as: 'media',
+              },
+            },
+            // lookup user info
+            {
+              $lookup: {
+                from: 'users',
+                localField: 'userID',
+                foreignField: '_id',
+                as: 'user',
+              },
+            },
+            { $unwind: '$user' },
+
+            // lookup total likes
+            {
+              $lookup: {
+                from: 'postlikes',
+                localField: '_id',
+                foreignField: 'postId',
+                as: 'likes',
+              },
+            },
+
+            // lookup comments (non‐deleted only)
+            {
+              $lookup: {
+                from: 'comments',
+                let: { postID: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$postID', '$$postID'] },
+                          { $eq: ['$isDeleted', false] },
+                        ],
+                      },
+                    },
+                  },
+                ],
+                as: 'comments',
+              },
+            },
+
+            // add commentCount & likeCount fields
+            {
+              $addFields: {
+                commentCount: { $size: '$comments' },
+                likeCount: { $size: '$likes' },
+              },
+            },
+
+            // check if current user has liked this post
+            {
+              $lookup: {
+                from: 'postlikes',
+                let: { postId: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$postId', '$$postId'] },
+                          { $eq: ['$userId', currentUserObjectId] },
+                        ],
+                      },
+                    },
+                  },
+                ],
+                as: 'userLikeEntry',
+              },
+            },
+            {
+              $addFields: {
+                isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
+              },
+            },
+
+            // lookup optional music
+            {
+              $lookup: {
+                from: 'music',
+                localField: 'musicID',
+                foreignField: '_id',
+                as: 'music',
+              },
+            },
+            {
+              $unwind: {
+                path: '$music',
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+
+            // project the exact fields
+            {
+              $project: {
+                _id: 1,
+                userID: 1,
+                type: 1,
+                caption: 1,
+                isFlagged: 1,
+                nsfw: 1,
+                isEnable: 1,
+                location: 1,
+                isArchived: 1,
+                viewCount: 1,
+                share: 1,
+                createdAt: 1,
+                updatedAt: 1,
+
+                media: 1,
+                isLike: 1,
+                likeCount: 1,
+                commentCount: 1,
+                music: 1,
+
+                'user._id': 1,
+                'user.handleName': 1,
+                'user.profilePic': 1,
+              },
+            },
+
+            // skip & limit for pagination
+            { $skip: skipCount },
+            { $limit: limit },
+          ],
+        },
+      },
+    ];
+
+    // run aggregation
+    const [aggResult] = await this.postModel.aggregate(pipeline).exec();
+    const totalCount = (aggResult.metadata.length > 0)
+      ? aggResult.metadata[0].totalCount
+      : 0;
+
+    return { totalCount, items: aggResult.data };
+  }
+
+  // returns the 30 most recent UNIQUE tags (strings without the '#') found in the captions
+  async getRecentTags(userId: string): Promise<string[]> {
+    // validate userId
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid userId');
+    }
+    const currentUserObjectId = new Types.ObjectId(userId);
+
+    // aggregation pipeline
+    const pipeline: PipelineStage[] = [
+      // only enabled, non‐NSFW posts
+      {
+        $match: {
+          isEnable: true,
+          nsfw: false,
+        },
+      },
+
+      // exclude anything this user has 'hidden'
+      {
+        $lookup: {
+          from: 'hidden_posts',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postId'] },
+                    { $eq: ['$userID', currentUserObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'hidden',
+        },
+      },
+      {
+        $match: {
+          hidden: { $eq: [] },
+        },
+      },
+
+      // sort by newest and limit to the 30 most recent posts
+      { $sort: { createdAt: -1 } },
+      { $limit: 30 },
+
+      // extract tags array from each caption
+      {
+        $project: {
+          createdAt: 1,
+          tags: {
+            $map: {
+              input: {
+                $regexFindAll: {
+                  input: '$caption',
+                  regex: /#(\w+)/g,
+                },
+              },
+              as: 'm',
+              in: { $arrayElemAt: ['$$m.captures', 0] },
+            },
+          },
+        },
+      },
+
+      // unwind so each tag becomes its own document
+      { $unwind: '$tags' },
+
+      // group by tag string, remembering the most recent `createdAt` it appeared
+      {
+        $group: {
+          _id: '$tags',
+          lastUsed: { $max: '$createdAt' },
+        },
+      },
+
+      // sort tags by the timestamp of their most recent occurrence
+      { $sort: { lastUsed: -1 } },
+
+      // only take the top 30 unique tags
+      { $limit: 30 },
+
+      // project out just the tag text
+      {
+        $project: {
+          _id: 0,
+          tag: '$_id',
+        },
+      },
+    ];
+
+    const aggResults = await this.postModel.aggregate(pipeline).exec();
+
+    // 4) Return array-of-strings
+    return aggResults.map((r) => r.tag);
   }
 }
