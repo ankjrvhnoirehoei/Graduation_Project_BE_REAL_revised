@@ -8,7 +8,6 @@ import { CreateMediaDto } from 'src/media/dto/media.dto';
 import { MusicService } from 'src/music/music.service';
 import { MusicDto } from 'src/music/dto/music.dto';
 import { Music } from 'src/music/music.schema';
-import { MuxService } from 'src/mux/mux.service';
 
 @Injectable()
 export class PostService {
@@ -16,7 +15,6 @@ export class PostService {
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
     private readonly musicService: MusicService,
-    private readonly muxService: MuxService,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -57,17 +55,9 @@ export class PostService {
 
     const mediaCreated = await Promise.all(
       postWithMediaDto.media.map(async (media) => {
-        let finalVideoUrl = media.videoUrl;
-
-        if (media.videoUrl) {
-          const muxResult = await this.muxService.uploadVideo(media.videoUrl);
-          finalVideoUrl = muxResult.m3u8Url;
-        }
-
         return this.mediaService.create({
           ...media,
           postID: postId,
-          videoUrl: finalVideoUrl,
         });
       }),
     );
