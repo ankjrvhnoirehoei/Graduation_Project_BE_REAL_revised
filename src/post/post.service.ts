@@ -84,10 +84,7 @@ export class PostService {
   }
 
   async findAllWithMedia(userId: string): Promise<any[]> {
-    const currentUserObjectId = new Types.ObjectId(userId);
-
     return this.postModel.aggregate([
-      // Lấy hidden posts của user
       {
         $lookup: {
           from: 'hiddenposts',
@@ -96,17 +93,16 @@ export class PostService {
           as: 'hidden',
         },
       },
-      // Loại bỏ các bài viết bị user ẩn
       {
         $match: {
           $expr: {
             $not: {
-              $in: [currentUserObjectId, '$hidden.userId'],
+              $in: [{ $toObjectId: userId }, '$hidden.userId'],
             },
           },
           isEnable: true,
           nsfw: false,
-          type: { $in: ['post', 'reel'] }, // hoặc bỏ nếu không cần lọc theo type
+          type: { $in: ['post', 'reel'] },
         },
       },
       { $sort: { createdAt: -1 } },
@@ -171,7 +167,7 @@ export class PostService {
                 $expr: {
                   $and: [
                     { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', currentUserObjectId] },
+                    { $eq: ['$userId', { $toObjectId: userId }] },
                   ],
                 },
               },
@@ -228,8 +224,6 @@ export class PostService {
   }
 
   async findReelsWithMedia(userId: string): Promise<any[]> {
-    const currentUserObjectId = new Types.ObjectId(userId);
-
     return this.postModel.aggregate([
       {
         $lookup: {
@@ -243,7 +237,7 @@ export class PostService {
         $match: {
           $expr: {
             $not: {
-              $in: [currentUserObjectId, '$hidden.userId'],
+              $in: [{ $toObjectId: userId }, '$hidden.userId'],
             },
           },
           type: 'reel',
@@ -253,7 +247,7 @@ export class PostService {
       },
       { $sort: { createdAt: -1 } },
       { $limit: 50 },
-      { $sample: { size: 20 } }, // Random hóa kết quả
+      { $sample: { size: 20 } },
       {
         $lookup: {
           from: 'media',
@@ -314,7 +308,7 @@ export class PostService {
                 $expr: {
                   $and: [
                     { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', currentUserObjectId] },
+                    { $eq: ['$userId', { $toObjectId: userId }] },
                   ],
                 },
               },
