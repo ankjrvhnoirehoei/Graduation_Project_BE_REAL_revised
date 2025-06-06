@@ -90,9 +90,9 @@ export class PostService {
       // Lấy hidden posts của user
       {
         $lookup: {
-          from: 'hidden_posts',
+          from: 'hiddenposts',
           localField: '_id',
-          foreignField: 'postID',
+          foreignField: 'postId',
           as: 'hidden',
         },
       },
@@ -101,7 +101,7 @@ export class PostService {
         $match: {
           $expr: {
             $not: {
-              $in: [currentUserObjectId, '$hidden.userID'],
+              $in: [currentUserObjectId, '$hidden.userId'],
             },
           },
           isEnable: true,
@@ -110,7 +110,7 @@ export class PostService {
         },
       },
       { $sort: { createdAt: -1 } },
-      { $limit: 100 },
+      { $limit: 50 },
       {
         $lookup: {
           from: 'media',
@@ -233,9 +233,9 @@ export class PostService {
     return this.postModel.aggregate([
       {
         $lookup: {
-          from: 'hidden_posts',
+          from: 'hiddenposts',
           localField: '_id',
-          foreignField: 'postID',
+          foreignField: 'postId',
           as: 'hidden',
         },
       },
@@ -243,7 +243,7 @@ export class PostService {
         $match: {
           $expr: {
             $not: {
-              $in: [currentUserObjectId, '$hidden.userID'],
+              $in: [currentUserObjectId, '$hidden.userId'],
             },
           },
           type: 'reel',
@@ -252,7 +252,7 @@ export class PostService {
         },
       },
       { $sort: { createdAt: -1 } },
-      { $limit: 100 },
+      { $limit: 50 },
       { $sample: { size: 20 } }, // Random hóa kết quả
       {
         $lookup: {
