@@ -1,4 +1,9 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  InternalServerErrorException,
+  Post,
+} from '@nestjs/common';
 import { generatePresignedUrl } from './r2.service';
 
 @Controller('r2')
@@ -13,14 +18,22 @@ export class R2UploadController {
       throw new Error('Missing fileName');
     }
 
-    const url = await generatePresignedUrl(
-      fileName,
-      contentType || 'image/jpeg',
-    );
-    return {
-      url,
-      fileName,
-      contentType: contentType || 'image/jpeg',
-    };
+    try {
+      const url = await generatePresignedUrl(
+        fileName,
+        contentType || 'image/jpeg',
+      );
+
+      return {
+        url,
+        fileName,
+        contentType: contentType || 'image/jpeg',
+      };
+    } catch (error) {
+      console.error('❌ Failed to generate presigned URL:', error);
+      throw new InternalServerErrorException(
+        'Could not generate presigned URL',
+      );
+    }
   }
 }

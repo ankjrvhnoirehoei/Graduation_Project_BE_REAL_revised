@@ -16,13 +16,24 @@ const s3 = new S3Client({
   },
 });
 
-export async function generatePresignedUrl(fileName: string, contentType: string = 'image/jpeg') {
-  const command = new PutObjectCommand({
-    Bucket: R2_BUCKET,
-    Key: fileName,
-    ContentType: contentType,
-  });
+export async function generatePresignedUrl(
+  fileName: string,
+  contentType: string = 'image/jpeg',
+) {
+  try {
+    console.log('🔧 Generating presigned URL for:', fileName);
 
-  const signedUrl = await getSignedUrl(s3, command, { expiresIn: 60 });
-  return signedUrl;
+    const command = new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET,
+      Key: fileName,
+      ContentType: contentType,
+    });
+
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    console.log('✅ Signed URL created');
+    return signedUrl;
+  } catch (err) {
+    console.error('❌ Error in generatePresignedUrl:', err);
+    throw err;
+  }
 }
