@@ -16,6 +16,7 @@ import { BookmarkItemModule } from './bookmark-item/bookmark-item.module';
 import { NotificateModule } from './notificate/notificate.module';
 import { StreamModule } from './streamM3U8/stream.module';
 import { JwtModule } from '@nestjs/jwt';
+import { R2UploadModule } from './r2/r2.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { JwtModule } from '@nestjs/jwt';
     BookmarkItemModule,
     NotificateModule,
     StreamModule,
+    R2UploadModule,
   ],
   // providers: [
   //   {
