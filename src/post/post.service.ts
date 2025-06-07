@@ -28,27 +28,57 @@ export class PostService {
   async createPostWithMediaAndMusic(postWithMediaDto: {
     post: CreatePostDto;
     media: CreateMediaDto[];
-    music?: MusicDto;
-  }): Promise<{ post: Post; media: any[]; music?: Music }> {
+    music?: {
+      musicID: string;
+      timeStart: number;
+      timeEnd: number;
+    };
+  }): Promise<{
+    post: Post;
+    media: any[];
+    music?: {
+      musicID: Types.ObjectId;
+      timeStart: number;
+      timeEnd: number;
+    };
+  }> {
     const logger = new Logger('PostService');
 
     const userId = postWithMediaDto.post.userID;
     if (!Types.ObjectId.isValid(userId)) {
-      throw new BadRequestException('Invalid userId from token');
-    }
-
-    let musicCreated: Music | null = null;
-    if (postWithMediaDto.music) {
-      musicCreated = await this.musicService.create(postWithMediaDto.music);
+      throw new BadRequestException('Invalid userID from token');
     }
 
     const postData: any = {
       ...postWithMediaDto.post,
       userID: new Types.ObjectId(userId),
-      musicID: musicCreated ? musicCreated._id : undefined,
       viewCount: postWithMediaDto.post.viewCount ?? 0,
       isEnable: postWithMediaDto.post.isEnable ?? true,
     };
+
+    let musicObject:
+      | {
+          musicID: Types.ObjectId;
+          timeStart: number;
+          timeEnd: number;
+        }
+      | undefined = undefined;
+
+    if (postWithMediaDto.music) {
+      const { musicID, timeStart, timeEnd } = postWithMediaDto.music;
+
+      if (!Types.ObjectId.isValid(musicID)) {
+        throw new BadRequestException('Invalid musicID');
+      }
+
+      musicObject = {
+        musicID: new Types.ObjectId(musicID),
+        timeStart,
+        timeEnd,
+      };
+
+      postData.music = musicObject;
+    }
 
     const createdPost = await this.create(postData);
     const postId = (createdPost as any)._id;
@@ -58,7 +88,6 @@ export class PostService {
         return this.mediaService.create({
           ...media,
           postID: postId,
-          videoUrl: media.videoUrl,
         });
       }),
     );
@@ -66,7 +95,7 @@ export class PostService {
     return {
       post: createdPost,
       media: mediaCreated,
-      music: musicCreated ?? undefined,
+      music: musicObject ?? undefined,
     };
   }
 
