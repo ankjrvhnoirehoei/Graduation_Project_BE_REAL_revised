@@ -58,6 +58,7 @@ export class PostService {
         return this.mediaService.create({
           ...media,
           postID: postId,
+          videoUrl: media.videoUrl,
         });
       }),
     );
@@ -83,37 +84,29 @@ export class PostService {
   }
 
   async findAllWithMedia(userId: string): Promise<any[]> {
-    const currentUserObjectId = new Types.ObjectId(userId);
-
     return this.postModel.aggregate([
       {
         $lookup: {
-          from: 'hidden_posts',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postId'] },
-                    { $eq: ['$userID', currentUserObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
+          from: 'hiddenposts',
+          localField: '_id',
+          foreignField: 'postId',
           as: 'hidden',
         },
       },
       {
         $match: {
+          $expr: {
+            $not: {
+              $in: [{ $toObjectId: userId }, '$hidden.userId'],
+            },
+          },
           isEnable: true,
           nsfw: false,
-          hidden: { $eq: [] },
+          type: { $in: ['post', 'reel'] },
         },
       },
       { $sort: { createdAt: -1 } },
-      { $limit: 100 },
+      { $limit: 50 },
       {
         $lookup: {
           from: 'media',
@@ -174,7 +167,7 @@ export class PostService {
                 $expr: {
                   $and: [
                     { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', currentUserObjectId] },
+                    { $eq: ['$userId', { $toObjectId: userId }] },
                   ],
                 },
               },
@@ -231,38 +224,29 @@ export class PostService {
   }
 
   async findReelsWithMedia(userId: string): Promise<any[]> {
-    const currentUserObjectId = new Types.ObjectId(userId);
-
     return this.postModel.aggregate([
       {
         $lookup: {
-          from: 'hidden_posts',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postId'] },
-                    { $eq: ['$userID', currentUserObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
+          from: 'hiddenposts',
+          localField: '_id',
+          foreignField: 'postId',
           as: 'hidden',
         },
       },
       {
         $match: {
+          $expr: {
+            $not: {
+              $in: [{ $toObjectId: userId }, '$hidden.userId'],
+            },
+          },
           type: 'reel',
           isEnable: true,
           nsfw: false,
-          hidden: { $eq: [] },
         },
       },
       { $sort: { createdAt: -1 } },
-      { $limit: 100 },
+      { $limit: 50 },
       { $sample: { size: 20 } },
       {
         $lookup: {
@@ -324,7 +308,7 @@ export class PostService {
                 $expr: {
                   $and: [
                     { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', currentUserObjectId] },
+                    { $eq: ['$userId', { $toObjectId: userId }] },
                   ],
                 },
               },
@@ -615,7 +599,7 @@ export class PostService {
     }
     const currentUserObjectId = new Types.ObjectId(userId);
 
-    // build the caption‐matching condition 
+    // build the caption‐matching condition
     const keywordLower = keyword.toLowerCase();
     const tokens = keywordLower.split(/\s+/).filter((w) => w.length > 0);
 
@@ -623,7 +607,10 @@ export class PostService {
     if (tokens.length > 1) {
       // multi-word: require each token anywhere in the caption (case‐insensitive)
       const andClauses = tokens.map((tok) => ({
-        caption: { $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+        caption: {
+          $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+          $options: 'i',
+        },
       }));
       captionMatch = { $and: andClauses };
     } else {
@@ -729,7 +716,7 @@ export class PostService {
       { $match: { hidden: { $eq: [] } } },
 
       // sort by creation date (most recent first)
-      {  $sort: { createdAt: -1 as -1 }},
+      { $sort: { createdAt: -1 as -1 } },
 
       // use a $facet to get BOTH a totalCount and the 'data page'
       {
@@ -876,9 +863,8 @@ export class PostService {
 
     // run aggregation
     const [aggResult] = await this.postModel.aggregate(pipeline).exec();
-    const totalCount = (aggResult.metadata.length > 0)
-      ? aggResult.metadata[0].totalCount
-      : 0;
+    const totalCount =
+      aggResult.metadata.length > 0 ? aggResult.metadata[0].totalCount : 0;
 
     return { totalCount, items: aggResult.data };
   }
