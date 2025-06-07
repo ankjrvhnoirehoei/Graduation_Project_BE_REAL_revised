@@ -7,18 +7,21 @@ import {
   UseGuards,
   BadRequestException,
   Query,
+  DefaultValuePipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { SearchDto } from './dto/search.dto';
 
 @Controller('posts')
+@UseGuards(JwtRefreshAuthGuard)
 export class PostController {
   constructor(private readonly postService: PostService) {}
 
   @Post('with-media')
-  @UseGuards(JwtRefreshAuthGuard)
   async createPostWithMedia(
     @Body() postWithMediaDto: CreatePostWithMediaDto,
     @CurrentUser('sub') userId: string,
@@ -33,43 +36,28 @@ export class PostController {
 
     return this.postService.createPostWithMediaAndMusic(mergedPostWithMediaDto);
   }
-  
+
   @Get('get-all-with-media')
-  async getAllWithMedia() {
-    return this.postService.findAllWithMediaGuest();
-  }
-
-  @Get('get-all-reel-media')
-  async getAllReelMedia() {
-    return this.postService.findReelsWithMediaGuest();
-  }
-
-  // get all medias but for logged-in users
-  @UseGuards(JwtRefreshAuthGuard)
-  @Post('user/get-all-with-media')
-  async getAllWithMediaForUser(@CurrentUser('sub') userId: string,) {
+  async getAllWithMedia(@CurrentUser('sub') userId: string) {
     return this.postService.findAllWithMedia(userId);
   }
 
-  @UseGuards(JwtRefreshAuthGuard)
-  @Post('user/get-all-reel-media')
-  async getAllReelMediaForUser(@CurrentUser('sub') userId: string,) {
+  @Get('get-all-reel-media')
+  async getAllReelMedia(@CurrentUser('sub') userId: string) {
     return this.postService.findReelsWithMedia(userId);
   }
 
-  
   // Returns up to 50 posts and up to 50 reels for user
-  @UseGuards(JwtRefreshAuthGuard)
   @Get('user/all')
   async getUserContent(
     @CurrentUser('sub') userId: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
-    @Query('type') type?: 'posts' | 'reels'
+    @Query('type') type?: 'posts' | 'reels',
   ) {
     const pageNum = parseInt(page || '1') || 1;
     const limitNum = parseInt(limit || '20') || 20;
-    
+
     // Validate pagination parameters
     if (pageNum < 1) {
       throw new BadRequestException('Page must be greater than 0');
@@ -83,8 +71,12 @@ export class PostController {
     }
 
     const [postsResult, reelsResult] = await Promise.all([
-      type === 'reels' ? null : this.postService.getUserPostsWithMedia(userId, pageNum, limitNum),
-      type === 'posts' ? null : this.postService.getUserReelsWithMedia(userId, pageNum, limitNum),
+      type === 'reels'
+        ? null
+        : this.postService.getUserPostsWithMedia(userId, pageNum, limitNum),
+      type === 'posts'
+        ? null
+        : this.postService.getUserReelsWithMedia(userId, pageNum, limitNum),
     ]);
 
     const response: any = {
@@ -100,8 +92,8 @@ export class PostController {
           totalCount: postsResult.total,
           limit: limitNum,
           hasNextPage: pageNum < Math.ceil(postsResult.total / limitNum),
-          hasPrevPage: pageNum > 1
-        }
+          hasPrevPage: pageNum > 1,
+        },
       };
     }
 
@@ -114,11 +106,32 @@ export class PostController {
           totalCount: reelsResult.total,
           limit: limitNum,
           hasNextPage: pageNum < Math.ceil(reelsResult.total / limitNum),
-          hasPrevPage: pageNum > 1
-        }
+          hasPrevPage: pageNum > 1,
+        },
       };
     }
 
     return response;
+  }
+
+  @Post('search')
+  async searchByCaption(
+    @Body() { keyword }: SearchDto,
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ) {
+    const trimmed = keyword?.trim();
+    if (!trimmed) {
+      throw new BadRequestException('Keyword must not be empty');
+    }
+
+    return this.postService.searchByCaptionPaginated(userId, trimmed, page, limit);
+  }
+
+  @Get('tags')
+  async getRecentTags(@CurrentUser('sub') userId: string) {
+    const tags = await this.postService.getRecentTags(userId);
+    return { tags }; 
   }
 }

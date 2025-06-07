@@ -13,6 +13,7 @@ import { PostLikeModule } from './like_post/like_post.module';
 import { UserHiddenPostModule } from './hide_post/hide_post.module';
 import { BookmarkPlaylistModule } from './bookmark-playlist/bookmark-playlist.module';
 import { BookmarkItemModule } from './bookmark-item/bookmark-item.module';
+import { NotificateModule } from './notificate/notificate.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { BookmarkItemModule } from './bookmark-item/bookmark-item.module';
     UserHiddenPostModule,
     BookmarkPlaylistModule,
     BookmarkItemModule,
+    NotificateModule,
   ],
   // providers: [
   //   {

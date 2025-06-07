@@ -9,6 +9,9 @@ import {
   Query,
   ConflictException,
   Param,
+  DefaultValuePipe,
+  ParseIntPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
@@ -21,6 +24,7 @@ import {
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtService } from '@nestjs/jwt';
 import { RelationService } from 'src/relation/relation.service';
+import { SearchUserDto } from './dto/search-user.dto';
 
 @Controller('users')
 export class UserController {
@@ -165,6 +169,83 @@ export class UserController {
     return {
       ...baseProfile,
       userFollowing,
+    };
+  }
+
+  @Post('search')
+  @UseGuards(JwtRefreshAuthGuard)
+  async searchUsers(
+    @CurrentUser('sub') currentUserId: string,
+    @Body() { keyword, mode }: SearchUserDto,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ) {
+    const trimmed = keyword.trim();
+    if (!trimmed) {
+      throw new BadRequestException('Keyword must not be empty');
+    }
+    const { items: rawUsers, totalCount } =
+      await this.userService.searchUsersRawPaginated(
+        trimmed,
+        mode,
+        page,
+        limit,
+      );
+
+    // same following-follower relationship like before
+    const enriched = await Promise.all(
+      rawUsers.map(async (usr) => {
+        const targetId = (usr as any)._id.toString();
+        let userFollowing = false;
+
+        if (currentUserId !== targetId) {
+          const { relation, userOneIsActing } =
+            await this.relationService.getRelation(currentUserId, targetId);
+
+          if (relation) {
+            const [oneRel, twoRel] = (relation as string).split('_');
+            if (userOneIsActing) {
+              userFollowing = oneRel === 'FOLLOW';
+            } else {
+              userFollowing = twoRel === 'FOLLOW';
+            }
+          }
+        }
+
+        return {
+          _id: (usr as any)._id,
+          username: (usr as any).username,
+          phoneNumber: (usr as any).phoneNumber || '',
+          handleName: (usr as any).handleName,
+          bio: (usr as any).bio || '',
+          address: (usr as any).address || '',
+          gender: (usr as any).gender || '',
+          profilePic:
+            (usr as any).profilePic ||
+            'https://i.pinimg.com/736x/3c/67/75/3c67757cef723535a7484a6c7bfbfc43.jpg',
+          isVip: (usr as any).isVip || false,
+          userFollowing,
+        };
+      }),
+    );
+
+    // compute pagination metadata
+    const totalPages = Math.ceil(totalCount / limit) || 1;
+    const pagination = {
+      currentPage: page,
+      totalPages,
+      totalCount,
+      limit,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    };
+
+    return {
+      message: 'Searched results retrieved successfully',
+      users: {
+        items: enriched,
+        pagination,
+      },
     };
   }
 }
