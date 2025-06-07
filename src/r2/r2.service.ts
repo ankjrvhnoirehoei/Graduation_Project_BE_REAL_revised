@@ -1,19 +1,14 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID!;
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY!;
-const R2_BUCKET = process.env.R2_BUCKET!;
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID!;
-const R2_ENDPOINT = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-
 const s3 = new S3Client({
   region: 'auto',
-  endpoint: R2_ENDPOINT,
+  endpoint: 'https://441234d01e9c8c50883706e46f66e804.r2.cloudflarestorage.com',
   forcePathStyle: true,
   credentials: {
-    accessKeyId: R2_ACCESS_KEY_ID,
-    secretAccessKey: R2_SECRET_ACCESS_KEY,
+    accessKeyId: '48dea0cd29086b4ee8aebbe9c2d7c433',
+    secretAccessKey:
+      '3449eccccfa9f950d6f3b407a7b3cc27f60fd2a1d96d8a4f97c590f3b2e14558',
   },
 });
 
