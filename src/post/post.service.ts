@@ -6,7 +6,7 @@ import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
 import { MusicService } from 'src/music/music.service';
-import { MusicDto } from 'src/music/dto/music.dto';
+import { MusicDto, MusicPostDto } from 'src/music/dto/music.dto';
 import { Music } from 'src/music/music.schema';
 
 @Injectable()
@@ -29,7 +29,7 @@ export class PostService {
     post: CreatePostDto;
     media: CreateMediaDto[];
     music?: {
-      musicID: string;
+      musicId: string;
       timeStart: number;
       timeEnd: number;
     };
@@ -37,7 +37,7 @@ export class PostService {
     post: Post;
     media: any[];
     music?: {
-      musicID: Types.ObjectId;
+      musicId: Types.ObjectId;
       timeStart: number;
       timeEnd: number;
     };
@@ -56,23 +56,17 @@ export class PostService {
       isEnable: postWithMediaDto.post.isEnable ?? true,
     };
 
-    let musicObject:
-      | {
-          musicID: Types.ObjectId;
-          timeStart: number;
-          timeEnd: number;
-        }
-      | undefined = undefined;
+    let musicObject: MusicPostDto | undefined = undefined;
 
     if (postWithMediaDto.music) {
-      const { musicID, timeStart, timeEnd } = postWithMediaDto.music;
+      const { musicId, timeStart, timeEnd } = postWithMediaDto.music;
 
-      if (!Types.ObjectId.isValid(musicID)) {
+      if (!Types.ObjectId.isValid(musicId)) {
         throw new BadRequestException('Invalid musicID');
       }
 
       musicObject = {
-        musicID: new Types.ObjectId(musicID),
+        musicId: new Types.ObjectId(musicId),
         timeStart,
         timeEnd,
       };

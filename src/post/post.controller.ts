@@ -26,12 +26,18 @@ export class PostController {
     @Body() postWithMediaDto: CreatePostWithMediaDto,
     @CurrentUser('sub') userId: string,
   ) {
-    const mergedPostWithMediaDto: CreatePostWithMediaDto = {
+    const mergedPostWithMediaDto: any = {
       ...postWithMediaDto,
       post: {
         ...postWithMediaDto.post,
         userID: userId,
       },
+      music: postWithMediaDto.music
+        ? {
+            ...postWithMediaDto.music,
+            musicId: String(postWithMediaDto.music.musicId),
+          }
+        : undefined,
     };
 
     return this.postService.createPostWithMediaAndMusic(mergedPostWithMediaDto);
@@ -126,12 +132,17 @@ export class PostController {
       throw new BadRequestException('Keyword must not be empty');
     }
 
-    return this.postService.searchByCaptionPaginated(userId, trimmed, page, limit);
+    return this.postService.searchByCaptionPaginated(
+      userId,
+      trimmed,
+      page,
+      limit,
+    );
   }
 
   @Get('tags')
   async getRecentTags(@CurrentUser('sub') userId: string) {
     const tags = await this.postService.getRecentTags(userId);
-    return { tags }; 
+    return { tags };
   }
 }
