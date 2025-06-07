@@ -70,8 +70,8 @@ export class PostLikeController {
 
   @Get('likers/:postId')
   @UseGuards(JwtRefreshAuthGuard)
-  async getPostLikers(@Param('postId') postId: string) {
-    const likers = await this.postLikeService.getPostLikers(postId);
+  async getPostLikers(@Param('postId') postId: string, @CurrentUser('sub') currentUserId: string,) {
+    const likers = await this.postLikeService.getPostLikers(postId, currentUserId);
     return {
       message: 'Post likers retrieved successfully',
       data: likers

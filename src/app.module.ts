@@ -14,6 +14,7 @@ import { UserHiddenPostModule } from './hide_post/hide_post.module';
 import { BookmarkPlaylistModule } from './bookmark-playlist/bookmark-playlist.module';
 import { BookmarkItemModule } from './bookmark-item/bookmark-item.module';
 import { NotificateModule } from './notificate/notificate.module';
+import { StreamModule } from './streamM3U8/stream.module';
 import { JwtModule } from '@nestjs/jwt';
 
 @Module({
@@ -51,6 +52,7 @@ import { JwtModule } from '@nestjs/jwt';
     BookmarkPlaylistModule,
     BookmarkItemModule,
     NotificateModule,
+    StreamModule,
   ],
   // providers: [
   //   {
