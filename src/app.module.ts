@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DatabaseModule, LoggerModule, LoggingInterceptor } from '@app/common';
 import { PostModule } from './post/post.module';
 import { MediaModule } from './media/media.module';
@@ -14,12 +14,27 @@ import { UserHiddenPostModule } from './hide_post/hide_post.module';
 import { BookmarkPlaylistModule } from './bookmark-playlist/bookmark-playlist.module';
 import { BookmarkItemModule } from './bookmark-item/bookmark-item.module';
 import { NotificateModule } from './notificate/notificate.module';
+import { JwtModule } from '@nestjs/jwt';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => {
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error('JWT_SECRET is not defined in environment variables');
+        }
+        return {
+          secret,
+          signOptions: { expiresIn: '5m' },
+        };
+      },
+      inject: [ConfigService],
     }),
     DatabaseModule,
     LoggerModule,
