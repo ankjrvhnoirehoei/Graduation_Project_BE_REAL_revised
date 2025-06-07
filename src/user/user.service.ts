@@ -2,17 +2,36 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
+import * as nodemailer from 'nodemailer';
 import { User, UserDocument } from './user.schema';
 import { v4 as uuidv4 } from 'uuid';
 import { RegisterDto } from './dto/register.dto';
+import { ChangeEmailDto, ChangePasswordDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class UserService {
-  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  private mailer: nodemailer.Transporter;
+    constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private readonly jwtService: JwtService,
+  ) {
+    // configure your SMTP transport via environment variables
+    this.mailer = nodemailer.createTransport({
+      host:     process.env.SMTP_HOST,
+      port:     +(process.env.SMTP_PORT ?? 587),
+      secure:   process.env.MAIL_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
 
   async register(registerDto: RegisterDto): Promise<User> {
     const { email, password, profilePic } = registerDto;
@@ -217,5 +236,119 @@ export class UserService {
     const totalCount =
       aggResult.metadata.length > 0 ? aggResult.metadata[0].totalCount : 0;
     return { items: aggResult.data, totalCount };
+  }
+
+  // partially updates the user document with the given fields and ignores any undefined properties in dto
+  async updateProfile(
+    userId: string,
+    dto: EditUserDto,
+  ): Promise<Partial<User>> {
+    // build a clean update object
+    const update: Partial<Record<keyof EditUserDto, any>> = {};
+    for (const [key, value] of Object.entries(dto)) {
+      if (value !== undefined) {
+        update[key] = value;
+      }
+    }
+
+    // ensure there is something to update
+    if (Object.keys(update).length === 0) {
+      throw new BadRequestException('No editable fields provided');
+    }
+
+    const updated = await this.userModel
+      .findByIdAndUpdate(userId, { $set: update }, { new: true })
+      .lean();
+
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+
+    // strip out sensitive fields
+    const { _id, password, refreshToken, ...safe } = updated;
+    return safe;
+  }  
+
+  /** Edit user's email address
+   *  Validate and send confirmation code to new email.
+   */
+  async initiateEmailChange(userId: string, dto: ChangeEmailDto): Promise<{ token: string }> {
+    // check uniqueness
+    const exists = await this.userModel.findOne({ email: dto.email }).lean();
+    if (exists) {
+      throw new ConflictException('Email already in use');
+    }
+
+    // generate confirmation code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // send email
+    await this.mailer.sendMail({
+      from:    process.env.EMAIL_FROM,
+      to:      dto.email,
+      subject: 'Your confirmation code',
+      text:    `Your confirmation code is: ${code}`,
+    });
+
+  const token = this.jwtService.sign(
+    { sub: userId, newEmail: dto.email, code },
+    { 
+      secret: process.env.JWT_ACCESS_SECRET,
+      expiresIn: '15m' 
+    }
+  );
+
+    return { token };
+  }
+
+  // verify token + code and update email
+  async confirmEmailChange(userId: string, dto: ConfirmEmailDto): Promise<void> {
+    let payload: { sub: string; newEmail: string; code: string };
+    try {
+      payload = this.jwtService.verify(dto.token, {
+        secret: process.env.JWT_ACCESS_SECRET
+      });
+    } catch (err) {
+      throw new BadRequestException('Invalid or expired token');
+    }
+
+    if (payload.sub !== userId) {
+      throw new BadRequestException('Token does not belong to current user');
+    }
+    if (payload.code !== dto.code.toUpperCase()) {
+      throw new BadRequestException('Confirmation code mismatch');
+    }
+
+    const updated = await this.userModel.findByIdAndUpdate(
+      userId,
+      { $set: { email: payload.newEmail } },
+      { new: true },
+    );
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+  }  
+  
+  // edit password
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // check new 
+    const isSame = await bcrypt.compare(dto.newPassword, user.password);
+    if (isSame) {
+      throw new BadRequestException(
+        'New password must be different from the current password',
+      );
+    }
+
+    // hash and save
+    user.password = await bcrypt.hash(dto.newPassword, 10);
+    await user.save();
   }
 }

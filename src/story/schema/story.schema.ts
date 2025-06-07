@@ -6,7 +6,7 @@ import { User } from "src/user/user.schema";
 @Schema({versionKey: false, timestamps: true})
 export class Story extends AbstractDocument {
    @Prop({ref: User.name, required: true})
-   userId: Types.ObjectId;
+   ownerId: Types.ObjectId;
 
    @Prop()
    type: 'stories' | 'highlights';
@@ -14,14 +14,14 @@ export class Story extends AbstractDocument {
    @Prop()
    mediaUrl: string;
 
-   @Prop()
-   viewsCount: number;
-
    @Prop({ default: false })
    isArchived: boolean;
 
    @Prop()
-   viewerId: Types.ObjectId[];
+   viewedByUsers: Types.ObjectId[];
+
+   @Prop()
+   likedByUsers: Types.ObjectId[];
 
    @Prop()
    collectionName: string;
