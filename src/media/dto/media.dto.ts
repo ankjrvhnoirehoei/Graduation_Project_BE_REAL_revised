@@ -2,8 +2,8 @@ import { IsMongoId } from 'class-validator';
 
 export class CreateMediaDto {
   @IsMongoId()
-  readonly postID: string;
+  postID: string;
 
-  readonly imageUrl?: string;
-  readonly videoUrl?: string;
+  imageUrl?: string;
+  videoUrl?: string;
 }

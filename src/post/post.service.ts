@@ -6,8 +6,7 @@ import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
 import { MusicService } from 'src/music/music.service';
-import { MusicDto } from 'src/music/dto/music.dto';
-import { Music } from 'src/music/music.schema';
+import { MusicPostDto } from 'src/music/dto/music.dto';
 
 @Injectable()
 export class PostService {
@@ -28,27 +27,55 @@ export class PostService {
   async createPostWithMediaAndMusic(postWithMediaDto: {
     post: CreatePostDto;
     media: CreateMediaDto[];
-    music?: MusicDto;
-  }): Promise<{ post: Post; media: any[]; music?: Music }> {
-    const logger = new Logger('PostService');
-
+    music?: {
+      musicId: string;
+      timeStart: number;
+      timeEnd: number;
+    };
+  }): Promise<{
+    post: Post;
+    media: any[];
+    music?: {
+      musicId: string;
+      timeStart: number;
+      timeEnd: number;
+    };
+  }> {
     const userId = postWithMediaDto.post.userID;
     if (!Types.ObjectId.isValid(userId)) {
-      throw new BadRequestException('Invalid userId from token');
-    }
-
-    let musicCreated: Music | null = null;
-    if (postWithMediaDto.music) {
-      musicCreated = await this.musicService.create(postWithMediaDto.music);
+      throw new BadRequestException('Invalid userID from token');
     }
 
     const postData: any = {
       ...postWithMediaDto.post,
       userID: new Types.ObjectId(userId),
-      musicID: musicCreated ? musicCreated._id : undefined,
       viewCount: postWithMediaDto.post.viewCount ?? 0,
       isEnable: postWithMediaDto.post.isEnable ?? true,
     };
+
+    let musicObject:
+      | {
+          musicId: Types.ObjectId;
+          timeStart: number;
+          timeEnd: number;
+        }
+      | undefined = undefined;
+
+    if (postWithMediaDto.music) {
+      const { musicId, timeStart, timeEnd } = postWithMediaDto.music;
+
+      if (!Types.ObjectId.isValid(musicId)) {
+        throw new BadRequestException('Invalid musicID');
+      }
+
+      musicObject = {
+        musicId: new Types.ObjectId(musicId),
+        timeStart,
+        timeEnd,
+      };
+
+      postData.music = musicObject;
+    }
 
     const createdPost = await this.create(postData);
     const postId = (createdPost as any)._id;
@@ -58,7 +85,6 @@ export class PostService {
         return this.mediaService.create({
           ...media,
           postID: postId,
-          videoUrl: media.videoUrl,
         });
       }),
     );
@@ -66,7 +92,13 @@ export class PostService {
     return {
       post: createdPost,
       media: mediaCreated,
-      music: musicCreated ?? undefined,
+      music: musicObject
+        ? {
+            musicId: musicObject.musicId.toString(),
+            timeStart: musicObject.timeStart,
+            timeEnd: musicObject.timeEnd,
+          }
+        : undefined,
     };
   }
 
@@ -179,20 +211,6 @@ export class PostService {
       {
         $addFields: {
           isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
-        },
-      },
-      {
-        $lookup: {
-          from: 'music',
-          localField: 'musicID',
-          foreignField: '_id',
-          as: 'music',
-        },
-      },
-      {
-        $unwind: {
-          path: '$music',
-          preserveNullAndEmptyArrays: true,
         },
       },
       {
@@ -320,20 +338,6 @@ export class PostService {
       {
         $addFields: {
           isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
-        },
-      },
-      {
-        $lookup: {
-          from: 'music',
-          localField: 'musicID',
-          foreignField: '_id',
-          as: 'music',
-        },
-      },
-      {
-        $unwind: {
-          path: '$music',
-          preserveNullAndEmptyArrays: true,
         },
       },
       {

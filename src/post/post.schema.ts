@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import mongoose, { Document, Types } from 'mongoose';
+import { MusicPostDto } from 'src/music/dto/music.dto';
 
 export type PostDocument = Post & Document;
 
@@ -8,8 +9,12 @@ export class Post {
   @Prop({ required: true })
   userID: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Music'})
-  musicID: Types.ObjectId;
+  @Prop({ type: MusicPostDto, required: false })
+  music?: {
+    musicId: Types.ObjectId;
+    timeStart: number;
+    timeEnd: number;
+  };
 
   @Prop({ required: true })
   type: string;
