@@ -5,6 +5,7 @@ import { PostLikeService } from './like_post.service';
 import { PostLikeController } from './like_post.controller';
 import { Post, PostSchema } from 'src/post/post.schema';
 import { UserSchema } from 'src/user/user.schema';
+import { RelationModule } from 'src/relation/relation.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { UserSchema } from 'src/user/user.schema';
       { name: Post.name, schema: PostSchema },
       { name: 'User', schema: UserSchema },
     ]),
+    RelationModule
   ],
   controllers: [PostLikeController],
   providers: [PostLikeService],
