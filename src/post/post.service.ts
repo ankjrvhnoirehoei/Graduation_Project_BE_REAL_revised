@@ -419,6 +419,31 @@ export class PostService {
             likeCount: { $size: '$likes' },
           },
         },
+        // check if current user has liked this post
+        {
+          $lookup: {
+            from: 'postlikes',
+            let: { postId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$postId', '$$postId'] },
+                      { $eq: ['$userId', objectUserId] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: 'userLikeEntry',
+          },
+        },
+        {
+          $addFields: {
+            isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
+          },
+        },
 
         // lookup music if any
         {
@@ -453,6 +478,7 @@ export class PostService {
             updatedAt: 1,
 
             media: 1,
+            isLike: 1,
             likeCount: 1,
             music: 1,
           },
@@ -517,7 +543,31 @@ export class PostService {
           },
         },
 
-        // no need to lookup user here—front‐end knows whose reels these are
+        // check if current user has liked this post
+        {
+          $lookup: {
+            from: 'postlikes',
+            let: { postId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$postId', '$$postId'] },
+                      { $eq: ['$userId', objectUserId] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: 'userLikeEntry',
+          },
+        },
+        {
+          $addFields: {
+            isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
+          },
+        },
 
         // lookup music if any
         {
@@ -553,6 +603,7 @@ export class PostService {
             updatedAt: 1,
 
             media: 1,
+            isLike: 1,
             likeCount: 1,
             music: 1,
           },
