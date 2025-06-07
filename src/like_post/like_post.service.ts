@@ -129,7 +129,7 @@ async getPostLikers(postId: string, currentUserId: string) {
           username: user.username,
           handleName: user.handleName,
           profilePic: user.profilePic || '',
-          userFollowing: false
+          // userFollowing: false
         };
       }
 
