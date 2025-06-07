@@ -2,6 +2,6 @@ import { IsNotEmpty, IsString } from 'class-validator';
 
 export class UpdateStoryDto {
    @IsString()
-   @IsNotEmpty()
+   @IsNotEmpty({message: 'Story_id is required'})
    _id: string;
 }
