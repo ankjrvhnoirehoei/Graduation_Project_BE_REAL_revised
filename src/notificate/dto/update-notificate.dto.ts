@@ -1,4 +1,4 @@
 import { PartialType } from '@nestjs/swagger';
-import { CreateNotificateDto } from './create-notificate.dto';
+// import { CreateNotificateDto } from './create-notificate.dto';
 
-export class UpdateNotificateDto extends PartialType(CreateNotificateDto) {}
+// export class UpdateNotificateDto extends PartialType(CreateNotificateDto) {}

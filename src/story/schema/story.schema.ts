@@ -28,5 +28,8 @@ export class Story extends AbstractDocument {
 
    @Prop({ ref: Story.name })
    storyId: string[];
+   
+   @Prop({ default: 50 })
+   limitHighlight: 50;
 }
 export const StorySchema = SchemaFactory.createForClass(Story);

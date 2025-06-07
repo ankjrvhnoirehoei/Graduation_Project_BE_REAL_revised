@@ -13,7 +13,6 @@ import { PostLikeModule } from './like_post/like_post.module';
 import { UserHiddenPostModule } from './hide_post/hide_post.module';
 import { BookmarkPlaylistModule } from './bookmark-playlist/bookmark-playlist.module';
 import { BookmarkItemModule } from './bookmark-item/bookmark-item.module';
-import { NotificateModule } from './notificate/notificate.module';
 import { StreamModule } from './streamM3U8/stream.module';
 import { JwtModule } from '@nestjs/jwt';
 import { R2UploadModule } from './r2/r2.module';
@@ -52,9 +51,6 @@ import { R2UploadModule } from './r2/r2.module';
     UserHiddenPostModule,
     BookmarkPlaylistModule,
     BookmarkItemModule,
-    NotificateModule,
-    StreamModule,
-    R2UploadModule,
   ],
   // providers: [
   //   {
