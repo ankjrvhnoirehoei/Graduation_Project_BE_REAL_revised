@@ -6,6 +6,7 @@ import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
 import { UpdateStoryDto } from './dto/update-story.dto';
 import { RelationService } from 'src/relation/relation.service';
 import { UserService } from 'src/user/user.service';
+import { UpdateHighlightDto } from './dto/update-highlight.dto';
 
 @Injectable()
 export class StoryService {
@@ -166,6 +167,7 @@ export class StoryService {
       likedByUsers: [],
       collectionName: '',
       storyId: [],
+      limitHighlight: 50
     });
     return {
       message: 'Story created successfully',
@@ -218,6 +220,7 @@ export class StoryService {
       likedByUsers: [],
       isArchived: true,
       mediaUrl: '',
+      limitHighlight: 50
     });
     return {
       message: 'Created Success',
@@ -229,6 +232,32 @@ export class StoryService {
     };
   }
 
+  async updatedHighlight(uid: string, storyDto: UpdateHighlightDto) {
+    const ref = await this.storyRepo.findOne( new Types.ObjectId(storyDto._id) );
+    if (!ref) { return "Story Not found" }
+    const uids = new Types.ObjectId(uid);
+    if (!ref.ownerId.equals(uids)) { return "You can't update this story" }
+
+    const updateData = {
+      $set: {
+        collectionName: storyDto.collectionName,
+        storyId: storyDto.storyIds,
+      }
+    };
+    const updated = await this.storyRepo.findOneAndUpdate(
+      { _id: storyDto._id },
+      updateData,
+    )
+    return {
+      message: 'Updated Success',
+      data: {
+        _id: updated._id,
+        collectionName: updated.collectionName,
+        stoies: updated.storyId,
+      }
+    }
+  }
+  
   async archiveStory(uid: string, storyDto: UpdateStoryDto) {
     const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
     const uids = new Types.ObjectId(uid);

@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, UseGuards, Query, Param, Validation
 import { StoryService } from './story.service';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { UpdateStoryDto } from './dto/update-story.dto';
+import { UpdateHighlightDto } from './dto/update-highlight.dto';
 import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
 import { GetStoriesByIdsDto } from './dto/get-stories.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
@@ -16,7 +17,7 @@ export class StoryController {
   constructor(private readonly storyService: StoryService) {}
 
   @Get('user')
-  @ApiOperation({ summary: `Get all stories by CurrentUser` })
+  @ApiOperation({ summary: `Get all working-stories by CurrentUser` })
   @ApiResponse({
     status: 201,
     response: {
@@ -55,7 +56,7 @@ export class StoryController {
   }
 
   @Get('following')
-  @ApiOperation({ summary: `Get all Stories of whom followed by current-user` })
+  @ApiOperation({ summary: `Get all working-stories of whom followed by current-user` })
   @ApiResponse({
     status: 201,
     response: {
@@ -94,6 +95,7 @@ export class StoryController {
   }
 
   @Post('create')
+  @ApiOperation({ summary: `Create story by currentUser` })
   @ApiResponse({
     status: 201,
     response: {
@@ -112,6 +114,7 @@ export class StoryController {
   }
 
   @Post('create-highlight')
+  @ApiOperation({ summary: `Create highlightStories collection by currentUser` })
   @ApiResponse({
     status: 201,
     response: {
@@ -128,7 +131,26 @@ export class StoryController {
     return this.storyService.createHighlightStory(userId, storyDto);
   }
 
+  @Patch('update-highlight')
+  @ApiOperation({ summary: `Updated highlightStories by currentUser` })
+  @ApiResponse({
+    status: 201,
+    response: {
+      _id: String,
+      CollectionName: String,
+      stoies: Array,
+    },
+    description: 'Updated Success',
+  })
+  async updateHighlightStory(
+    @CurrentUser('sub') userId: string,
+    @Body(new ValidationPipe()) storyDto: UpdateHighlightDto
+  ){
+    return this.storyService.updatedHighlight(userId, storyDto);
+  }
+
   @Patch('seen')
+  @ApiOperation({ summary: `Seen story by currentUser` })
   @ApiResponse({
     status: 201,
     response: {
@@ -145,6 +167,7 @@ export class StoryController {
   }
 
   @Patch('archive')
+  @ApiOperation({ summary: `Archive story by currentUser` })
   @ApiResponse({
     status: 201,
     response: {
@@ -160,6 +183,7 @@ export class StoryController {
   }
 
   @Patch('like')
+  @ApiOperation({ summary: `Like story by currentUser` })
   @ApiResponse({
     status: 201,
     response: {

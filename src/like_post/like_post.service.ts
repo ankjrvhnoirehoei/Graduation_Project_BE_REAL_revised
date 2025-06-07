@@ -87,7 +87,7 @@ export class PostLikeService {
     const transformedPosts = posts.map(post => ({
       _id: post._id,
       userID: post.userID,
-      musicID: post.musicID || null,
+      musicID: post.music?.musicId || null,
       type: post.type,
       caption: post.caption || null,
       isFlagged: post.isFlagged || false,
