@@ -1,3 +1,4 @@
+import { IsMongoId, IsNumber } from 'class-validator';
 import { Types } from 'mongoose';
 
 export class MusicDto {
@@ -7,8 +8,13 @@ export class MusicDto {
   coverImg: string;
 }
 
-export interface MusicPostDto {
-  musicId: Types.ObjectId;
+export class MusicPostDto {
+  @IsMongoId()
+  musicId: string;
+
+  @IsNumber()
   timeStart: number;
+
+  @IsNumber()
   timeEnd: number;
 }

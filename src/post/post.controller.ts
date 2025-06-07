@@ -32,12 +32,6 @@ export class PostController {
         ...postWithMediaDto.post,
         userID: userId,
       },
-      music: postWithMediaDto.music
-        ? {
-            ...postWithMediaDto.music,
-            musicId: String(postWithMediaDto.music.musicId),
-          }
-        : undefined,
     };
 
     return this.postService.createPostWithMediaAndMusic(mergedPostWithMediaDto);

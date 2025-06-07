@@ -6,8 +6,7 @@ import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
 import { MusicService } from 'src/music/music.service';
-import { MusicDto, MusicPostDto } from 'src/music/dto/music.dto';
-import { Music } from 'src/music/music.schema';
+import { MusicPostDto } from 'src/music/dto/music.dto';
 
 @Injectable()
 export class PostService {
@@ -37,13 +36,11 @@ export class PostService {
     post: Post;
     media: any[];
     music?: {
-      musicId: Types.ObjectId;
+      musicId: string;
       timeStart: number;
       timeEnd: number;
     };
   }> {
-    const logger = new Logger('PostService');
-
     const userId = postWithMediaDto.post.userID;
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid userID from token');
@@ -56,7 +53,13 @@ export class PostService {
       isEnable: postWithMediaDto.post.isEnable ?? true,
     };
 
-    let musicObject: MusicPostDto | undefined = undefined;
+    let musicObject:
+      | {
+          musicId: Types.ObjectId;
+          timeStart: number;
+          timeEnd: number;
+        }
+      | undefined = undefined;
 
     if (postWithMediaDto.music) {
       const { musicId, timeStart, timeEnd } = postWithMediaDto.music;
@@ -89,7 +92,13 @@ export class PostService {
     return {
       post: createdPost,
       media: mediaCreated,
-      music: musicObject ?? undefined,
+      music: musicObject
+        ? {
+            musicId: musicObject.musicId.toString(),
+            timeStart: musicObject.timeStart,
+            timeEnd: musicObject.timeEnd,
+          }
+        : undefined,
     };
   }
 
@@ -202,20 +211,6 @@ export class PostService {
       {
         $addFields: {
           isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
-        },
-      },
-      {
-        $lookup: {
-          from: 'music',
-          localField: 'musicID',
-          foreignField: '_id',
-          as: 'music',
-        },
-      },
-      {
-        $unwind: {
-          path: '$music',
-          preserveNullAndEmptyArrays: true,
         },
       },
       {
@@ -343,20 +338,6 @@ export class PostService {
       {
         $addFields: {
           isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
-        },
-      },
-      {
-        $lookup: {
-          from: 'music',
-          localField: 'musicID',
-          foreignField: '_id',
-          as: 'music',
-        },
-      },
-      {
-        $unwind: {
-          path: '$music',
-          preserveNullAndEmptyArrays: true,
         },
       },
       {
