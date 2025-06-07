@@ -105,6 +105,7 @@ export class PostLikeService {
       currentPage: page
     };
   }  
+  
 async getPostLikers(postId: string, currentUserId: string) {
   const likes = await this.postLikeModel
     .find({ postId })
@@ -129,6 +130,7 @@ async getPostLikers(postId: string, currentUserId: string) {
           username: user.username,
           handleName: user.handleName,
           profilePic: user.profilePic || '',
+          isCurrentUser: true 
           // userFollowing: false
         };
       }
@@ -145,7 +147,8 @@ async getPostLikers(postId: string, currentUserId: string) {
             username: user.username,
             handleName: user.handleName,
             profilePic: user.profilePic || '',
-            userFollowing: false
+            userFollowing: false,
+            isCurrentUser: false
           };
         }
 
@@ -170,12 +173,16 @@ async getPostLikers(postId: string, currentUserId: string) {
           username: user.username,
           handleName: user.handleName,
           profilePic: user.profilePic || '',
-          userFollowing
+          userFollowing,
+          isCurrentUser: false
         };
       })
     );
-
-    // Filter out null values (blocked users) and return
-    return enrichedUsers.filter(user => user !== null);
+    const filteredUsers = enrichedUsers.filter(user => user !== null);
+    return filteredUsers.sort((a, b) => {
+      if (a.isCurrentUser) return -1;
+      if (b.isCurrentUser) return 1;
+      return 0;
+    }).map(({ isCurrentUser, ...user }) => user); // Remove the isCurrentUser flag from final output
   }
 }
