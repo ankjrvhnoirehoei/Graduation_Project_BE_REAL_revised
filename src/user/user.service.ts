@@ -290,11 +290,13 @@ export class UserService {
       text:    `Your confirmation code is: ${code}`,
     });
 
-    // sign a short-lived email token 
-    const token = this.jwtService.sign(
-      { sub: userId, newEmail: dto.email, code },
-      { expiresIn: '15m' },
-    );
+  const token = this.jwtService.sign(
+    { sub: userId, newEmail: dto.email, code },
+    { 
+      secret: process.env.JWT_ACCESS_SECRET,
+      expiresIn: '15m' 
+    }
+  );
 
     return { token };
   }
@@ -303,7 +305,9 @@ export class UserService {
   async confirmEmailChange(userId: string, dto: ConfirmEmailDto): Promise<void> {
     let payload: { sub: string; newEmail: string; code: string };
     try {
-      payload = this.jwtService.verify(dto.token);
+      payload = this.jwtService.verify(dto.token, {
+        secret: process.env.JWT_ACCESS_SECRET
+      });
     } catch (err) {
       throw new BadRequestException('Invalid or expired token');
     }
