@@ -16,6 +16,26 @@ import { ApiResponse } from '@app/common';
 export class StoryController {
   constructor(private readonly storyService: StoryService) {}
 
+  @Get()
+  @ApiOperation({ summary: `Get all stories by CurrentUser` })
+  @ApiResponse({
+    status: 201,
+    response: {
+      _id: String,
+      ownerId: String,
+      mediaUrl: String,
+      viewedByUsers: Array,
+      likedByUsers: Array,
+    },
+    description: 'Success',
+    isArray: true
+  })
+  async findAll(
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.storyService.findStoriesByUser(userId);
+  }
+
   @Get('user')
   @ApiOperation({ summary: `Get all working-stories by CurrentUser` })
   @ApiResponse({
@@ -33,7 +53,7 @@ export class StoryController {
   async getStoriesByUser(
     @CurrentUser('sub') userId: string,
   ) {
-    return this.storyService.findStoriesByUser(userId);
+    return this.storyService.findWorkingStoriesByUser(userId);
   }
 
   @Get('highlights/user/:userId')

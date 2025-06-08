@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { StoryRepository } from './story.repository';
 import { Types } from 'mongoose';
@@ -10,6 +10,7 @@ import { UpdateHighlightDto } from './dto/update-highlight.dto';
 
 @Injectable()
 export class StoryService {
+  private readonly log: Logger = new Logger();
   constructor(
     private readonly storyRepo: StoryRepository,
     private readonly relationServ: RelationService,
@@ -19,19 +20,47 @@ export class StoryService {
   async findStoriesByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
     const stories = await this.storyRepo.find({
-      userId: uid,
+      where: {
+        ownerId: uid,
+        type: 'stories',
+      },
+      order: {
+        createAt: 'DESC',
+      },
+    });
+    return {
+      message: 'Success',
+      data: stories.map((story) => {
+        return {
+          _id: story._id,
+          ownerId: story.ownerId,
+          mediaUrl: story.mediaUrl,
+          viewedByUsers: story.viewedByUsers,
+          likedByUsers: story.likedByUsers,
+        }
+      })
+    };
+  }
+
+  async findWorkingStoriesByUser(userId: string) {
+    const uid = new Types.ObjectId(userId);
+    const stories = await this.storyRepo.find({
+      ownerId: uid,
       type: 'stories',
       isArchived: false,
     });
-    return stories.map((story) => {
-      return {
-        _id: story._id,
-        ownerId: story.ownerId,
-        mediaUrl: story.mediaUrl,
-        viewedByUsers: story.viewedByUsers,
-        likedByUsers: story.likedByUsers,
-      };
-    });
+    return {
+      message: 'Success',
+      data: stories.map((story) => {
+        return {
+          _id: story._id,
+          ownerId: story.ownerId,
+          mediaUrl: story.mediaUrl,
+          viewedByUsers: story.viewedByUsers,
+          likedByUsers: story.likedByUsers,
+        }
+      })
+    };
   }
   async findHighlightsByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
@@ -81,7 +110,7 @@ export class StoryService {
           _id: userId,
           handleName: currentUserProfile.handleName,
           profilePic: currentUserProfile.profilePic,
-          stories: currentUserStories.map((story) => story._id),
+          stories: currentUserStories.data.map((story) => story._id),
         },
       ];
     }
@@ -146,12 +175,12 @@ export class StoryService {
       stories: storiesByUserId[item_id] || [],
     }));
 
-    if (currentUserStories.length > 0) {
+    if (currentUserStories.data.length > 0) {
       followingStories.unshift({
         _id: userId,
         handleName: currentUserProfile.handleName,
         profilePic: currentUserProfile.profilePic,
-        stories: currentUserStories.map((story) => story._id),
+        stories: currentUserStories.data.map((story) => story._id),
       });
     }
     return followingStories;
