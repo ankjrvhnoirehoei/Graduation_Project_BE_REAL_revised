@@ -116,7 +116,92 @@ export class PostService {
   }
 
   async findAllWithMedia(userId: string): Promise<any[]> {
+    const currentUser = new Types.ObjectId(userId);
     return this.postModel.aggregate([
+        {
+          $lookup: {
+            from: 'relations',
+            let: {
+              pu: '$userID',       
+              cu: currentUser     
+            },
+            pipeline: [
+              {
+                // normalize ordering between cu and pu
+                $addFields: {
+                  pair: {
+                    $cond: [
+                      { $lt: ['$$cu',   '$$pu'] },
+                      { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
+                      { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
+                    ]
+                  }
+                }
+              },
+              {
+                // find the single document for that ordered pair
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$userOneID', '$pair.u1'] },
+                      { $eq: ['$userTwoID', '$pair.u2'] }
+                    ]
+                  }
+                }
+              },
+              {
+                // keep only the relation string and the bool for which side to inspect
+                $project: {
+                  _id: 0,
+                  relation: 1,
+                  userOneIsCurrent: '$pair.userOneIsCurrent'
+                }
+              }
+            ],
+            as: 'relationLookup'
+          }
+        },
+
+        {
+          // turn that lookup into a simple Boolean
+          $addFields: {
+            isFollow: {
+              $let: {
+                vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
+                in: {
+                  $cond: [
+                    // if no document -> not following
+                    { $eq: ['$$rel', null] },
+                    false,
+                    // otherwise split "FOLLOW_NULL" -> [one, two] and check the correct half
+                    {
+                      $switch: {
+                        branches: [
+                          {
+                            case: { $eq: ['$$rel.userOneIsCurrent', true] },
+                            then: { $eq: [{ $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 0] }, 'FOLLOW'] }
+                          },
+                          {
+                            case: { $eq: ['$$rel.userOneIsCurrent', false] },
+                            then: { $eq: [{ $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 1] }, 'FOLLOW'] }
+                          }
+                        ],
+                        default: false
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+
+        // finally, prune out the temporary `relationLookup` array
+        {
+          $project: {
+            relationLookup: 0
+          }
+        },
       {
         $lookup: {
           from: 'hiddenposts',
@@ -254,13 +339,93 @@ export class PostService {
           'musicInfo.link': 1,
           'musicInfo.coverImg': 1,
           'musicInfo.author': 1,
+          isFollow: 1,
         },
       },
     ]);
   }
 
   async findReelsWithMedia(userId: string): Promise<any[]> {
+    const currentUser = new Types.ObjectId(userId);
     return this.postModel.aggregate([
+      {
+      $lookup: {
+        from: 'relations',
+        let: { pu: '$userID', cu: currentUser },
+        pipeline: [
+          {
+            $addFields: {
+              pair: {
+                $cond: [
+                  { $lt: ['$$cu', '$$pu'] },
+                  { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
+                  { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
+                ]
+              }
+            }
+          },
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$userOneID', '$pair.u1'] },
+                  { $eq: ['$userTwoID', '$pair.u2'] }
+                ]
+              }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              relation: 1,
+              userOneIsCurrent: '$pair.userOneIsCurrent'
+            }
+          }
+        ],
+        as: 'relationLookup'
+      }
+    },
+    {
+      $addFields: {
+        isFollow: {
+          $let: {
+            vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
+            in: {
+              $cond: [
+                { $eq: ['$$rel', null] },
+                false,
+                {
+                  $switch: {
+                    branches: [
+                      {
+                        case: { $eq: ['$$rel.userOneIsCurrent', true] },
+                        then: {
+                          $eq: [
+                            { $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 0] },
+                            'FOLLOW'
+                          ]
+                        }
+                      },
+                      {
+                        case: { $eq: ['$$rel.userOneIsCurrent', false] },
+                        then: {
+                          $eq: [
+                            { $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 1] },
+                            'FOLLOW'
+                          ]
+                        }
+                      }
+                    ],
+                    default: false
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    { $project: { relationLookup: 0 } },
       {
         $lookup: {
           from: 'hiddenposts',
@@ -381,6 +546,7 @@ export class PostService {
           'user._id': 1,
           'user.handleName': 1,
           'user.profilePic': 1,
+          isFollow: 1,
         },
       },
     ]);
@@ -1046,6 +1212,84 @@ export class PostService {
     const userObjectId = new Types.ObjectId(userId);
 
     return this.postModel.aggregate<PipelineStage[]>([
+    {
+      $lookup: {
+        from: 'relations',
+        let: { pu: '$userID', cu: userObjectId },
+        pipeline: [
+          {
+            $addFields: {
+              pair: {
+                $cond: [
+                  { $lt: ['$$cu', '$$pu'] },
+                  { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
+                  { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
+                ]
+              }
+            }
+          },
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$userOneID', '$pair.u1'] },
+                  { $eq: ['$userTwoID', '$pair.u2'] }
+                ]
+              }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              relation: 1,
+              userOneIsCurrent: '$pair.userOneIsCurrent'
+            }
+          }
+        ],
+        as: 'relationLookup'
+      }
+    },
+    {
+      $addFields: {
+        isFollow: {
+          $let: {
+            vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
+            in: {
+              $cond: [
+                { $eq: ['$$rel', null] },
+                false,
+                {
+                  $switch: {
+                    branches: [
+                      {
+                        case: { $eq: ['$$rel.userOneIsCurrent', true] },
+                        then: {
+                          $eq: [
+                            { $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 0] },
+                            'FOLLOW'
+                          ]
+                        }
+                      },
+                      {
+                        case: { $eq: ['$$rel.userOneIsCurrent', false] },
+                        then: {
+                          $eq: [
+                            { $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 1] },
+                            'FOLLOW'
+                          ]
+                        }
+                      }
+                    ],
+                    default: false
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    { $project: { relationLookup: 0 } },
       // exclude any posts this user has hidden
       {
         $lookup: {
@@ -1202,6 +1446,7 @@ export class PostService {
           likeCount: 1,
           commentCount: 1,
           isLike: 1,
+          isFollow: 1,
         },
       },
     ]);
