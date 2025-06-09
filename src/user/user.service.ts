@@ -11,7 +11,7 @@ import * as nodemailer from 'nodemailer';
 import { User, UserDocument } from './user.schema';
 import { v4 as uuidv4 } from 'uuid';
 import { RegisterDto } from './dto/register.dto';
-import { ChangeEmailDto, ChangePasswordDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
+import { ChangeEmailDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
 import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
@@ -246,9 +246,28 @@ export class UserService {
     // build a clean update object
     const update: Partial<Record<keyof EditUserDto, any>> = {};
     for (const [key, value] of Object.entries(dto)) {
-      if (value !== undefined) {
+      if (value !== undefined && key !== 'password') { // Add check to exclude password
         update[key] = value;
       }
+    }
+
+    // handle password change if provided
+    if (dto.password) {
+      const user = await this.userModel.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      // check if new password is same as current
+      const isSame = await bcrypt.compare(dto.password, user.password);
+      if (isSame) {
+        throw new BadRequestException(
+          'New password must be different from the current password',
+        );
+      }
+
+      // hash new password and add it to update object
+      update.password = await bcrypt.hash(dto.password, 10);
     }
 
     // ensure there is something to update
@@ -267,7 +286,7 @@ export class UserService {
     // strip out sensitive fields
     const { _id, password, refreshToken, ...safe } = updated;
     return safe;
-  }  
+  }
 
   /** Edit user's email address
    *  Validate and send confirmation code to new email.
@@ -328,27 +347,4 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
   }  
-  
-  // edit password
-  async changePassword(
-    userId: string,
-    dto: ChangePasswordDto,
-  ): Promise<void> {
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    // check new 
-    const isSame = await bcrypt.compare(dto.newPassword, user.password);
-    if (isSame) {
-      throw new BadRequestException(
-        'New password must be different from the current password',
-      );
-    }
-
-    // hash and save
-    user.password = await bcrypt.hash(dto.newPassword, 10);
-    await user.save();
-  }
 }
