@@ -191,6 +191,20 @@ export class PostService {
       },
       {
         $lookup: {
+          from: 'musics',
+          localField: 'music.musicId',
+          foreignField: '_id',
+          as: 'musicInfo',
+        },
+      },
+      {
+        $unwind: {
+          path: '$musicInfo',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
           from: 'postlikes',
           let: { postId: '$_id' },
           pipeline: [
@@ -236,6 +250,10 @@ export class PostService {
           'user._id': 1,
           'user.handleName': 1,
           'user.profilePic': 1,
+          'musicInfo.song': 1,
+          'musicInfo.link': 1,
+          'musicInfo.coverImg': 1,
+          'musicInfo.author': 1,
         },
       },
     ]);
