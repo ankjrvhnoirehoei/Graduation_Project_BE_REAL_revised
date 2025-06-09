@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
-export type BookmarkPlaylistDocument = BookmarkPlaylist & Document;
+export type BookmarkPlaylistDocument = BookmarkPlaylist & Document<Types.ObjectId>;
 
 @Schema({ timestamps: true })
 export class BookmarkPlaylist {
@@ -11,7 +11,7 @@ export class BookmarkPlaylist {
   @Prop({ required: true })
   playlistName: string;
 
-  @Prop({ default: 'https://res.cloudinary.com/degdvuuhd/image/upload/v1748940509/bv1cukj386izinosx4v5.png' })
+  @Prop({ default: 'https://i.ibb.co/Fq35wvh8/playlist.png' })
   coverImg: string; 
 
   @Prop({ default: 0 })

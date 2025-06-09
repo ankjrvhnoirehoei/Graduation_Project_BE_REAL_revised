@@ -16,6 +16,7 @@ import { GetFollowersDto } from './dto/get-followers.dto';
 import { GetFollowingDto } from './dto/get-following.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { GetBlockingDto } from './dto/get-blocking.dto';
 
 @Controller('relations')
 export class RelationController {
@@ -137,4 +138,33 @@ export class RelationController {
 
     return { userId, following };
   }
+
+  /**
+   * POST /relations/blocking
+   * body: { userId: string }
+   *
+   * Returns an array of "who userId is blocking."
+   * Also protected by JwtRefreshAuthGuard.
+   */
+  @UseGuards(JwtRefreshAuthGuard)
+  @Post('blocking')
+  async getBlocking(@Body() dto: GetBlockingDto) {
+    const { userId } = dto;
+
+    // fetch all relationship records where userId blocks someone
+    const records = await this.relationService.findByUserAndFilter(
+      userId,
+      'blocking',
+    );
+
+    // map each record to the blocked-user's ID
+    const blocking = records.map(r => {
+      const u1 = r.userOneID.toString();
+      const u2 = r.userTwoID.toString();
+      // if userId is in userTwoID, then userId blocks userOneID; otherwise userId blocks userTwoID
+      return u2 === userId ? u1 : u2;
+    });
+
+    return { userId, blocking };
+  }  
 }

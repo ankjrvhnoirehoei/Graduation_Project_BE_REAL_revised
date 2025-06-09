@@ -85,19 +85,39 @@ export class BookmarkItemService {
     itemId: string,
     userId: string,
   ): Promise<BookmarkItem> {
-  // ensure playlist belongs to user
+    // ensure playlist belongs to user
     await this.validatePlaylistOwnership(playlistId, userId);
 
     if (!Types.ObjectId.isValid(itemId)) {
       throw new BadRequestException('Invalid item ID format.');
     }
 
+    const pid = new Types.ObjectId(playlistId);
+    const iid = new Types.ObjectId(itemId);
+
     // Get the post type using PostService
     const itemType = await this.postService.getPostType(itemId);
 
+    // Check for existing soft-deleted item
+    const existing = await this.itemModel.findOne({
+      playlistID: pid,
+      itemID: iid,
+      itemType,
+    });
+
+    if (existing) {
+      if (!existing.isDeleted) {
+        throw new BadRequestException('This item is already bookmarked.');
+      }
+      // Resurrect the soft-deleted item
+      existing.isDeleted = false;
+      return existing.save();
+    }
+
+    // Create new if no existing item found
     const newItem = new this.itemModel({
-      playlistID: new Types.ObjectId(playlistId),
-      itemID: new Types.ObjectId(itemId),
+      playlistID: pid,
+      itemID: iid,
       itemType,
       isDeleted: false,
     });
@@ -142,4 +162,70 @@ export class BookmarkItemService {
 
     return modifiedCount;
   }
+
+  // add or readd a music item to a playlist
+  async createMusic(
+    playlistId: string,
+    musicId: string,
+    userId: string,
+  ): Promise<BookmarkItem> {
+    await this.validatePlaylistOwnership(playlistId, userId);
+
+    if (!Types.ObjectId.isValid(musicId)) {
+      throw new BadRequestException('Invalid music ID format.');
+    }
+    const pid = new Types.ObjectId(playlistId);
+    const mid = new Types.ObjectId(musicId);
+
+    // see if there's a soft-deleted one we can resurrect
+    const existing = await this.itemModel.findOne({
+      playlistID: pid,
+      itemID: mid,
+      itemType: 'music',
+    });
+
+    if (existing) {
+      if (!existing.isDeleted) {
+        throw new BadRequestException('This music is already bookmarked.');
+      }
+      existing.isDeleted = false;
+      return existing.save();
+    }
+
+    // otherwise create fresh
+    const bookmark = new this.itemModel({
+      playlistID: pid,
+      itemID: mid,
+      itemType: 'music',
+      isDeleted: false,
+    });
+    return bookmark.save();
+  }
+
+  // soft-delete a music item from a playlist
+  async removeMusic(
+    playlistId: string,
+    musicId: string,
+    userId: string,
+  ): Promise<number> {
+    await this.validatePlaylistOwnership(playlistId, userId);
+
+    if (!Types.ObjectId.isValid(musicId)) {
+      throw new BadRequestException('Invalid music ID format.');
+    }
+    const pid = new Types.ObjectId(playlistId);
+    const mid = new Types.ObjectId(musicId);
+
+    const result = await this.itemModel.updateOne(
+      { playlistID: pid, itemID: mid, itemType: 'music', isDeleted: false },
+      { isDeleted: true },
+    );
+
+    // modifiedCount is 1 if flipped
+    const count = (result as any).modifiedCount ?? 0;
+    if (count === 0) {
+      throw new BadRequestException('No active bookmark found to remove.');
+    }
+    return count;
+  }  
 }
