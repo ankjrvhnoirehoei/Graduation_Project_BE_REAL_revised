@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { StoryRepository } from './story.repository';
 import { Types } from 'mongoose';
@@ -6,9 +6,11 @@ import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
 import { UpdateStoryDto } from './dto/update-story.dto';
 import { RelationService } from 'src/relation/relation.service';
 import { UserService } from 'src/user/user.service';
+import { UpdateHighlightDto } from './dto/update-highlight.dto';
 
 @Injectable()
 export class StoryService {
+  private readonly log: Logger = new Logger();
   constructor(
     private readonly storyRepo: StoryRepository,
     private readonly relationServ: RelationService,
@@ -18,19 +20,47 @@ export class StoryService {
   async findStoriesByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
     const stories = await this.storyRepo.find({
-      userId: uid,
+      where: {
+        ownerId: uid,
+        type: 'stories',
+      },
+      order: {
+        createAt: 'DESC',
+      },
+    });
+    return {
+      message: 'Success',
+      data: stories.map((story) => {
+        return {
+          _id: story._id,
+          ownerId: story.ownerId,
+          mediaUrl: story.mediaUrl,
+          viewedByUsers: story.viewedByUsers,
+          likedByUsers: story.likedByUsers,
+        }
+      })
+    };
+  }
+
+  async findWorkingStoriesByUser(userId: string) {
+    const uid = new Types.ObjectId(userId);
+    const stories = await this.storyRepo.find({
+      ownerId: uid,
       type: 'stories',
       isArchived: false,
     });
-    return stories.map((story) => {
-      return {
-        _id: story._id,
-        ownerId: story.ownerId,
-        mediaUrl: story.mediaUrl,
-        viewedByUsers: story.viewedByUsers,
-        likedByUsers: story.likedByUsers,
-      };
-    });
+    return {
+      message: 'Success',
+      data: stories.map((story) => {
+        return {
+          _id: story._id,
+          ownerId: story.ownerId,
+          mediaUrl: story.mediaUrl,
+          viewedByUsers: story.viewedByUsers,
+          likedByUsers: story.likedByUsers,
+        }
+      })
+    };
   }
   async findHighlightsByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
@@ -80,7 +110,7 @@ export class StoryService {
           _id: userId,
           handleName: currentUserProfile.handleName,
           profilePic: currentUserProfile.profilePic,
-          stories: currentUserStories.map((story) => story._id),
+          stories: currentUserStories.data.map((story) => story._id),
         },
       ];
     }
@@ -145,12 +175,12 @@ export class StoryService {
       stories: storiesByUserId[item_id] || [],
     }));
 
-    if (currentUserStories.length > 0) {
+    if (currentUserStories.data.length > 0) {
       followingStories.unshift({
         _id: userId,
         handleName: currentUserProfile.handleName,
         profilePic: currentUserProfile.profilePic,
-        stories: currentUserStories.map((story) => story._id),
+        stories: currentUserStories.data.map((story) => story._id),
       });
     }
     return followingStories;
@@ -166,6 +196,7 @@ export class StoryService {
       likedByUsers: [],
       collectionName: '',
       storyId: [],
+      limitHighlight: 50
     });
     return {
       message: 'Story created successfully',
@@ -218,6 +249,7 @@ export class StoryService {
       likedByUsers: [],
       isArchived: true,
       mediaUrl: '',
+      limitHighlight: 50
     });
     return {
       message: 'Created Success',
@@ -229,6 +261,32 @@ export class StoryService {
     };
   }
 
+  async updatedHighlight(uid: string, storyDto: UpdateHighlightDto) {
+    const ref = await this.storyRepo.findOne( new Types.ObjectId(storyDto._id) );
+    if (!ref) { return "Story Not found" }
+    const uids = new Types.ObjectId(uid);
+    if (!ref.ownerId.equals(uids)) { return "You can't update this story" }
+
+    const updateData = {
+      $set: {
+        collectionName: storyDto.collectionName,
+        storyId: storyDto.storyIds,
+      }
+    };
+    const updated = await this.storyRepo.findOneAndUpdate(
+      { _id: storyDto._id },
+      updateData,
+    )
+    return {
+      message: 'Updated Success',
+      data: {
+        _id: updated._id,
+        collectionName: updated.collectionName,
+        stoies: updated.storyId,
+      }
+    }
+  }
+  
   async archiveStory(uid: string, storyDto: UpdateStoryDto) {
     const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
     const uids = new Types.ObjectId(uid);
