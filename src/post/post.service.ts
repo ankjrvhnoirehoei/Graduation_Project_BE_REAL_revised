@@ -1022,4 +1022,170 @@ export class PostService {
     // 4) Return array-of-strings
     return aggResults.map((r) => r.tag);
   }
+
+  // returns up to 20 'reel'‐type documents that have a music subdocument
+  async findReelsWithMusic(userId: string): Promise<any[]> {
+    const userObjectId = new Types.ObjectId(userId);
+
+    return this.postModel.aggregate<PipelineStage[]>([
+      // exclude any posts this user has hidden
+      {
+        $lookup: {
+          from: 'hiddenposts',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'hidden',
+        },
+      },
+      {
+        $match: {
+          'hidden.userId': { $ne: userObjectId },
+        },
+      },
+
+      // exclude any reels from users this user has blocked
+      {
+        $lookup: {
+          from: 'userblocks',           
+          let: { ownerId: '$userID' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$blockedUserId', '$$ownerId'] },
+                    { $eq: ['$userId', userObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'blocked',
+        },
+      },
+      {
+        $match: { 'blocked.0': { $exists: false } },
+      },
+
+      // only reels that actually have a music subdocument
+      {
+        $match: {
+          type: 'reel',
+          isEnable: true,
+          nsfw: false,
+          music: { $exists: true, $ne: null },
+        },
+      },
+
+      // get the latest 50, then pick 20 at random
+      { $sort: { createdAt: -1 } },
+      { $limit: 50 },
+      { $sample: { size: 20 } },
+
+      // join media
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'media',
+        },
+      },
+
+      // populate user info
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+
+      // join likes and comments to compute counts
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likes',
+        },
+      },
+      {
+        $addFields: { likeCount: { $size: '$likes' } },
+      },
+      {
+        $lookup: {
+          from: 'comments',
+          let: { pid: '$_id' },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$pid'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'comments',
+        },
+      },
+      {
+        $addFields: { commentCount: { $size: '$comments' } },
+      },
+
+      // check if current user liked each post
+      {
+        $lookup: {
+          from: 'postlikes',
+          let: { pid: '$_id' },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postId', '$$pid'] },
+                    { $eq: ['$userId', userObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'userLikeEntry',
+        },
+      },
+      {
+        $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } },
+      },
+
+      // final projection
+      {
+        $project: {
+          _id: 1,
+          userID: 1,
+          type: 1,
+          caption: 1,
+          isFlagged: 1,
+          nsfw: 1,
+          isEnable: 1,
+          location: 1,
+          isArchived: 1,
+          viewCount: 1,
+          share: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          media: 1,
+          music: 1,
+          'user._id': 1,
+          'user.handleName': 1,
+          'user.profilePic': 1,
+          likeCount: 1,
+          commentCount: 1,
+          isLike: 1,
+        },
+      },
+    ]);
+  }    
 }

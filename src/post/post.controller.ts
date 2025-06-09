@@ -47,6 +47,13 @@ export class PostController {
     return this.postService.findReelsWithMedia(userId);
   }
 
+  @Get('get-all-reel-with-music')
+  async getAllReelWithMusic(
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.postService.findReelsWithMusic(userId);
+  }
+
   // Returns up to 50 posts and up to 50 reels for user
   @Get('user/all')
   async getUserContent(
