@@ -3,13 +3,18 @@ import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { Types } from "mongoose";
 import { User } from "src/user/user.schema";
 
+export enum StoryType {
+   STORIES = 'stories',
+   HIGHLIGHTS = 'highlights',
+}
+
 @Schema({versionKey: false, timestamps: true})
 export class Story extends AbstractDocument {
    @Prop({ref: User.name, required: true})
    ownerId: Types.ObjectId;
 
    @Prop()
-   type: 'stories' | 'highlights';
+   type: StoryType;
 
    @Prop()
    mediaUrl: string;
