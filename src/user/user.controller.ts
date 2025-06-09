@@ -26,7 +26,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtService } from '@nestjs/jwt';
 import { RelationService } from 'src/relation/relation.service';
 import { SearchUserDto } from './dto/search-user.dto';
-import { ChangeEmailDto, ChangePasswordDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
+import { ChangeEmailDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
 
 @Controller('users')
 export class UserController {
@@ -281,16 +281,5 @@ export class UserController {
   ) {
     await this.userService.confirmEmailChange(userId, dto);
     return { message: 'Email updated successfully' };
-  }  
-
-  // edit password
-  @Patch('password')
-  @UseGuards(JwtRefreshAuthGuard)
-  async changePassword(
-    @CurrentUser('sub') userId: string,
-    @Body() dto: ChangePasswordDto,
-  ) {
-    await this.userService.changePassword(userId, dto);
-    return { message: 'Password updated successfully' };
   }  
 }

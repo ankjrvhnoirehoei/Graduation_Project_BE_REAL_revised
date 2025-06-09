@@ -67,6 +67,23 @@ export class EditUserDto {
     message: 'gender must be one of male, female, undisclosed',
   })
   gender?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6, { message: 'Password must be at least 6 characters' })
+  @Matches(/(?=.*\d)/, {
+    message: 'Password must contain at least one number',
+  })
+  @Matches(/(?=.*[a-z])/, {
+    message: 'Password must contain at least one lowercase letter',
+  })
+  @Matches(/(?=.*[A-Z])/, {
+    message: 'Password must contain at least one uppercase letter',
+  })
+  @Matches(/(?=.*[\W_])/, {
+    message: 'Password must contain at least one special character',
+  })
+  password?: string;
 }
 
 export class ChangeEmailDto {
@@ -82,22 +99,4 @@ export class ConfirmEmailDto {
   @IsString()
   @Length(6, 6, { message: 'Confirmation code must be 6 characters' })
   code: string;
-}
-
-export class ChangePasswordDto {
-  @IsString()
-  @MinLength(6, { message: 'Password must be at least 6 characters' })
-  @Matches(/(?=.*\d)/, {
-    message: 'Password must contain at least one number',
-  })
-  @Matches(/(?=.*[a-z])/, {
-    message: 'Password must contain at least one lowercase letter',
-  })
-  @Matches(/(?=.*[A-Z])/, {
-    message: 'Password must contain at least one uppercase letter',
-  })
-  @Matches(/(?=.*[\W_])/, {
-    message: 'Password must contain at least one special character',
-  })
-  newPassword: string;
 }
