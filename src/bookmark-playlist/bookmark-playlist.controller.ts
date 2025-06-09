@@ -30,20 +30,6 @@ export class BookmarkPlaylistController {
     return this.playlistService.findAllByUser(userId);
   }
 
-  // /**
-  //  * returns all non-deleted items for the given playlist ID,
-  //  * but only if that playlist belongs to the current user.
-  //  */
-  // @Get(':id/items')
-  // @UseGuards(JwtRefreshAuthGuard)
-  // async getItemsInPlaylist(
-  //   @Param('id') playlistId: string,
-  //   @CurrentUser('sub') userId: string,
-  // ) {
-  //   await this.playlistService.findByIdAndUser(playlistId, userId);
-  //   return this.itemService.findAllByPlaylist(playlistId);
-  // }
-
   // creates a new playlist for the current user
   @Post('add')
   @UseGuards(JwtRefreshAuthGuard)
@@ -125,4 +111,31 @@ export class BookmarkPlaylistController {
 
     return { removedCount };
   }
+
+  // add music to playlist
+  @Post('music/add')
+  @UseGuards(JwtRefreshAuthGuard)
+  async addMusic(
+    @Body('musicId') musicId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    console.log('userID: ', userId);
+    if (!musicId) {
+      throw new BadRequestException('musicId is required.');
+    }
+    return this.playlistService.addMusicToPlaylist(userId, musicId);
+  }
+
+  // soft delete it
+  @Delete('music/remove')
+  @UseGuards(JwtRefreshAuthGuard)
+  async removeMusic(
+    @Body('musicId') musicId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    if (!musicId) {
+      throw new BadRequestException('musicId is required.');
+    }
+    return this.playlistService.removeMusicFromPlaylist(userId, musicId);
+  }  
 }
