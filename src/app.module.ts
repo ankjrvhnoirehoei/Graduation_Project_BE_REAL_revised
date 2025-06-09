@@ -51,6 +51,8 @@ import { R2UploadModule } from './r2/r2.module';
     UserHiddenPostModule,
     BookmarkPlaylistModule,
     BookmarkItemModule,
+    StreamModule,
+    R2UploadModule,
   ],
   // providers: [
   //   {
