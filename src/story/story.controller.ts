@@ -148,7 +148,7 @@ export class StoryController {
     @CurrentUser('sub') userId: string,
     @Body(new ValidationPipe()) storyDto: CreateHighlightStoryDto
   ){
-    return this.storyService.createHighlightStory(userId, storyDto);
+    return this.storyService.createHighlight(userId, storyDto);
   }
 
   @Patch('update-highlight')
