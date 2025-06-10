@@ -13,7 +13,10 @@ import { Types } from 'mongoose';
 import { Room } from 'src/room/room.schema';
 
 @WebSocketGateway({
-  cors: { origin: '*' },
+  cors: {
+    origin: ['http://cirla.io.vn'],
+    credentials: true,
+  },
   namespace: '/chat',
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -102,7 +105,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      const room = await this.roomService.createRoom(data) as Room;
+      const room = (await this.roomService.createRoom(data)) as Room;
 
       socket.join((room._id as Types.ObjectId).toString());
       socket.data.currentRoom = (room._id as Types.ObjectId).toString();
