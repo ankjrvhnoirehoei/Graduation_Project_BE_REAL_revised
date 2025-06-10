@@ -13,13 +13,16 @@ import { v4 as uuidv4 } from 'uuid';
 import { RegisterDto } from './dto/register.dto';
 import { ChangeEmailDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
 import { JwtService } from '@nestjs/jwt';
+import { RelationService } from 'src/relation/relation.service';
 
 @Injectable()
 export class UserService {
   private mailer: nodemailer.Transporter;
+  relationModel: any;
     constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly jwtService: JwtService,
+    private readonly relationService: RelationService,
   ) {
     // configure your SMTP transport via environment variables
     this.mailer = nodemailer.createTransport({
@@ -362,4 +365,28 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
   }  
+
+  async getConnectionsForUser(userId: string) {
+    const conns = await this.relationService.getConnections(userId, 20);
+    const ids = conns.map((c) => c.otherId);
+
+    if (!ids.length) {
+      return [];
+    }
+
+    const users = await this.userModel
+      .find({ _id: { $in: ids } })
+      .select({ username: 1, handleName: 1, profilePic: 1 })
+      .lean();
+
+    const followMap = new Map(conns.map((c) => [c.otherId, c.isFollow]));
+
+    return users.map((u) => ({
+      _id: u._id.toString(),
+      username: u.username,
+      handleName: u.handleName,
+      profilePic: u.profilePic || '',
+      isFollow: followMap.get(u._id.toString())!,
+    }));
+  }
 }

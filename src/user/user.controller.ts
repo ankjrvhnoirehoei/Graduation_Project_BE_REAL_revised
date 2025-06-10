@@ -282,4 +282,11 @@ export class UserController {
     await this.userService.confirmEmailChange(userId, dto);
     return { message: 'Email updated successfully' };
   }  
+
+  @UseGuards(JwtRefreshAuthGuard)
+  @Get('connections')
+  async getConnections(@CurrentUser('sub') userId: string) {
+    const items = await this.userService.getConnectionsForUser(userId);
+    return { items };
+  }
 }

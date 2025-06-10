@@ -108,7 +108,7 @@ export class RelationService {
       twoRel = newActionState;
     }
 
-    // If both sides are NULL → remove the record
+    // If both sides are NULL -> remove the record
     if (oneRel === 'NULL' && twoRel === 'NULL') {
       if (existing) {
         try {
@@ -226,5 +226,72 @@ export class RelationService {
     }
 
     return this.relationModel.find({ $or: or }).exec();
+  }
+
+  async getConnections(
+    userId: string,
+    limit = 20,
+  ): Promise<{ otherId: string; isFollow: boolean }[]> {
+    const u = new Types.ObjectId(userId);
+
+    // who I follow
+    const followingRecs = await this.findByUserAndFilter(userId, 'following');
+
+    // who follows me
+    const followerRecs  = await this.findByUserAndFilter(userId, 'followers');
+
+    // whom I block
+    const blockingRecs  = await this.findByUserAndFilter(userId, 'blocking');
+    const blockingIds   = new Set(
+      blockingRecs.map(r =>
+        (r.userOneID.equals(u) ? r.userTwoID : r.userOneID).toHexString(),
+      ),
+    );
+
+    // who blocks me
+    const blockerRecs   = await this.findByUserAndFilter(userId, 'blockers');
+    const blockerIds    = new Set(
+      blockerRecs.map(r =>
+        (r.userOneID.equals(u) ? r.userTwoID : r.userOneID).toHexString(),
+      ),
+    );
+
+    // helper to map a record to its 'other' user ID
+    const otherIdOf = (r: RelationDocument) =>
+      r.userOneID.equals(u) ? r.userTwoID.toHexString() : r.userOneID.toHexString();
+
+    type Conn = { otherId: string; isFollow: boolean };
+    const map = new Map<string, Conn>();
+
+    // add 'following' -> isFollow = true
+    for (const r of followingRecs) {
+      const otherId = otherIdOf(r);
+
+      // skip if blocked in either direction
+      if (blockingIds.has(otherId) || blockerIds.has(otherId)) {
+        continue;
+      }
+
+      if (!map.has(otherId)) {
+        map.set(otherId, { otherId, isFollow: true });
+      }
+    }
+
+    // add 'followers' -> isFollow = false
+    for (const r of followerRecs) {
+      const otherId = otherIdOf(r);
+
+      // skip if blocked in either direction
+      if (blockingIds.has(otherId) || blockerIds.has(otherId)) {
+        continue;
+      }
+
+      if (!map.has(otherId)) {
+        map.set(otherId, { otherId, isFollow: false });
+      }
+    }
+
+    // return up to `limit`
+    return Array.from(map.values()).slice(0, limit);
   }
 }
