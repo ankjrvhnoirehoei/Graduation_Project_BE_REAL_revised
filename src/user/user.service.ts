@@ -90,6 +90,21 @@ export class UserService {
     return safeUser;
   }
 
+  async findManyByIds(ids: string[]): Promise<(Partial<User> & { _id: string })[]> {
+    const objectIds = ids.map((id) => new Types.ObjectId(id));
+    const users = await this.userModel
+      .find({ _id: { $in: objectIds } })
+      .lean();
+
+    return users.map((u) => {
+      const { password, refreshToken, ...safe } = u;
+      return {
+        ...safe,
+        _id: safe._id.toString() // Convert to string
+      };
+    });
+  }
+
   async validateRefreshToken(userId: string, token: string): Promise<boolean> {
     const user = await this.userModel.findById(userId).lean();
     if (!user) {
