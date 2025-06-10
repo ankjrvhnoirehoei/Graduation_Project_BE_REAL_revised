@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsMongoId, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsMongoId, IsOptional, IsString, IsArray } from 'class-validator';
 
 export class CreateRoomDto {
   @IsNotEmpty()
@@ -12,6 +12,11 @@ export class CreateRoomDto {
   @IsOptional()
   @IsString()
   theme?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  user_ids?: string[];
 }
 
 export class AddUserToRoomDto {
