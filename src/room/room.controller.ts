@@ -8,12 +8,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { RoomService } from './room.service';
-import { JwtAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
+import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { AddUserToRoomDto, CreateRoomDto } from './dto/room.dto';
 
 @Controller('rooms')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtRefreshAuthGuard)
 export class RoomController {
   constructor(private readonly roomService: RoomService) {}
 
