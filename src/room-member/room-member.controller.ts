@@ -92,6 +92,7 @@ import { CreateRoomDto } from '../room/dto/create-room.dto';
    * for group: paginated list of all members
    * for single: return the other user only
    */
+// room-member.controller.ts
   @Get('all')
   async getMembers(
     @CurrentUser('sub') currentUserId: string,
@@ -102,7 +103,7 @@ import { CreateRoomDto } from '../room/dto/create-room.dto';
     const room = await this.roomService.getById(roomId);
     const p = parseInt(page, 10);
     const l = parseInt(limit, 10);
-
+    
     if (room.type === 'single') {
       // fetch up to two members
       const { members } = await this.memberService.findRoomMembers(roomId, 1, 2);
@@ -122,7 +123,6 @@ import { CreateRoomDto } from '../room/dto/create-room.dto';
           isFollowing = userOneIsActing ? oneRel === 'FOLLOW' : twoRel === 'FOLLOW';
         }
       }
-
       return {
         data: {
           userId: user._id.toString(),
@@ -134,18 +134,45 @@ import { CreateRoomDto } from '../room/dto/create-room.dto';
         },
       };
     }
-
-    // group chat: paginated
+    
+    // group chat: paginated with follow status
     const { members, total } = await this.memberService.findRoomMembers(roomId, p, l);
+    
+    // Get follow status for each member
+    const membersWithFollowStatus = await Promise.all(
+      members.map(async (m) => {
+        const user = m.user as any;
+        let isFollowing = false;
+        
+        // Don't check follow status for the current user
+        if (currentUserId !== user._id.toString()) {
+          try {
+            const { relation, userOneIsActing } =
+              await this.relationService.getRelation(currentUserId, user._id.toString());
+            if (relation) {
+              const [oneRel, twoRel] = (relation as string).split('_');
+              isFollowing = userOneIsActing ? oneRel === 'FOLLOW' : twoRel === 'FOLLOW';
+            }
+          } catch (error) {
+            // Log error but don't fail the entire request
+            console.warn(`Failed to get relation for user ${user._id}:`, error);
+          }
+        }
+        
+        return {
+          user: m.user,
+          role: m.role,
+          joined_at: m.joined_at,
+          left_at: m.left_at,
+          banned: m.banned_at instanceof Date,
+          nickname: m.nickname || '',
+          isFollowing,
+        };
+      })
+    );
+    
     return {
-      data: members.map(m => ({
-        user: m.user,
-        role: m.role,
-        joined_at: m.joined_at,
-        left_at: m.left_at,
-        banned: m.banned_at instanceof Date,
-        nickname: m.nickname || '',
-      })),
+      data: membersWithFollowStatus,
       meta: { total, page: p, limit: l },
     };
   }
