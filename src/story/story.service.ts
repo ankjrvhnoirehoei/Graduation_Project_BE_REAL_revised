@@ -89,7 +89,6 @@ export class StoryService {
 
     const currentUserStories = await this.findWorkingStoriesByUser(userId);
     const currentUserProfile = await this.userService.getPublicProfile(userId);
-
     const followingRelations = await this.relationServ.findByUserAndFilter(
       userId,
       'following',
@@ -173,7 +172,10 @@ export class StoryService {
         stories: currentUserStories.data.map((story) => story._id),
       });
     }
-    return followingStories;
+    return {
+      message: 'Success',
+      data: followingStories
+    };
   }
 
   async createStory(uid: string, storyDto: CreateStoryDto) {

@@ -29,8 +29,8 @@ export class StoryController {
     description: 'Success',
     isArray: true
   })
-  async findAll( @Body() body: any ) {
-    return this.storyService.findStoryById(body.storyId);
+  async findAll( @Body('storyId') storyId: string[] ) {
+    return this.storyService.findStoryById(storyId);
   }
 
   @Get('me')
@@ -71,7 +71,7 @@ export class StoryController {
     return this.storyService.findWorkingStoriesByUser(userId);
   }
 
-  @Get('user/following')
+  @Get('following') 
   @ApiOperation({ summary: `Get all working-stories of whom followed by current-user` })
   @ApiResponse({
     status: 201,
@@ -86,9 +86,9 @@ export class StoryController {
   })
   async getFollowingStories(
     @CurrentUser('sub') userId: string,
-    @Query('page') page: any,
+    @Query() query,
   ) {
-      return await this.storyService.getStoryFollowing(userId, page);
+      return await this.storyService.getStoryFollowing(userId, query.page);
   }
 
   @Get('highlights/user/:userId')
