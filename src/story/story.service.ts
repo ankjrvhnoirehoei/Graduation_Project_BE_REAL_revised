@@ -11,7 +11,7 @@ import { Story, StoryType } from './schema/story.schema';
 
 @Injectable()
 export class StoryService {
-  private readonly log: Logger = new Logger();
+  private readonly logger: Logger = new Logger();
   constructor(
     private readonly storyRepo: StoryRepository,
     private readonly relationServ: RelationService,
@@ -19,7 +19,8 @@ export class StoryService {
   ) {}
 
   // Standardize for Stories and Highlight
-  private LIMIT_HIGHLIGHTS() { return 50 }
+  private LIMIT_HIGHLIGHTS = 50
+  private LIMIT_PAGINATION = 20
   private STORY_RESPONSE(story: Story) {
     return {
       _id: story._id,
@@ -34,7 +35,7 @@ export class StoryService {
     };
   }
 
-  async findStoriesByUser(userId: string) {
+  async findStoriesByCurUser(userId: string) {
     const uid = new Types.ObjectId(userId);
     const stories = await this.storyRepo.find({
       ownerId: uid,
@@ -74,6 +75,7 @@ export class StoryService {
     const objectIds = ids.map((id) => new Types.ObjectId(id));
     const stories = await this.storyRepo.find({
       _id: { $in: objectIds },
+      type: 'stories'
     });
     return {
       message: 'Success',
@@ -196,7 +198,6 @@ export class StoryService {
     const hasViewed = existingStory.viewedByUsers.some((id) =>
       id.equals(viewerId)
     );
-    this.log.log(hasViewed)
 
     if (hasViewed) {
       return {
