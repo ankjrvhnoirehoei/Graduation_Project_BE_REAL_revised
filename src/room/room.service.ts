@@ -13,22 +13,22 @@ export class RoomService {
   constructor(@InjectModel(Room.name) private roomModel: Model<Room>) {}
 
   async createRoom(
-  createRoomDto: CreateRoomDto,
-  userId: string,
-): Promise<Room> {
-  const allUserIds = Array.from(
-    new Set([
-      ...(createRoomDto.user_ids ?? []).map((id) => new Types.ObjectId(id)),
-      new Types.ObjectId(userId),
-    ]),
-  );
+    createRoomDto: CreateRoomDto,
+    userId: string,
+  ): Promise<Room> {
+    const allUserIds = Array.from(
+      new Set([
+        ...(createRoomDto.user_ids ?? []).map((id) => new Types.ObjectId(id)),
+        new Types.ObjectId(userId),
+      ]),
+    );
 
-  return this.roomModel.create({
-    ...createRoomDto,
-    created_by: new Types.ObjectId(userId),
-    user_ids: allUserIds,
-  });
-}
+    return this.roomModel.create({
+      ...createRoomDto,
+      created_by: new Types.ObjectId(userId),
+      user_ids: allUserIds,
+    });
+  }
 
   async addUserToRoom(roomId: string, userIdToAdd: string): Promise<Room> {
     const room = await this.roomModel.findById(roomId);
@@ -67,9 +67,8 @@ export class RoomService {
 
   async getRoomsOfUser(userId: string): Promise<Room[]> {
     return this.roomModel
-      .find({
-        user_ids: new Types.ObjectId(userId),
-      })
+      .find({ user_ids: new Types.ObjectId(userId) })
+      .populate('user_ids', '_id handleName profilePic')
       .exec();
   }
 }
