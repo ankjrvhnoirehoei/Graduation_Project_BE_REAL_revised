@@ -62,7 +62,7 @@ export class StoryService {
   async findHighlightsByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
     const hlights = await this.storyRepo.find({
-      userId: uid,
+      ownerId: uid,
       type: 'highlights',
     });
     return {

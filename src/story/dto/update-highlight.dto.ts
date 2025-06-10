@@ -7,7 +7,7 @@ export class UpdateHighlightDto {
   
   @IsNotEmpty()
   @IsArray()
-  storyIds: string[];
+  storyId: string[];
 
   @IsOptional()
   collectionName?: string;
