@@ -37,6 +37,10 @@ export class UserService {
     });
   }
 
+  async findById(id: string) {
+    return this.userModel.findById(id).select('_id handleName profilePic');
+  }
+
   async register(registerDto: RegisterDto): Promise<User> {
     const { email, password, profilePic } = registerDto;
     const existingUser = await this.userModel.findOne({ email });
