@@ -1,32 +1,46 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
-import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
-
+import {
+  Controller,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  Req,
+  Get,
+} from '@nestjs/common';
 import { RoomService } from './room.service';
-import { CreateRoomDto } from './dto/create-room.dto';
-import { Room } from './room.schema';
-import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { AddUserToRoomDto, CreateRoomDto } from './dto/room.dto';
+import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
+import { RoomAccessGuard } from 'src/auth/Middleware/room-access.guard';
 
 @Controller('rooms')
-@UseGuards(JwtRefreshAuthGuard)
 export class RoomController {
   constructor(private readonly roomService: RoomService) {}
 
-  @Post('create')
-  async createChat(
-    @CurrentUser('sub') userId: string,
-    @Body() dto: CreateRoomDto,
-  ): Promise<Room> {
-    return this.roomService.createRoom(userId, dto.userIds);
+  @UseGuards(JwtRefreshAuthGuard)
+  @Post()
+  create(@Body() dto: CreateRoomDto) {
+    return this.roomService.createRoom(dto);
   }
 
-  @Get('all')
-  async getMyRooms(
-    @CurrentUser('sub') userId: string,
-    @Query('page') page = '1',
-    @Query('limit') limit = '10',
+  @UseGuards(JwtRefreshAuthGuard)
+  @Post(':roomId/add-user')
+  addUserToRoom(@Param('roomId') roomId: string, @Body() dto: AddUserToRoomDto) {
+    return this.roomService.addUserToRoom(roomId, dto.user_id);
+  }
+
+  @UseGuards(JwtRefreshAuthGuard)
+  @Post(':roomId/remove-user')
+  removeUserFromRoom(
+    @Param('roomId') roomId: string,
+    @Body() dto: AddUserToRoomDto,
+    @Req() req
   ) {
-    const p = parseInt(page, 10);
-    const l = parseInt(limit, 10);
-    return this.roomService.getUserRooms(userId, p, l);
-  }  
+    return this.roomService.removeUserFromRoom(roomId, dto.user_id, req.user.userId);
+  }
+
+  @UseGuards(JwtRefreshAuthGuard, RoomAccessGuard)
+  @Get(':roomId')
+  getRoom(@Param('roomId') roomId: string) {
+    return this.roomService.getRoomWithUsers(roomId);
+  }
 }
