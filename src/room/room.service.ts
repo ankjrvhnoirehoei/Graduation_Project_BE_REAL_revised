@@ -1,7 +1,7 @@
 import {
   Injectable,
-  NotFoundException,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -12,63 +12,57 @@ import { CreateRoomDto } from './dto/room.dto';
 export class RoomService {
   constructor(@InjectModel(Room.name) private roomModel: Model<Room>) {}
 
-  async createRoom(dto: CreateRoomDto): Promise<Room> {
-    const newRoom = new this.roomModel({
-      ...dto,
-      user_ids: [new Types.ObjectId(dto.create_by)],
+  async createRoom(
+    createRoomDto: CreateRoomDto,
+    userId: string,
+  ): Promise<Room> {
+    return this.roomModel.create({
+      ...createRoomDto,
+      created_by: new Types.ObjectId(userId),
+      user_ids: [new Types.ObjectId(userId)],
     });
-    return newRoom.save();
   }
 
-  async addUserToRoom(roomId: string, userId: string): Promise<Room> {
+  async addUserToRoom(roomId: string, userIdToAdd: string): Promise<Room> {
     const room = await this.roomModel.findById(roomId);
     if (!room) throw new NotFoundException('Room not found');
 
-    await this.roomModel.updateOne(
-      { _id: roomId },
-      { $addToSet: { user_ids: new Types.ObjectId(userId) } }
-    );
+    const userIdToAddObj = new Types.ObjectId(userIdToAdd);
+    if (room.user_ids.includes(userIdToAddObj)) return room;
 
-    const updatedRoom = await this.roomModel.findById(roomId);
-    if (!updatedRoom) throw new NotFoundException('Room not found');
-    return updatedRoom;
+    room.user_ids.push(userIdToAddObj);
+    return room.save();
   }
 
   async removeUserFromRoom(
     roomId: string,
-    userId: string,
-    requesterId: string
+    userIdToRemove: string,
+    currentUserId: string,
   ): Promise<Room> {
     const room = await this.roomModel.findById(roomId);
     if (!room) throw new NotFoundException('Room not found');
 
-    if (room.create_by.toString() !== requesterId) {
+    if (room.created_by.toString() !== currentUserId) {
       throw new ForbiddenException('Only the creator can remove users');
     }
 
-    await this.roomModel.updateOne(
-      { _id: roomId },
-      { $pull: { user_ids: new Types.ObjectId(userId) } }
+    room.user_ids = room.user_ids.filter(
+      (id) => id.toString() !== userIdToRemove,
     );
-
-    const updatedRoom = await this.roomModel.findById(roomId);
-    if (!updatedRoom) throw new NotFoundException('Room not found');
-    return updatedRoom;
+    return room.save();
   }
 
   async isUserInRoom(roomId: string, userId: string): Promise<boolean> {
-    const room = await this.roomModel.findOne({
-      _id: roomId,
-      user_ids: new Types.ObjectId(userId),
-    });
-    return !!room;
+    const room = await this.roomModel.findById(roomId);
+    if (!room) throw new NotFoundException('Room not found');
+    return room.user_ids.some((id) => id.toString() === userId);
   }
 
-  async getRoomWithUsers(roomId: string): Promise<Room> {
-    const room = await this.roomModel
-      .findById(roomId)
-      .populate('user_ids', 'username email avatar');
-    if (!room) throw new NotFoundException('Room not found');
-    return room;
+  async getRoomsOfUser(userId: string): Promise<Room[]> {
+    return this.roomModel
+      .find({
+        user_ids: new Types.ObjectId(userId),
+      })
+      .exec();
   }
 }

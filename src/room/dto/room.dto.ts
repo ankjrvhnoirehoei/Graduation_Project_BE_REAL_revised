@@ -9,10 +9,6 @@ export class CreateRoomDto {
   @IsString()
   type: string;
 
-  @IsNotEmpty()
-  @IsMongoId()
-  create_by: string;
-
   @IsOptional()
   @IsString()
   theme?: string;

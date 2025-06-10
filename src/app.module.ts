@@ -17,7 +17,6 @@ import { StreamModule } from './streamM3U8/stream.module';
 import { JwtModule } from '@nestjs/jwt';
 import { R2UploadModule } from './r2/r2.module';
 import { RoomModule } from './room/room.module';
-import { RoomMemberModule } from './room-member/room-member.module';
 
 @Module({
   imports: [
@@ -56,7 +55,6 @@ import { RoomMemberModule } from './room-member/room-member.module';
     StreamModule,
     R2UploadModule,
     RoomModule,
-    RoomMemberModule,
   ],
   // providers: [
   //   {

@@ -9,13 +9,13 @@ export class Room extends Document {
   @Prop({ required: true })
   type: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  create_by: Types.ObjectId;
-
-  @Prop({ type: String })
+  @Prop()
   theme?: string;
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  created_by: Types.ObjectId;
+
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
   user_ids: Types.ObjectId[];
 }
 
