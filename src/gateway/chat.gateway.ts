@@ -12,7 +12,6 @@ import { Server, Socket } from 'socket.io';
 import { ValidationPipe } from '@nestjs/common';
 import { MessageService } from 'src/message/message.service';
 import { UserService } from 'src/user/user.service';
-import { socketJwtMiddleware } from 'src/auth/Middleware/jwt.socket-middleware';
 import { CreateMessageDto } from 'src/message/dto/message.dto';
 
 @WebSocketGateway({
@@ -35,24 +34,15 @@ export class ChatGateway
   ) {}
 
   afterInit(server: Server) {
-    const chatNamespace = server.of('/chat');
-    chatNamespace.use(socketJwtMiddleware);
     console.log('WebSocket server initialized at /chat');
   }
 
   handleConnection(client: Socket) {
-    const user = client.data.user;
-    if (user) {
-      console.log(`Client connected: ${user._id}`);
-    } else {
-      console.log('Client connected without user');
-      client.disconnect();
-    }
+    console.log(`Client connected: ${client.id}`);
   }
 
   handleDisconnect(client: Socket) {
-    const user = client.data.user;
-    console.log(`Client disconnected: ${user?._id || 'unknown user'}`);
+    console.log(`Client disconnected: ${client.id}`);
   }
 
   @SubscribeMessage('joinRoom')
@@ -61,7 +51,7 @@ export class ChatGateway
     @ConnectedSocket() client: Socket,
   ) {
     client.join(roomId);
-    console.log(`Client joined room: ${roomId}`);
+    console.log(`Client ${client.id} joined room: ${roomId}`);
   }
 
   @SubscribeMessage('leaveRoom')
@@ -70,23 +60,24 @@ export class ChatGateway
     @ConnectedSocket() client: Socket,
   ) {
     client.leave(roomId);
-    console.log(`Client left room: ${roomId}`);
+    console.log(`Client ${client.id} left room: ${roomId}`);
   }
 
   @SubscribeMessage('sendMessage')
   async handleSendMessage(
     @MessageBody(new ValidationPipe({ transform: true }))
-    payload: CreateMessageDto,
+    payload: CreateMessageDto & { senderId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const user = client.data.user;
-    if (!user || !user._id) {
-      return client.emit('errorMessage', 'Unauthorized');
+    const { roomId, senderId } = payload;
+
+    if (!senderId || !roomId) {
+      return client.emit('errorMessage', 'Missing senderId or roomId');
     }
 
     const message = await this.messageService.create({
       ...payload,
-      senderId: user._id,
+      senderId,
     });
 
     const populatedMessage = await message.populate({
@@ -94,14 +85,14 @@ export class ChatGateway
       select: 'handleName profilePic',
     });
 
-    this.server.to(payload.roomId).emit('receiveMessage', {
+    this.server.to(roomId).emit('receiveMessage', {
       _id: populatedMessage._id,
       roomId: populatedMessage.roomId,
       content: populatedMessage.content,
       media: populatedMessage.media,
       createdAt: populatedMessage.createdAt,
       sender: {
-        userId: user._id,
+        userId: senderId,
         handleName: populatedMessage.senderId.handleName,
         profilePic: populatedMessage.senderId.profilePic,
       },
