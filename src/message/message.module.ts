@@ -3,11 +3,13 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MessageService } from './message.service';
 import { ChatGateway } from 'src/gateway/chat.gateway';
 import { Message, MessageSchema } from './message.schema';
+import { MessageController } from './message.controller';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
   ],
   providers: [MessageService, ChatGateway],
+  controllers: [MessageController],
 })
 export class MessageModule {}
