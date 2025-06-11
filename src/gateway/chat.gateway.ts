@@ -21,6 +21,7 @@ import { CreateMessageDto } from 'src/message/dto/message.dto';
     methods: ['GET', 'POST'],
     credentials: true,
   },
+  transports: ['websocket'],
 })
 export class ChatGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
