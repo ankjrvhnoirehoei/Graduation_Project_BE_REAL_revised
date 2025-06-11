@@ -3,6 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { PostLike, PostLikeDocument } from './like_post.schema';
 import { Post, PostDocument } from 'src/post/post.schema';
+import { User, UserDocument } from 'src/user/user.schema'; 
+import { RelationService } from 'src/relation/relation.service';
 
 @Injectable()
 export class PostLikeService {
@@ -11,8 +13,9 @@ export class PostLikeService {
     private postLikeModel: Model<PostLikeDocument>,
     @InjectModel(Post.name)
     private postModel: Model<PostDocument>,
-    @InjectModel('User') // Add User model injection
-    private userModel: Model<any>,
+    @InjectModel(User.name)  
+    private userModel: Model<UserDocument>, 
+    private readonly relationService: RelationService,
   ) {}
 
   async like(postId: string, userId: string): Promise<void> {
@@ -84,7 +87,7 @@ export class PostLikeService {
     const transformedPosts = posts.map(post => ({
       _id: post._id,
       userID: post.userID,
-      musicID: post.musicID || null,
+      musicID: post.music?.musicId || null,
       type: post.type,
       caption: post.caption || null,
       isFlagged: post.isFlagged || false,
@@ -102,26 +105,84 @@ export class PostLikeService {
       currentPage: page
     };
   }  
-  async getPostLikers(postId: string) {
-    // Find all likes for the given post
-    const likes = await this.postLikeModel
-      .find({ postId })
-      .select('userId')
-      .lean();
+  
+async getPostLikers(postId: string, currentUserId: string) {
+  const likes = await this.postLikeModel
+    .find({ postId })
+    .select('userId')
+    .lean();
 
-    const userIds = likes.map(like => like.userId);
+  const userIds = likes.map(like => like.userId);
 
-    // Get user details for each like
-    const users = await this.userModel
-      .find({ _id: { $in: userIds } })
-      .select('username handleName profilePic')
-      .lean();
+  const users = await this.userModel
+    .find({ _id: { $in: userIds } })
+    .select('username handleName profilePic')
+    .lean();
 
-    return users.map(user => ({
-      userId: user._id,
-      username: user.username,
-      handleName: user.handleName,
-      profilePic: user.profilePic || '',
-    }));
+  const enrichedUsers = await Promise.all(
+    users.map(async (user) => {
+      const targetId = user._id.toString();
+      
+      // Skip if it's the current user
+      if (currentUserId === targetId) {
+        return {
+          userId: targetId,  
+          username: user.username,
+          handleName: user.handleName,
+          profilePic: user.profilePic || '',
+          isCurrentUser: true 
+          // userFollowing: false
+        };
+      }
+
+        // Get relation status
+        const { relation, userOneIsActing } = await this.relationService.getRelation(
+          currentUserId,
+          targetId
+        );
+
+        if (!relation) {
+          return {
+            userId: targetId,
+            username: user.username,
+            handleName: user.handleName,
+            profilePic: user.profilePic || '',
+            userFollowing: false,
+            isCurrentUser: false
+          };
+        }
+
+        const [oneRel, twoRel] = relation.split('_');
+
+        // Check for blocks first
+        if (userOneIsActing) {
+          // currentUser is userOne
+          if (oneRel === 'BLOCK' || twoRel === 'BLOCK') return null;
+        } else {
+          // currentUser is userTwo
+          if (twoRel === 'BLOCK' || oneRel === 'BLOCK') return null;
+        }
+
+        // If not blocked, check follow status
+        const userFollowing = userOneIsActing ? 
+          oneRel === 'FOLLOW' : 
+          twoRel === 'FOLLOW';
+
+        return {
+          userId: user._id,
+          username: user.username,
+          handleName: user.handleName,
+          profilePic: user.profilePic || '',
+          userFollowing,
+          isCurrentUser: false
+        };
+      })
+    );
+    const filteredUsers = enrichedUsers.filter(user => user !== null);
+    return filteredUsers.sort((a, b) => {
+      if (a.isCurrentUser) return -1;
+      if (b.isCurrentUser) return 1;
+      return 0;
+    }).map(({ isCurrentUser, ...user }) => user); // Remove the isCurrentUser flag from final output
   }
 }

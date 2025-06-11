@@ -12,6 +12,7 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
   BadRequestException,
+  Patch,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
@@ -25,6 +26,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtService } from '@nestjs/jwt';
 import { RelationService } from 'src/relation/relation.service';
 import { SearchUserDto } from './dto/search-user.dto';
+import { ChangeEmailDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
 
 @Controller('users')
 export class UserController {
@@ -248,4 +250,36 @@ export class UserController {
       },
     };
   }
+
+  @Patch('edit-me')
+  @UseGuards(JwtRefreshAuthGuard)
+  async editMe(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: EditUserDto,
+  ) {
+    const updated = await this.userService.updateProfile(userId, dto);
+    return { message: 'Profile updated', user: updated };
+  }
+
+  // email change: send code + return token 
+  @Post('email/init-change')
+  @UseGuards(JwtRefreshAuthGuard)
+  async initiateEmailChange(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: ChangeEmailDto,
+  ) {
+    const { token } = await this.userService.initiateEmailChange(userId, dto);
+    return { message: 'Confirmation code sent', token };
+  }
+
+  // confirm email change using token + code 
+  @Post('email/confirm-new')
+  @UseGuards(JwtRefreshAuthGuard)
+  async confirmEmailChange(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: ConfirmEmailDto,
+  ) {
+    await this.userService.confirmEmailChange(userId, dto);
+    return { message: 'Email updated successfully' };
+  }  
 }

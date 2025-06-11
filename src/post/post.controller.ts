@@ -26,7 +26,7 @@ export class PostController {
     @Body() postWithMediaDto: CreatePostWithMediaDto,
     @CurrentUser('sub') userId: string,
   ) {
-    const mergedPostWithMediaDto: CreatePostWithMediaDto = {
+    const mergedPostWithMediaDto: any = {
       ...postWithMediaDto,
       post: {
         ...postWithMediaDto.post,
@@ -45,6 +45,13 @@ export class PostController {
   @Get('get-all-reel-media')
   async getAllReelMedia(@CurrentUser('sub') userId: string) {
     return this.postService.findReelsWithMedia(userId);
+  }
+
+  @Get('get-all-reel-with-music')
+  async getAllReelWithMusic(
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.postService.findReelsWithMusic(userId);
   }
 
   // Returns up to 50 posts and up to 50 reels for user
@@ -126,12 +133,17 @@ export class PostController {
       throw new BadRequestException('Keyword must not be empty');
     }
 
-    return this.postService.searchByCaptionPaginated(userId, trimmed, page, limit);
+    return this.postService.searchByCaptionPaginated(
+      userId,
+      trimmed,
+      page,
+      limit,
+    );
   }
 
   @Get('tags')
   async getRecentTags(@CurrentUser('sub') userId: string) {
     const tags = await this.postService.getRecentTags(userId);
-    return { tags }; 
+    return { tags };
   }
 }

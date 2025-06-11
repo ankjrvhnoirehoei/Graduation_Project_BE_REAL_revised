@@ -6,8 +6,7 @@ import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
 import { MusicService } from 'src/music/music.service';
-import { MusicDto } from 'src/music/dto/music.dto';
-import { Music } from 'src/music/music.schema';
+import { MusicPostDto } from 'src/music/dto/music.dto';
 
 @Injectable()
 export class PostService {
@@ -28,27 +27,55 @@ export class PostService {
   async createPostWithMediaAndMusic(postWithMediaDto: {
     post: CreatePostDto;
     media: CreateMediaDto[];
-    music?: MusicDto;
-  }): Promise<{ post: Post; media: any[]; music?: Music }> {
-    const logger = new Logger('PostService');
-
+    music?: {
+      musicId: string;
+      timeStart: number;
+      timeEnd: number;
+    };
+  }): Promise<{
+    post: Post;
+    media: any[];
+    music?: {
+      musicId: string;
+      timeStart: number;
+      timeEnd: number;
+    };
+  }> {
     const userId = postWithMediaDto.post.userID;
     if (!Types.ObjectId.isValid(userId)) {
-      throw new BadRequestException('Invalid userId from token');
-    }
-
-    let musicCreated: Music | null = null;
-    if (postWithMediaDto.music) {
-      musicCreated = await this.musicService.create(postWithMediaDto.music);
+      throw new BadRequestException('Invalid userID from token');
     }
 
     const postData: any = {
       ...postWithMediaDto.post,
       userID: new Types.ObjectId(userId),
-      musicID: musicCreated ? musicCreated._id : undefined,
       viewCount: postWithMediaDto.post.viewCount ?? 0,
       isEnable: postWithMediaDto.post.isEnable ?? true,
     };
+
+    let musicObject:
+      | {
+          musicId: Types.ObjectId;
+          timeStart: number;
+          timeEnd: number;
+        }
+      | undefined = undefined;
+
+    if (postWithMediaDto.music) {
+      const { musicId, timeStart, timeEnd } = postWithMediaDto.music;
+
+      if (!Types.ObjectId.isValid(musicId)) {
+        throw new BadRequestException('Invalid musicID');
+      }
+
+      musicObject = {
+        musicId: new Types.ObjectId(musicId),
+        timeStart,
+        timeEnd,
+      };
+
+      postData.music = musicObject;
+    }
 
     const createdPost = await this.create(postData);
     const postId = (createdPost as any)._id;
@@ -65,7 +92,13 @@ export class PostService {
     return {
       post: createdPost,
       media: mediaCreated,
-      music: musicCreated ?? undefined,
+      music: musicObject
+        ? {
+            musicId: musicObject.musicId.toString(),
+            timeStart: musicObject.timeStart,
+            timeEnd: musicObject.timeEnd,
+          }
+        : undefined,
     };
   }
 
@@ -83,37 +116,114 @@ export class PostService {
   }
 
   async findAllWithMedia(userId: string): Promise<any[]> {
-    const currentUserObjectId = new Types.ObjectId(userId);
-
+    const currentUser = new Types.ObjectId(userId);
     return this.postModel.aggregate([
+        {
+          $lookup: {
+            from: 'relations',
+            let: {
+              pu: '$userID',       
+              cu: currentUser     
+            },
+            pipeline: [
+              {
+                // normalize ordering between cu and pu
+                $addFields: {
+                  pair: {
+                    $cond: [
+                      { $lt: ['$$cu',   '$$pu'] },
+                      { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
+                      { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
+                    ]
+                  }
+                }
+              },
+              {
+                // find the single document for that ordered pair
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$userOneID', '$pair.u1'] },
+                      { $eq: ['$userTwoID', '$pair.u2'] }
+                    ]
+                  }
+                }
+              },
+              {
+                // keep only the relation string and the bool for which side to inspect
+                $project: {
+                  _id: 0,
+                  relation: 1,
+                  userOneIsCurrent: '$pair.userOneIsCurrent'
+                }
+              }
+            ],
+            as: 'relationLookup'
+          }
+        },
+
+        {
+          // turn that lookup into a simple Boolean
+          $addFields: {
+            isFollow: {
+              $let: {
+                vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
+                in: {
+                  $cond: [
+                    // if no document -> not following
+                    { $eq: ['$$rel', null] },
+                    false,
+                    // otherwise split "FOLLOW_NULL" -> [one, two] and check the correct half
+                    {
+                      $switch: {
+                        branches: [
+                          {
+                            case: { $eq: ['$$rel.userOneIsCurrent', true] },
+                            then: { $eq: [{ $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 0] }, 'FOLLOW'] }
+                          },
+                          {
+                            case: { $eq: ['$$rel.userOneIsCurrent', false] },
+                            then: { $eq: [{ $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 1] }, 'FOLLOW'] }
+                          }
+                        ],
+                        default: false
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+
+        // finally, prune out the temporary `relationLookup` array
+        {
+          $project: {
+            relationLookup: 0
+          }
+        },
       {
         $lookup: {
-          from: 'hidden_posts',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postId'] },
-                    { $eq: ['$userID', currentUserObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
+          from: 'hiddenposts',
+          localField: '_id',
+          foreignField: 'postId',
           as: 'hidden',
         },
       },
       {
         $match: {
+          $expr: {
+            $not: {
+              $in: [{ $toObjectId: userId }, '$hidden.userId'],
+            },
+          },
           isEnable: true,
           nsfw: false,
-          hidden: { $eq: [] },
+          type: { $in: ['post', 'reel'] },
         },
       },
       { $sort: { createdAt: -1 } },
-      { $limit: 100 },
+      { $limit: 50 },
       {
         $lookup: {
           from: 'media',
@@ -166,6 +276,20 @@ export class PostService {
       },
       {
         $lookup: {
+          from: 'musics',
+          localField: 'music.musicId',
+          foreignField: '_id',
+          as: 'musicInfo',
+        },
+      },
+      {
+        $unwind: {
+          path: '$musicInfo',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
           from: 'postlikes',
           let: { postId: '$_id' },
           pipeline: [
@@ -174,7 +298,7 @@ export class PostService {
                 $expr: {
                   $and: [
                     { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', currentUserObjectId] },
+                    { $eq: ['$userId', { $toObjectId: userId }] },
                   ],
                 },
               },
@@ -186,20 +310,6 @@ export class PostService {
       {
         $addFields: {
           isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
-        },
-      },
-      {
-        $lookup: {
-          from: 'music',
-          localField: 'musicID',
-          foreignField: '_id',
-          as: 'music',
-        },
-      },
-      {
-        $unwind: {
-          path: '$music',
-          preserveNullAndEmptyArrays: true,
         },
       },
       {
@@ -225,44 +335,119 @@ export class PostService {
           'user._id': 1,
           'user.handleName': 1,
           'user.profilePic': 1,
+          'musicInfo.song': 1,
+          'musicInfo.link': 1,
+          'musicInfo.coverImg': 1,
+          'musicInfo.author': 1,
+          isFollow: 1,
         },
       },
     ]);
   }
 
   async findReelsWithMedia(userId: string): Promise<any[]> {
-    const currentUserObjectId = new Types.ObjectId(userId);
-
+    const currentUser = new Types.ObjectId(userId);
     return this.postModel.aggregate([
       {
+      $lookup: {
+        from: 'relations',
+        let: { pu: '$userID', cu: currentUser },
+        pipeline: [
+          {
+            $addFields: {
+              pair: {
+                $cond: [
+                  { $lt: ['$$cu', '$$pu'] },
+                  { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
+                  { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
+                ]
+              }
+            }
+          },
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$userOneID', '$pair.u1'] },
+                  { $eq: ['$userTwoID', '$pair.u2'] }
+                ]
+              }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              relation: 1,
+              userOneIsCurrent: '$pair.userOneIsCurrent'
+            }
+          }
+        ],
+        as: 'relationLookup'
+      }
+    },
+    {
+      $addFields: {
+        isFollow: {
+          $let: {
+            vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
+            in: {
+              $cond: [
+                { $eq: ['$$rel', null] },
+                false,
+                {
+                  $switch: {
+                    branches: [
+                      {
+                        case: { $eq: ['$$rel.userOneIsCurrent', true] },
+                        then: {
+                          $eq: [
+                            { $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 0] },
+                            'FOLLOW'
+                          ]
+                        }
+                      },
+                      {
+                        case: { $eq: ['$$rel.userOneIsCurrent', false] },
+                        then: {
+                          $eq: [
+                            { $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 1] },
+                            'FOLLOW'
+                          ]
+                        }
+                      }
+                    ],
+                    default: false
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    { $project: { relationLookup: 0 } },
+      {
         $lookup: {
-          from: 'hidden_posts',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postId'] },
-                    { $eq: ['$userID', currentUserObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
+          from: 'hiddenposts',
+          localField: '_id',
+          foreignField: 'postId',
           as: 'hidden',
         },
       },
       {
         $match: {
+          $expr: {
+            $not: {
+              $in: [{ $toObjectId: userId }, '$hidden.userId'],
+            },
+          },
           type: 'reel',
           isEnable: true,
           nsfw: false,
-          hidden: { $eq: [] },
         },
       },
       { $sort: { createdAt: -1 } },
-      { $limit: 100 },
+      { $limit: 50 },
       { $sample: { size: 20 } },
       {
         $lookup: {
@@ -324,7 +509,7 @@ export class PostService {
                 $expr: {
                   $and: [
                     { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', currentUserObjectId] },
+                    { $eq: ['$userId', { $toObjectId: userId }] },
                   ],
                 },
               },
@@ -336,20 +521,6 @@ export class PostService {
       {
         $addFields: {
           isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
-        },
-      },
-      {
-        $lookup: {
-          from: 'music',
-          localField: 'musicID',
-          foreignField: '_id',
-          as: 'music',
-        },
-      },
-      {
-        $unwind: {
-          path: '$music',
-          preserveNullAndEmptyArrays: true,
         },
       },
       {
@@ -375,6 +546,7 @@ export class PostService {
           'user._id': 1,
           'user.handleName': 1,
           'user.profilePic': 1,
+          isFollow: 1,
         },
       },
     ]);
@@ -435,6 +607,31 @@ export class PostService {
             likeCount: { $size: '$likes' },
           },
         },
+        // check if current user has liked this post
+        {
+          $lookup: {
+            from: 'postlikes',
+            let: { postId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$postId', '$$postId'] },
+                      { $eq: ['$userId', objectUserId] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: 'userLikeEntry',
+          },
+        },
+        {
+          $addFields: {
+            isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
+          },
+        },
 
         // lookup music if any
         {
@@ -469,6 +666,7 @@ export class PostService {
             updatedAt: 1,
 
             media: 1,
+            isLike: 1,
             likeCount: 1,
             music: 1,
           },
@@ -533,7 +731,31 @@ export class PostService {
           },
         },
 
-        // no need to lookup user here—front‐end knows whose reels these are
+        // check if current user has liked this post
+        {
+          $lookup: {
+            from: 'postlikes',
+            let: { postId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$postId', '$$postId'] },
+                      { $eq: ['$userId', objectUserId] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: 'userLikeEntry',
+          },
+        },
+        {
+          $addFields: {
+            isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
+          },
+        },
 
         // lookup music if any
         {
@@ -569,6 +791,7 @@ export class PostService {
             updatedAt: 1,
 
             media: 1,
+            isLike: 1,
             likeCount: 1,
             music: 1,
           },
@@ -615,7 +838,7 @@ export class PostService {
     }
     const currentUserObjectId = new Types.ObjectId(userId);
 
-    // build the caption‐matching condition 
+    // build the caption‐matching condition
     const keywordLower = keyword.toLowerCase();
     const tokens = keywordLower.split(/\s+/).filter((w) => w.length > 0);
 
@@ -623,7 +846,10 @@ export class PostService {
     if (tokens.length > 1) {
       // multi-word: require each token anywhere in the caption (case‐insensitive)
       const andClauses = tokens.map((tok) => ({
-        caption: { $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+        caption: {
+          $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+          $options: 'i',
+        },
       }));
       captionMatch = { $and: andClauses };
     } else {
@@ -729,7 +955,7 @@ export class PostService {
       { $match: { hidden: { $eq: [] } } },
 
       // sort by creation date (most recent first)
-      {  $sort: { createdAt: -1 as -1 }},
+      { $sort: { createdAt: -1 as -1 } },
 
       // use a $facet to get BOTH a totalCount and the 'data page'
       {
@@ -876,9 +1102,8 @@ export class PostService {
 
     // run aggregation
     const [aggResult] = await this.postModel.aggregate(pipeline).exec();
-    const totalCount = (aggResult.metadata.length > 0)
-      ? aggResult.metadata[0].totalCount
-      : 0;
+    const totalCount =
+      aggResult.metadata.length > 0 ? aggResult.metadata[0].totalCount : 0;
 
     return { totalCount, items: aggResult.data };
   }
@@ -981,4 +1206,249 @@ export class PostService {
     // 4) Return array-of-strings
     return aggResults.map((r) => r.tag);
   }
+
+  // returns up to 20 'reel'‐type documents that have a music subdocument
+  async findReelsWithMusic(userId: string): Promise<any[]> {
+    const userObjectId = new Types.ObjectId(userId);
+
+    return this.postModel.aggregate<PipelineStage[]>([
+    {
+      $lookup: {
+        from: 'relations',
+        let: { pu: '$userID', cu: userObjectId },
+        pipeline: [
+          {
+            $addFields: {
+              pair: {
+                $cond: [
+                  { $lt: ['$$cu', '$$pu'] },
+                  { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
+                  { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
+                ]
+              }
+            }
+          },
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$userOneID', '$pair.u1'] },
+                  { $eq: ['$userTwoID', '$pair.u2'] }
+                ]
+              }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              relation: 1,
+              userOneIsCurrent: '$pair.userOneIsCurrent'
+            }
+          }
+        ],
+        as: 'relationLookup'
+      }
+    },
+    {
+      $addFields: {
+        isFollow: {
+          $let: {
+            vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
+            in: {
+              $cond: [
+                { $eq: ['$$rel', null] },
+                false,
+                {
+                  $switch: {
+                    branches: [
+                      {
+                        case: { $eq: ['$$rel.userOneIsCurrent', true] },
+                        then: {
+                          $eq: [
+                            { $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 0] },
+                            'FOLLOW'
+                          ]
+                        }
+                      },
+                      {
+                        case: { $eq: ['$$rel.userOneIsCurrent', false] },
+                        then: {
+                          $eq: [
+                            { $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 1] },
+                            'FOLLOW'
+                          ]
+                        }
+                      }
+                    ],
+                    default: false
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    { $project: { relationLookup: 0 } },
+      // exclude any posts this user has hidden
+      {
+        $lookup: {
+          from: 'hiddenposts',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'hidden',
+        },
+      },
+      {
+        $match: {
+          'hidden.userId': { $ne: userObjectId },
+        },
+      },
+
+      // exclude any reels from users this user has blocked
+      {
+        $lookup: {
+          from: 'userblocks',           
+          let: { ownerId: '$userID' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$blockedUserId', '$$ownerId'] },
+                    { $eq: ['$userId', userObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'blocked',
+        },
+      },
+      {
+        $match: { 'blocked.0': { $exists: false } },
+      },
+
+      // only reels that actually have a music subdocument
+      {
+        $match: {
+          type: 'reel',
+          isEnable: true,
+          nsfw: false,
+          music: { $exists: true, $ne: null },
+        },
+      },
+
+      // get the latest 50, then pick 20 at random
+      { $sort: { createdAt: -1 } },
+      { $limit: 50 },
+      { $sample: { size: 20 } },
+
+      // join media
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'media',
+        },
+      },
+
+      // populate user info
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+
+      // join likes and comments to compute counts
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likes',
+        },
+      },
+      {
+        $addFields: { likeCount: { $size: '$likes' } },
+      },
+      {
+        $lookup: {
+          from: 'comments',
+          let: { pid: '$_id' },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$pid'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'comments',
+        },
+      },
+      {
+        $addFields: { commentCount: { $size: '$comments' } },
+      },
+
+      // check if current user liked each post
+      {
+        $lookup: {
+          from: 'postlikes',
+          let: { pid: '$_id' },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postId', '$$pid'] },
+                    { $eq: ['$userId', userObjectId] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'userLikeEntry',
+        },
+      },
+      {
+        $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } },
+      },
+
+      // final projection
+      {
+        $project: {
+          _id: 1,
+          userID: 1,
+          type: 1,
+          caption: 1,
+          isFlagged: 1,
+          nsfw: 1,
+          isEnable: 1,
+          location: 1,
+          isArchived: 1,
+          viewCount: 1,
+          share: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          media: 1,
+          music: 1,
+          'user._id': 1,
+          'user.handleName': 1,
+          'user.profilePic': 1,
+          likeCount: 1,
+          commentCount: 1,
+          isLike: 1,
+          isFollow: 1,
+        },
+      },
+    ]);
+  }    
 }

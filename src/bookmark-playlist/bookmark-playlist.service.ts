@@ -192,4 +192,46 @@ export class BookmarkPlaylistService {
       { $inc: { postCount: delta } },
     );
   }
+
+  private async findMusicPlaylist(userId: string): Promise<BookmarkPlaylistDocument> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+    const pid = new Types.ObjectId(userId);
+    const pl = await this.playlistModel.findOne({
+      userID: pid,
+      playlistName: 'Music',
+      isDeleted: false,
+    });
+    if (!pl) {
+      throw new BadRequestException('Music playlist not found for this user.');
+    }
+    return pl;
+  }
+
+  // add music to playlist
+  async addMusicToPlaylist(userId: string, musicId: string) {
+    const playlist = await this.findMusicPlaylist(userId);
+    const bookmark = await this.bookmarkItemService.createMusic(
+      playlist._id.toString(),
+      musicId,
+      userId,
+    );
+    // bump count by 1
+    await this.adjustPostCount(playlist._id.toString(), userId, 1);
+    return bookmark;
+  }
+
+  // soft-delete a music from playlist
+  async removeMusicFromPlaylist(userId: string, musicId: string) {
+    const playlist = await this.findMusicPlaylist(userId);
+    const removedCount = await this.bookmarkItemService.removeMusic(
+      playlist._id.toString(),
+      musicId,
+      userId,
+    );
+    // decrement by however many we removed (should be 1)
+    await this.adjustPostCount(playlist._id.toString(), userId, -removedCount);
+    return { removedCount };
+  }  
 }
