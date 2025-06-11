@@ -15,7 +15,7 @@ import { UserService } from 'src/user/user.service';
 import { socketJwtMiddleware } from 'src/auth/Middleware/jwt.socket-middleware';
 import { CreateMessageDto } from 'src/message/dto/message.dto';
 
-@WebSocketGateway({ cors: true })
+@WebSocketGateway({ namespace: '/chat', cors: true })
 export class ChatGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
@@ -28,8 +28,9 @@ export class ChatGateway
   ) {}
 
   afterInit(server: Server) {
-    server.use(socketJwtMiddleware);
-    console.log('WebSocket server initialized');
+    const chatNamespace = server.of('/chat');
+    chatNamespace.use(socketJwtMiddleware);
+    console.log('WebSocket server initialized at /chat');
   }
 
   handleConnection(client: Socket) {
