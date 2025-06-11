@@ -22,4 +22,12 @@ export class MusicService {
   async findByPost(postID: string): Promise<Music[]> {
     return this.musicModel.find({ postID }).exec();
   }
+
+  async findByID(id: string): Promise<Music> {
+    const music = await this.musicModel.findById(id).exec();
+    if (!music) { 
+      throw new Error('Music not found');
+    }
+    return music;
+  }
 }

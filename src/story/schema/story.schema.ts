@@ -35,8 +35,8 @@ export class Story extends AbstractDocument {
   @Prop({ ref: Story.name })
   storyId: string[];
 
-  @Prop({ ref: Music.name })
-  musicId: Types.ObjectId;
+  @Prop()
+  musicId: string;
 
   @Prop({ default: 50 })
   limitHighlight: 50;

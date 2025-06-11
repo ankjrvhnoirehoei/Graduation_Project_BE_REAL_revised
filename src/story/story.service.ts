@@ -8,6 +8,7 @@ import { RelationService } from 'src/relation/relation.service';
 import { UserService } from 'src/user/user.service';
 import { UpdateHighlightDto } from './dto/update-highlight.dto';
 import { Story, StoryType } from './schema/story.schema';
+import { MusicService } from 'src/music/music.service';
 
 @Injectable()
 export class StoryService {
@@ -16,6 +17,7 @@ export class StoryService {
     private readonly storyRepo: StoryRepository,
     private readonly relationServ: RelationService,
     private readonly userService: UserService,
+    private readonly musicService: MusicService,
   ) {}
 
   // Standardize for Stories and Highlight
@@ -36,13 +38,24 @@ export class StoryService {
       }),
     };
   }
+  private async getMusicLink(stories: Story[]) {
+    const musicPromises = stories.map(async (story) => {
+      if (story.musicId) {
+        const music = await this.musicService.findByID(story.musicId.toString());
+        return { ...story, musicId: music?.link || '' };
+      }
+      return story;
+    });
+    return Promise.all(musicPromises);
+  }
 
   async findStoriesByCurUser(userId: string) {
     const uid = new Types.ObjectId(userId);
-    const stories = await this.storyRepo.find({
+    let stories = await this.storyRepo.find({
       ownerId: uid,
       type: 'stories',
     });
+    stories = await this.getMusicLink(stories);
     return {
       message: 'Success',
       data: stories.map(this.STORY_RESPONSE),
@@ -51,11 +64,12 @@ export class StoryService {
 
   async findWorkingStoriesByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
-    const stories = await this.storyRepo.find({
+    let stories = await this.storyRepo.find({
       ownerId: uid,
       type: 'stories',
       isArchived: false,
     });
+    stories = await this.getMusicLink(stories);
     return {
       message: 'Success',
       data: stories.map(this.STORY_RESPONSE),
@@ -75,10 +89,11 @@ export class StoryService {
 
   async findStoryById(ids: string[]) {
     const objectIds = ids.map((id) => new Types.ObjectId(id));
-    const stories = await this.storyRepo.find({
+    let stories = await this.storyRepo.find({
       _id: { $in: objectIds },
       type: 'stories',
     });
+    stories = await this.getMusicLink(stories);
     return {
       message: 'Success',
       data: stories.map(this.STORY_RESPONSE),
