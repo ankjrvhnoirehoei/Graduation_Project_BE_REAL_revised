@@ -1,7 +1,8 @@
-import { AbstractDocument } from '@app/common';
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Types } from 'mongoose';
-import { User } from 'src/user/user.schema';
+import { AbstractDocument } from "@app/common";
+import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
+import { Types } from "mongoose";
+import { Music } from "src/music/music.schema";
+import { User } from "src/user/user.schema";
 
 export enum StoryType {
   STORIES = 'stories',
@@ -34,12 +35,13 @@ export class Story extends AbstractDocument {
   @Prop({ ref: Story.name })
   storyId: string[];
 
+  @Prop({ ref: Music.name })
+  musicId: Types.ObjectId;
+
   @Prop({ default: 50 })
   limitHighlight: 50;
-  @Prop()
-  createdAt: Date;
 
   @Prop()
-  updatedAt: Date;
+  createdAt: Date;
 }
 export const StorySchema = SchemaFactory.createForClass(Story);

@@ -28,6 +28,7 @@ export class StoryService {
       mediaUrl: story.mediaUrl,
       views: story.viewedByUsers,
       likes: story.likedByUsers,
+      music: story.musicId,
       createdAt: story.createdAt,
       ...(story.type === StoryType.HIGHLIGHTS && {
         collectionName: story.collectionName,
