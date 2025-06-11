@@ -1,121 +1,102 @@
 import {
   WebSocketGateway,
+  WebSocketServer,
+  OnGatewayInit,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
   SubscribeMessage,
   MessageBody,
   ConnectedSocket,
-  OnGatewayConnection,
-  OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Socket } from 'socket.io';
-import { RoomService } from '../room/room.service';
-import { CreateRoomDto } from '../room/dto/room.dto';
+import { Server, Socket } from 'socket.io';
+import { ValidationPipe } from '@nestjs/common';
+import { MessageService } from 'src/message/message.service';
 import { UserService } from 'src/user/user.service';
+import { socketJwtMiddleware } from 'src/auth/Middleware/jwt.socket-middleware';
+import { CreateMessageDto } from 'src/message/dto/message.dto';
 
-@WebSocketGateway({
-  cors: { origin: '*' },
-  namespace: '/chat',
-})
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+@WebSocketGateway({ cors: true })
+export class ChatGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
+  @WebSocketServer()
+  server: Server;
+
   constructor(
-    private readonly roomService: RoomService,
+    private readonly messageService: MessageService,
     private readonly userService: UserService,
   ) {}
 
-  handleConnection(socket: Socket) {
-    console.log('🟢 Client connected:', socket.id);
+  afterInit(server: Server) {
+    server.use(socketJwtMiddleware);
+    console.log('WebSocket server initialized');
   }
 
-  handleDisconnect(socket: Socket) {
-    console.log('🔴 Client disconnected:', socket.id);
+  handleConnection(client: Socket) {
+    const user = client.data.user;
+    if (user) {
+      console.log(`Client connected: ${user._id}`);
+    } else {
+      console.log('Client connected without user');
+      client.disconnect();
+    }
   }
 
-  @SubscribeMessage('join_room')
+  handleDisconnect(client: Socket) {
+    const user = client.data.user;
+    console.log(`Client disconnected: ${user?._id || 'unknown user'}`);
+  }
+
+  @SubscribeMessage('joinRoom')
   handleJoinRoom(
-    @MessageBody() data: { room_id: string },
-    @ConnectedSocket() socket: Socket,
+    @MessageBody('roomId') roomId: string,
+    @ConnectedSocket() client: Socket,
   ) {
-    const roomId = data.room_id;
-
-    if (!roomId) {
-      socket.emit('error', { message: 'Missing roomId' });
-      return;
-    }
-
-    socket.join(roomId);
-    socket.emit('joined_room', { room_id: roomId });
+    client.join(roomId);
+    console.log(`Client joined room: ${roomId}`);
   }
 
-  @SubscribeMessage('leave_room')
+  @SubscribeMessage('leaveRoom')
   handleLeaveRoom(
-    @MessageBody() data: { room_id: string },
-    @ConnectedSocket() socket: Socket,
+    @MessageBody('roomId') roomId: string,
+    @ConnectedSocket() client: Socket,
   ) {
-    const roomId = data.room_id;
-
-    if (!roomId) {
-      socket.emit('error', { message: 'Missing roomId' });
-      return;
-    }
-
-    socket.leave(roomId);
-    socket.emit('left_room', { room_id: roomId });
+    client.leave(roomId);
+    console.log(`Client left room: ${roomId}`);
   }
 
-  @SubscribeMessage('create_room')
-  async handleCreateRoom(
-    @MessageBody() data: CreateRoomDto,
-    @ConnectedSocket() socket: Socket,
-  ) {
-    const userId = socket.handshake.auth?.userId;
-
-    if (!userId) {
-      socket.emit('error', { message: 'Missing userId in handshake auth' });
-      return;
-    }
-
-    try {
-      const room = await this.roomService.createRoom(data, userId);
-      socket.emit('room_created', { room_id: room._id, name: room.name });
-    } catch (error) {
-      console.error('Error creating room:', error);
-      socket.emit('error', {
-        message: 'Failed to create room',
-        code: 'CREATE_ROOM_ERROR',
-      });
-    }
-  }
-
-  @SubscribeMessage('send_message')
+  @SubscribeMessage('sendMessage')
   async handleSendMessage(
-    @MessageBody() data: { room_id: string; message: string },
-    @ConnectedSocket() socket: Socket,
+    @MessageBody(new ValidationPipe({ transform: true }))
+    payload: CreateMessageDto,
+    @ConnectedSocket() client: Socket,
   ) {
-    const { room_id, message } = data;
-    const senderId = socket.handshake.auth?.userId;
-
-    if (!room_id || !message || !senderId) {
-      socket.emit('error', { message: 'Thiếu room_id, message hoặc userId' });
-      return;
+    const user = client.data.user;
+    if (!user || !user._id) {
+      return client.emit('errorMessage', 'Unauthorized');
     }
 
-    const user = await this.userService.findById(senderId);
-    if (!user) {
-      socket.emit('error', { message: 'Không tìm thấy user' });
-      return;
-    }
+    const message = await this.messageService.create({
+      ...payload,
+      senderId: user._id,
+    });
 
-    const payload = {
-      room_id,
-      message,
+    const populatedMessage = await message.populate({
+      path: 'senderId',
+      select: 'handleName profilePic',
+    });
+
+    this.server.to(payload.roomId).emit('receiveMessage', {
+      _id: populatedMessage._id,
+      roomId: populatedMessage.roomId,
+      content: populatedMessage.content,
+      media: populatedMessage.media,
+      createdAt: populatedMessage.createdAt,
       sender: {
-        _id: user._id,
-        handleName: user.handleName,
-        profilePic: user.profilePic,
+        userId: user._id,
+        handleName: populatedMessage.senderId.handleName,
+        profilePic: populatedMessage.senderId.profilePic,
       },
-      timestamp: new Date().toISOString(),
-    };
-
-    socket.to(room_id).emit('new_message', payload);
-    socket.emit('new_message', payload);
+    });
   }
 }
