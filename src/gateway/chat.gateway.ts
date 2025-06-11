@@ -15,7 +15,14 @@ import { UserService } from 'src/user/user.service';
 import { socketJwtMiddleware } from 'src/auth/Middleware/jwt.socket-middleware';
 import { CreateMessageDto } from 'src/message/dto/message.dto';
 
-@WebSocketGateway({ namespace: '/chat', cors: true })
+@WebSocketGateway({
+  namespace: '/chat',
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+})
 export class ChatGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
