@@ -312,6 +312,53 @@ export class PostService {
           isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
         },
       },
+      // lookup the user's non-deleted playlists
+      {
+        $lookup: {
+          from: 'bookmarkplaylists',
+          let: { uid: currentUser },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userID', '$$uid'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+            }},
+            { $project: { _id: 1 } }
+          ],
+          as: 'myPlaylists'
+        }
+      },
+
+      // lookup any bookmarkItem for this post in any of those playlists
+      {
+        $lookup: {
+          from: 'bookmarkitems',
+          let: { postId: '$_id', pls: '$myPlaylists._id' },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $in: ['$playlistID', '$$pls'] },
+                    { $eq: ['$itemID', '$$postId'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+            }},
+            { $limit: 1 }
+          ],
+          as: 'bookmarkEntry'
+        }
+      },
+
+      // set isBookmarked to true if we found at least one entry
+      {
+        $addFields: {
+          isBookmarked: { $gt: [ { $size: '$bookmarkEntry' }, 0 ] }
+        }
+      },
       {
         $project: {
           _id: 1,
@@ -340,6 +387,7 @@ export class PostService {
           'musicInfo.coverImg': 1,
           'musicInfo.author': 1,
           isFollow: 1,
+          isBookmarked: 1,
         },
       },
     ]);
@@ -523,6 +571,51 @@ export class PostService {
           isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
         },
       },
+      // lookup playlists
+      {
+        $lookup: {
+          from: 'bookmarkplaylists',
+          let: { uid: currentUser },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userID', '$$uid'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+            }},
+            { $project: { _id: 1 } }
+          ],
+          as: 'myPlaylists'
+        }
+      },
+      // lookup bookmarkItems for this post
+      {
+        $lookup: {
+          from: 'bookmarkitems',
+          let: { postId: '$_id', pls: '$myPlaylists._id' },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $in: ['$playlistID', '$$pls'] },
+                    { $eq: ['$itemID', '$$postId'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+            }},
+            { $limit: 1 }
+          ],
+          as: 'bookmarkEntry'
+        }
+      },
+      // flag it
+      {
+        $addFields: {
+          isBookmarked: { $gt: [ { $size: '$bookmarkEntry' }, 0 ] }
+        }
+      },
       {
         $project: {
           _id: 1,
@@ -547,6 +640,7 @@ export class PostService {
           'user.handleName': 1,
           'user.profilePic': 1,
           isFollow: 1,
+          isBookmarked: 1,
         },
       },
     ]);
@@ -648,6 +742,51 @@ export class PostService {
             preserveNullAndEmptyArrays: true,
           },
         },
+        // lookup playlists
+        {
+          $lookup: {
+            from: 'bookmarkplaylists',
+            let: { uid: objectUserId },
+            pipeline: [
+              { $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$userID', '$$uid'] },
+                      { $eq: ['$isDeleted', false] }
+                    ]
+                  }
+              }},
+              { $project: { _id: 1 } }
+            ],
+            as: 'myPlaylists'
+          }
+        },
+        // lookup bookmarkItems for this post
+        {
+          $lookup: {
+            from: 'bookmarkitems',
+            let: { postId: '$_id', pls: '$myPlaylists._id' },
+            pipeline: [
+              { $match: {
+                  $expr: {
+                    $and: [
+                      { $in: ['$playlistID', '$$pls'] },
+                      { $eq: ['$itemID', '$$postId'] },
+                      { $eq: ['$isDeleted', false] }
+                    ]
+                  }
+              }},
+              { $limit: 1 }
+            ],
+            as: 'bookmarkEntry'
+          }
+        },
+        // flag it
+        {
+          $addFields: {
+            isBookmarked: { $gt: [ { $size: '$bookmarkEntry' }, 0 ] }
+          }
+        },
 
         {
           $project: {
@@ -664,7 +803,7 @@ export class PostService {
             share: 1,
             createdAt: 1,
             updatedAt: 1,
-
+            isBookmarked: 1,
             media: 1,
             isLike: 1,
             likeCount: 1,
@@ -772,6 +911,51 @@ export class PostService {
             preserveNullAndEmptyArrays: true,
           },
         },
+        // lookup playlists
+        {
+          $lookup: {
+            from: 'bookmarkplaylists',
+            let: { uid: objectUserId },
+            pipeline: [
+              { $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$userID', '$$uid'] },
+                      { $eq: ['$isDeleted', false] }
+                    ]
+                  }
+              }},
+              { $project: { _id: 1 } }
+            ],
+            as: 'myPlaylists'
+          }
+        },
+        // lookup bookmarkItems for this post
+        {
+          $lookup: {
+            from: 'bookmarkitems',
+            let: { postId: '$_id', pls: '$myPlaylists._id' },
+            pipeline: [
+              { $match: {
+                  $expr: {
+                    $and: [
+                      { $in: ['$playlistID', '$$pls'] },
+                      { $eq: ['$itemID', '$$postId'] },
+                      { $eq: ['$isDeleted', false] }
+                    ]
+                  }
+              }},
+              { $limit: 1 }
+            ],
+            as: 'bookmarkEntry'
+          }
+        },
+        // flag it
+        {
+          $addFields: {
+            isBookmarked: { $gt: [ { $size: '$bookmarkEntry' }, 0 ] }
+          }
+        },
 
         // project fields
         {
@@ -789,7 +973,7 @@ export class PostService {
             share: 1,
             createdAt: 1,
             updatedAt: 1,
-
+            isBookmarked: 1,
             media: 1,
             isLike: 1,
             likeCount: 1,
@@ -1061,6 +1245,52 @@ export class PostService {
                 path: '$music',
                 preserveNullAndEmptyArrays: true,
               },
+            },
+
+            // lookup playlists
+            {
+              $lookup: {
+                from: 'bookmarkplaylists',
+                let: { uid: currentUserObjectId },
+                pipeline: [
+                  { $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$userID', '$$uid'] },
+                          { $eq: ['$isDeleted', false] }
+                        ]
+                      }
+                  }},
+                  { $project: { _id: 1 } }
+                ],
+                as: 'myPlaylists'
+              }
+            },
+            // lookup bookmarkItems for this post
+            {
+              $lookup: {
+                from: 'bookmarkitems',
+                let: { postId: '$_id', pls: '$myPlaylists._id' },
+                pipeline: [
+                  { $match: {
+                      $expr: {
+                        $and: [
+                          { $in: ['$playlistID', '$$pls'] },
+                          { $eq: ['$itemID', '$$postId'] },
+                          { $eq: ['$isDeleted', false] }
+                        ]
+                      }
+                  }},
+                  { $limit: 1 }
+                ],
+                as: 'bookmarkEntry'
+              }
+            },
+            // flag it
+            {
+              $addFields: {
+                isBookmarked: { $gt: [ { $size: '$bookmarkEntry' }, 0 ] }
+              }
             },
 
             // project the exact fields
