@@ -65,10 +65,19 @@ export class RoomService {
     return room.user_ids.some((id) => id.toString() === userId);
   }
 
-  async getRoomsOfUser(userId: string): Promise<Room[]> {
-    return this.roomModel
+  async getRoomsOfUser(userId: string): Promise<any[]> {
+    const rooms = await this.roomModel
       .find({ user_ids: new Types.ObjectId(userId) })
       .populate('user_ids', '_id handleName profilePic')
       .exec();
+
+    return rooms.map((room) => ({
+      _id: room._id,
+      name: room.name,
+      theme: room.theme,
+      type: room.type,
+      user_ids: room.user_ids,
+      created_by: room.created_by,
+    }));
   }
 }
