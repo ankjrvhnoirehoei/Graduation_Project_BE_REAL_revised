@@ -228,4 +228,19 @@ export class BookmarkItemService {
     }
     return count;
   }  
+
+  // for checking if a post or reel is already in a bookmark playlist of the user
+  async exists(
+    playlistId: string,
+    itemId: string,
+  ): Promise<boolean> {
+    const pid = new Types.ObjectId(playlistId);
+    const iid = new Types.ObjectId(itemId);
+    const count = await this.itemModel.countDocuments({
+      playlistID: pid,
+      itemID: iid,
+      isDeleted: false,
+    });
+    return count > 0;
+  }
 }

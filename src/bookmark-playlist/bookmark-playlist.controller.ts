@@ -138,4 +138,30 @@ export class BookmarkPlaylistController {
     }
     return this.playlistService.removeMusicFromPlaylist(userId, musicId);
   }  
+
+  /**
+   * For the current user:
+   *  - load all their non-deleted playlists
+   *  - for each, check if `itemId` is already bookmarked
+   */
+  @Get('contains/:itemId')
+  @UseGuards(JwtRefreshAuthGuard)
+  async checkItemInPlaylists(
+    @Param('itemId') itemId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    // fetch every non-deleted playlist
+    const playlists = await this.playlistService.findAllByUser(userId);
+
+    // for each playlist, ask BookmarkItemService if it exists
+    const result = await Promise.all(
+      playlists.map(async (pl) => ({
+        playlistId:   pl._id.toString(),
+        playlistName: pl.playlistName,
+        hasItem:      await this.itemService.exists(pl._id.toString(), itemId),
+      }))
+    );
+
+    return { itemId, playlists: result };
+  }  
 }
