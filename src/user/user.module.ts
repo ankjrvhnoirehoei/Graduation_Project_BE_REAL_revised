@@ -16,7 +16,7 @@ import { RelationModule } from '../relation/relation.module';
       secret: process.env.JWT_ACCESS_SECRET,
       signOptions: { expiresIn: '15m' },
     }),
-    RelationModule, 
+    forwardRef(() => RelationModule),
   ],
   providers: [UserService],
   controllers: [UserController],

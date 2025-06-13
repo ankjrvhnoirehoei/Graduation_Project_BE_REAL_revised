@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Relation, RelationSchema } from './relation.schema';
 import { RelationService } from './relation.service';
@@ -12,7 +12,7 @@ import { UserModule } from '../user/user.module';
     MongooseModule.forFeature([
       { name: Relation.name, schema: RelationSchema },
     ]),
-    UserModule,
+    forwardRef(() => UserModule), 
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
