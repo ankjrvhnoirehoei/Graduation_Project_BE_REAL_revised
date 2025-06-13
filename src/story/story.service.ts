@@ -8,6 +8,7 @@ import { RelationService } from 'src/relation/relation.service';
 import { UserService } from 'src/user/user.service';
 import { UpdateHighlightDto } from './dto/update-highlight.dto';
 import { Story, StoryType } from './schema/story.schema';
+import { MusicService } from 'src/music/music.service';
 
 @Injectable()
 export class StoryService {
@@ -16,11 +17,12 @@ export class StoryService {
     private readonly storyRepo: StoryRepository,
     private readonly relationServ: RelationService,
     private readonly userService: UserService,
+    private readonly musicService: MusicService,
   ) {}
 
   // Standardize for Stories and Highlight
-  private LIMIT_HIGHLIGHTS = 50
-  private LIMIT_PAGINATION = 20
+  private LIMIT_HIGHLIGHTS = 50;
+  private LIMIT_PAGINATION = 20;
   private STORY_RESPONSE(story: Story) {
     return {
       _id: story._id,
@@ -28,19 +30,32 @@ export class StoryService {
       mediaUrl: story.mediaUrl,
       views: story.viewedByUsers,
       likes: story.likedByUsers,
+      music: story.musicId,
+      createdAt: story.createdAt,
       ...(story.type === StoryType.HIGHLIGHTS && {
         collectionName: story.collectionName,
         stories: story.storyId,
-      })
+      }),
     };
+  }
+  private async getMusicLink(stories: Story[]) {
+    const musicPromises = stories.map(async (story) => {
+      if (story.musicId) {
+        const music = await this.musicService.findByID(story.musicId.toString());
+        return { ...story, musicId: music?.link || '' };
+      }
+      return story;
+    });
+    return Promise.all(musicPromises);
   }
 
   async findStoriesByCurUser(userId: string) {
     const uid = new Types.ObjectId(userId);
-    const stories = await this.storyRepo.find({
+    let stories = await this.storyRepo.find({
       ownerId: uid,
       type: 'stories',
     });
+    stories = await this.getMusicLink(stories);
     return {
       message: 'Success',
       data: stories.map(this.STORY_RESPONSE),
@@ -49,14 +64,15 @@ export class StoryService {
 
   async findWorkingStoriesByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
-    const stories = await this.storyRepo.find({
+    let stories = await this.storyRepo.find({
       ownerId: uid,
       type: 'stories',
       isArchived: false,
     });
+    stories = await this.getMusicLink(stories);
     return {
       message: 'Success',
-      data: stories.map(this.STORY_RESPONSE)
+      data: stories.map(this.STORY_RESPONSE),
     };
   }
   async findHighlightsByUser(userId: string) {
@@ -73,10 +89,11 @@ export class StoryService {
 
   async findStoryById(ids: string[]) {
     const objectIds = ids.map((id) => new Types.ObjectId(id));
-    const stories = await this.storyRepo.find({
+    let stories = await this.storyRepo.find({
       _id: { $in: objectIds },
-      type: 'stories'
+      type: 'stories',
     });
+    stories = await this.getMusicLink(stories);
     return {
       message: 'Success',
       data: stories.map(this.STORY_RESPONSE),
@@ -174,7 +191,7 @@ export class StoryService {
     }
     return {
       message: 'Success',
-      data: followingStories
+      data: followingStories,
     };
   }
 
@@ -183,7 +200,7 @@ export class StoryService {
       ...storyDto,
       ownerId: new Types.ObjectId(uid),
       type: StoryType.STORIES,
-    })
+    });
     return {
       message: 'Success',
       data: this.STORY_RESPONSE(story),
@@ -198,7 +215,7 @@ export class StoryService {
     }
 
     const hasViewed = existingStory.viewedByUsers.some((id) =>
-      id.equals(viewerId)
+      id.equals(viewerId),
     );
 
     if (hasViewed) {
@@ -207,13 +224,11 @@ export class StoryService {
         data: this.STORY_RESPONSE(existingStory),
       };
     } else {
-      [...existingStory.viewedByUsers, viewerId]
+      [...existingStory.viewedByUsers, viewerId];
     }
-    const updated = await this.storyRepo.updateStory(
-      existingStory._id,
-      {viewedByUsers: existingStory.viewedByUsers},
-    );
-    
+    const updated = await this.storyRepo.updateStory(existingStory._id, {
+      viewedByUsers: existingStory.viewedByUsers,
+    });
   }
 
   async createHighlight(uid: string, storyDto: CreateHighlightStoryDto) {
@@ -224,41 +239,44 @@ export class StoryService {
     });
     return {
       message: 'Created Success',
-      data: this.STORY_RESPONSE(res)
+      data: this.STORY_RESPONSE(res),
     };
   }
 
   async updatedHighlight(uid: string, storyDto: UpdateHighlightDto) {
-    const ref = await this.storyRepo.findOne( new Types.ObjectId(storyDto._id) );
-    if (!ref) { return "Story Not found" }
+    const ref = await this.storyRepo.findOne(new Types.ObjectId(storyDto._id));
+    if (!ref) {
+      return 'Story Not found';
+    }
     const uids = new Types.ObjectId(uid);
-    if (!ref.ownerId.equals(uids)) { return "You can't update this story" }
+    if (!ref.ownerId.equals(uids)) {
+      return "You can't update this story";
+    }
 
     const { _id, ...updateData } = storyDto;
-    const updated = await this.storyRepo.updateStory(ref._id, updateData)
+    const updated = await this.storyRepo.updateStory(ref._id, updateData);
     return {
       message: 'Success',
-      data: this.STORY_RESPONSE(updated)
-    }
+      data: this.STORY_RESPONSE(updated),
+    };
   }
-  
+
   async archiveStory(uid: string, storyDto: UpdateStoryDto) {
     const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
     const uids = new Types.ObjectId(uid);
     if (!existingStory.ownerId.equals(uids)) {
-      return new Error ("You can't archive this story");
+      return new Error("You can't archive this story");
     }
 
-    const res = await this.storyRepo.updateStory(
-      existingStory._id,
-      { isArchived: true },
-    );
+    const res = await this.storyRepo.updateStory(existingStory._id, {
+      isArchived: true,
+    });
     return {
       message: 'Success',
       data: {
         ...this.STORY_RESPONSE(res),
         isArchived: res.isArchived,
-      }
+      },
     };
   }
 
@@ -272,9 +290,9 @@ export class StoryService {
     const uids = new Types.ObjectId(uid);
     const hasLiked = existingStory.likedByUsers.some((id) => id.equals(uids));
     const updateData: any = {
-      likedByUsers: hasLiked 
+      likedByUsers: hasLiked
         ? existingStory.likedByUsers.filter((id) => !id.equals(uids))
-        : [...existingStory.likedByUsers, uids]
+        : [...existingStory.likedByUsers, uids],
     };
 
     const res = await this.storyRepo.updateStory(existingStory._id, updateData);

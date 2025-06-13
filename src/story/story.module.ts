@@ -6,6 +6,7 @@ import { DatabaseModule } from '@app/common';
 import { Story, StorySchema } from './schema/story.schema';
 import { RelationModule } from 'src/relation/relation.module';
 import { UserModule } from 'src/user/user.module';
+import { MusicModule } from 'src/music/music.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { UserModule } from 'src/user/user.module';
     ]),
     RelationModule,
     UserModule,
+    MusicModule,
   ],
   controllers: [StoryController],
   providers: [StoryService, StoryRepository],

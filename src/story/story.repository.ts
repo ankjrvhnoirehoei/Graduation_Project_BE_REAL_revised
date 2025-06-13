@@ -22,7 +22,6 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
   async createStory(storyDto: any) {
     return this.create({
       ...storyDto,
-      type: storyDto.type,
       collectionName: storyDto.collectionName ?? '' ,
       storyId: storyDto.storyId ?? [],
     });

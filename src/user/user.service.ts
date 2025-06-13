@@ -11,29 +11,34 @@ import * as nodemailer from 'nodemailer';
 import { User, UserDocument } from './user.schema';
 import { v4 as uuidv4 } from 'uuid';
 import { RegisterDto } from './dto/register.dto';
-import { ChangeEmailDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
+import {
+  ChangeEmailDto,
+  ConfirmEmailDto,
+  EditUserDto,
+} from './dto/update-user.dto';
 import { JwtService } from '@nestjs/jwt';
-import { RelationService } from 'src/relation/relation.service';
 
 @Injectable()
 export class UserService {
   private mailer: nodemailer.Transporter;
-  relationModel: any;
-    constructor(
+  constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly jwtService: JwtService,
-    private readonly relationService: RelationService,
   ) {
     // configure your SMTP transport via environment variables
     this.mailer = nodemailer.createTransport({
-      host:     process.env.SMTP_HOST,
-      port:     +(process.env.SMTP_PORT ?? 587),
-      secure:   process.env.MAIL_SECURE === 'true',
+      host: process.env.SMTP_HOST,
+      port: +(process.env.SMTP_PORT ?? 587),
+      secure: process.env.MAIL_SECURE === 'true',
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
     });
+  }
+
+  async findById(id: string) {
+    return this.userModel.findById(id).select('_id handleName profilePic');
   }
 
   async register(registerDto: RegisterDto): Promise<User> {
@@ -89,21 +94,21 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    const { _id, password, refreshToken, ...safeUser } = user;
+    const { password, refreshToken, ...safeUser } = user;
     return safeUser;
   }
 
-  async findManyByIds(ids: string[]): Promise<(Partial<User> & { _id: string })[]> {
+  async findManyByIds(
+    ids: string[],
+  ): Promise<(Partial<User> & { _id: string })[]> {
     const objectIds = ids.map((id) => new Types.ObjectId(id));
-    const users = await this.userModel
-      .find({ _id: { $in: objectIds } })
-      .lean();
+    const users = await this.userModel.find({ _id: { $in: objectIds } }).lean();
 
     return users.map((u) => {
       const { password, refreshToken, ...safe } = u;
       return {
         ...safe,
-        _id: safe._id.toString() // Convert to string
+        _id: safe._id.toString(), // Convert to string
       };
     });
   }
@@ -199,7 +204,10 @@ export class UserService {
 
       if (tokens.length > 1) {
         const andClauses = tokens.map((tok) => ({
-          username: { $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+          username: {
+            $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+            $options: 'i',
+          },
         }));
         matchStage = { ...matchStage, $and: andClauses };
       } else {
@@ -217,7 +225,10 @@ export class UserService {
       // case‐insensitive substring match on handleName
       matchStage = {
         ...matchStage,
-        handleName: { $regex: searchKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' },
+        handleName: {
+          $regex: searchKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+          $options: 'i',
+        },
       };
     }
 
@@ -264,7 +275,8 @@ export class UserService {
     // build a clean update object
     const update: Partial<Record<keyof EditUserDto, any>> = {};
     for (const [key, value] of Object.entries(dto)) {
-      if (value !== undefined && key !== 'password') { // Add check to exclude password
+      if (value !== undefined && key !== 'password') {
+        // Add check to exclude password
         update[key] = value;
       }
     }
@@ -309,7 +321,10 @@ export class UserService {
   /** Edit user's email address
    *  Validate and send confirmation code to new email.
    */
-  async initiateEmailChange(userId: string, dto: ChangeEmailDto): Promise<{ token: string }> {
+  async initiateEmailChange(
+    userId: string,
+    dto: ChangeEmailDto,
+  ): Promise<{ token: string }> {
     // check uniqueness
     const exists = await this.userModel.findOne({ email: dto.email }).lean();
     if (exists) {
@@ -321,29 +336,32 @@ export class UserService {
 
     // send email
     await this.mailer.sendMail({
-      from:    process.env.EMAIL_FROM,
-      to:      dto.email,
+      from: process.env.EMAIL_FROM,
+      to: dto.email,
       subject: 'Your confirmation code',
-      text:    `Your confirmation code is: ${code}`,
+      text: `Your confirmation code is: ${code}`,
     });
 
-  const token = this.jwtService.sign(
-    { sub: userId, newEmail: dto.email, code },
-    { 
-      secret: process.env.JWT_ACCESS_SECRET,
-      expiresIn: '15m' 
-    }
-  );
+    const token = this.jwtService.sign(
+      { sub: userId, newEmail: dto.email, code },
+      {
+        secret: process.env.JWT_ACCESS_SECRET,
+        expiresIn: '15m',
+      },
+    );
 
     return { token };
   }
 
   // verify token + code and update email
-  async confirmEmailChange(userId: string, dto: ConfirmEmailDto): Promise<void> {
+  async confirmEmailChange(
+    userId: string,
+    dto: ConfirmEmailDto,
+  ): Promise<void> {
     let payload: { sub: string; newEmail: string; code: string };
     try {
       payload = this.jwtService.verify(dto.token, {
-        secret: process.env.JWT_ACCESS_SECRET
+        secret: process.env.JWT_ACCESS_SECRET,
       });
     } catch (err) {
       throw new BadRequestException('Invalid or expired token');
@@ -364,29 +382,5 @@ export class UserService {
     if (!updated) {
       throw new NotFoundException('User not found');
     }
-  }  
-
-  async getConnectionsForUser(userId: string) {
-    const conns = await this.relationService.getConnections(userId, 20);
-    const ids = conns.map((c) => c.otherId);
-
-    if (!ids.length) {
-      return [];
-    }
-
-    const users = await this.userModel
-      .find({ _id: { $in: ids } })
-      .select({ username: 1, handleName: 1, profilePic: 1 })
-      .lean();
-
-    const followMap = new Map(conns.map((c) => [c.otherId, c.isFollow]));
-
-    return users.map((u) => ({
-      _id: u._id.toString(),
-      username: u.username,
-      handleName: u.handleName,
-      profilePic: u.profilePic || '',
-      isFollow: followMap.get(u._id.toString())!,
-    }));
   }
 }
