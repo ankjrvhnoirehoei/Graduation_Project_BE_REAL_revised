@@ -41,7 +41,7 @@ export class Story extends AbstractDocument {
   @Prop({ default: 50 })
   limitHighlight: 50;
 
-  @Prop()
+  @Prop({ default: Date.now() })
   createdAt: Date;
 }
 export const StorySchema = SchemaFactory.createForClass(Story);
