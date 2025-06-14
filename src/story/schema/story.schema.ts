@@ -23,10 +23,10 @@ export class Story extends AbstractDocument {
   @Prop({ default: false })
   isArchived: boolean;
 
-  @Prop()
+  @Prop({ type: [Types.ObjectId], default: [], ref: User.name })
   viewedByUsers: Types.ObjectId[];
 
-  @Prop()
+  @Prop({ type: [Types.ObjectId], default: [], ref: User.name })
   likedByUsers: Types.ObjectId[];
 
   @Prop()
