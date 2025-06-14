@@ -24,7 +24,7 @@ export class MusicService {
   }
 
   async findByID(id: string): Promise<Music> {
-    const music = await this.musicModel.findById(id).exec();
+    const music = await this.musicModel.findById(id).lean();
     if (!music) { 
       throw new Error('Music not found');
     }

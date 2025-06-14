@@ -1,5 +1,6 @@
 import { AbstractDocument } from "@app/common";
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
+import { min } from "class-validator";
 import { Types } from "mongoose";
 import { Music } from "src/music/music.schema";
 import { User } from "src/user/user.schema";
@@ -32,14 +33,39 @@ export class Story extends AbstractDocument {
   @Prop()
   collectionName: string;
 
-  @Prop({ ref: Story.name })
-  storyId: string[];
+  @Prop({ type: [Types.ObjectId], default: [], ref: Story.name })
+  storyId: Types.ObjectId[];
 
-  @Prop()
-  musicId: string;
+  @Prop({
+    type: {
+      _id: { type: Types.ObjectId, ref: Music.name },
+      link: { type: String },
+      time_start: { type: Number, min: 0 },
+      time_end: { type: Number, min: 0 },
+    },
+    default: {},
+  })
+  music: {
+    _id: Types.ObjectId;
+    link: string;
+    time_start: number;
+    time_end: number;
+  };
 
-  @Prop({ default: 50 })
-  limitHighlight: 50;
+  @Prop({
+    type: {
+      text: { type: String },
+      x: { type: Number, min: 0 },
+      y: { type: Number, min: 0 },
+    },
+    _id: false,
+    default: {},
+  })
+  content: {
+    text: string;
+    x: number;
+    y: number;
+  };
 
   @Prop({ default: Date.now() })
   createdAt: Date;
