@@ -32,9 +32,6 @@ export class CreateStoryDto {
    @IsOptional()
    music?: MusicDto;
 
-   @ValidateNested()
-   @Type(() => ContentDto)
-
    @IsOptional()
    @ValidateNested()
    @Type(() => ContentDto)

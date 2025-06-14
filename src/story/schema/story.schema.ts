@@ -1,6 +1,5 @@
 import { AbstractDocument } from "@app/common";
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { min } from "class-validator";
 import { Types } from "mongoose";
 import { Music } from "src/music/music.schema";
 import { User } from "src/user/user.schema";
