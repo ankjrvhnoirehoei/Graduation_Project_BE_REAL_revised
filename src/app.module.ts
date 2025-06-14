@@ -18,6 +18,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { R2UploadModule } from './r2/r2.module';
 import { RoomModule } from './room/room.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { MessageModule } from './message/message.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     StreamModule,
     R2UploadModule,
     RoomModule,
+    MessageModule,
   ],
   // providers: [
   //   {
