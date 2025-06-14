@@ -149,6 +149,7 @@ export class UserController {
 
     // if the current user is asking about themselves, just default to false:
     let userFollowing = false;
+    let userBlocked = false;
     if (currentUserId !== targetUserId) {
       // call RelationService.getRelation(...) to see if there's a follow edge:
       const { relation, userOneIsActing } =
@@ -161,9 +162,11 @@ export class UserController {
         if (userOneIsActing) {
           // currentUserId is “userOne” in the lex order
           userFollowing = oneRel === 'FOLLOW';
+          userBlocked = oneRel === 'BLOCK';
         } else {
           // currentUserId is “userTwo” in the lex order
           userFollowing = twoRel === 'FOLLOW';
+          userBlocked = twoRel === 'BLOCK';
         }
       }
     }
@@ -171,6 +174,7 @@ export class UserController {
     return {
       ...baseProfile,
       userFollowing,
+      userBlocked
     };
   }
 
