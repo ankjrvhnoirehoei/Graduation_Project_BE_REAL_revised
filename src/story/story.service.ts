@@ -41,7 +41,9 @@ export class StoryService {
   private async getMusicLink(stories: Story[]) {
     const musicPromises = stories.map(async (story) => {
       if (story.musicId) {
-        const music = await this.musicService.findByID(story.musicId.toString());
+        const music = await this.musicService.findByID(
+          story.musicId.toString(),
+        );
         return { ...story, musicId: music?.link || '' };
       }
       return story;
@@ -210,11 +212,12 @@ export class StoryService {
   async seenStory(uid: string, storyDto: UpdateStoryDto) {
     const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
     const viewerId = new Types.ObjectId(uid);
+
     if (!existingStory) {
-      return new Error('Story not found');
+      throw new Error('Story not found');
     }
 
-    const hasViewed = existingStory.viewedByUsers.some((id) =>
+    const hasViewed = (existingStory.viewedByUsers || []).some((id) =>
       id.equals(viewerId),
     );
 
@@ -223,12 +226,21 @@ export class StoryService {
         message: 'Seen Success',
         data: this.STORY_RESPONSE(existingStory),
       };
-    } else {
-      [...existingStory.viewedByUsers, viewerId];
     }
+
+    existingStory.viewedByUsers = [
+      ...(existingStory.viewedByUsers || []),
+      viewerId,
+    ];
+
     const updated = await this.storyRepo.updateStory(existingStory._id, {
       viewedByUsers: existingStory.viewedByUsers,
     });
+
+    return {
+      message: 'Seen Success',
+      data: this.STORY_RESPONSE(updated),
+    };
   }
 
   async createHighlight(uid: string, storyDto: CreateHighlightStoryDto) {
