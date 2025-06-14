@@ -28,9 +28,9 @@ export class StoryService {
       _id: story._id,
       ownerId: story.ownerId,
       mediaUrl: story.mediaUrl,
-      views: story.viewedByUsers,
-      likes: story.likedByUsers,
-      music: story.musicId,
+      viewedByUsers: story.viewedByUsers,
+      likedByUsers: story.likedByUsers,
+      musicId: story.musicId,
       createdAt: story.createdAt,
       ...(story.type === StoryType.HIGHLIGHTS && {
         collectionName: story.collectionName,
@@ -183,7 +183,6 @@ export class StoryService {
       return map;
     }, {} as Record<string, { handleName: string; profilePic: string }>);
   
-    // Tạo danh sách following có story
     const followingStories = userIdsWithStory.map((id) => ({
       _id: id,
       handleName: userProfileMap[id]?.handleName || '',
@@ -191,7 +190,6 @@ export class StoryService {
       stories: storiesByUserId[id] || [],
     }));
   
-    // Nếu page === 1, đưa profile mình lên đầu
     if (page == 1) {
       followingStories.unshift({
         _id: userId,
