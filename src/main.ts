@@ -7,7 +7,11 @@ import { SwaggerConfig } from '@app/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors({
-    origin: '*',
+    origin: [
+      'http://localhost:3000',
+      'http://[::1]:4001',
+      'http://cirla.io.vn',
+    ],
     credentials: true,
   });
   app.use(cookieParser());
