@@ -10,6 +10,7 @@ async function bootstrap() {
     origin: [
       'http://localhost:3000',
       'http://[::1]:4001',
+      'http://171.250.165.153:4001',
       'http://cirla.io.vn',
     ],
     credentials: true,
