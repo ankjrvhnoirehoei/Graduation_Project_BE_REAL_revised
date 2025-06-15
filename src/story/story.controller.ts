@@ -15,7 +15,7 @@ import { ApiResponse } from '@app/common';
 export class StoryController {
   constructor(private readonly storyService: StoryService) {}
 
-  @Get()
+  @Post()
   @ApiOperation({ summary: `Get a list of story's details by storyId` })
   @ApiResponse({
     status: 200,

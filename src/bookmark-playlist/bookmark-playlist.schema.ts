@@ -5,6 +5,9 @@ export type BookmarkPlaylistDocument = BookmarkPlaylist & Document<Types.ObjectI
 
 @Schema({ timestamps: true })
 export class BookmarkPlaylist {
+  @Prop({ type: Types.ObjectId })
+  _id: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, required: true, ref: 'User' })
   userID: Types.ObjectId;
 

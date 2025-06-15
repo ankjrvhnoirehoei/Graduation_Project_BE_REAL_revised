@@ -23,10 +23,10 @@ export class Story extends AbstractDocument {
   @Prop({ default: false })
   isArchived: boolean;
 
-  @Prop()
+  @Prop({ type: [Types.ObjectId], default: [], ref: User.name })
   viewedByUsers: Types.ObjectId[];
 
-  @Prop()
+  @Prop({ type: [Types.ObjectId], default: [], ref: User.name })
   likedByUsers: Types.ObjectId[];
 
   @Prop()
@@ -41,7 +41,7 @@ export class Story extends AbstractDocument {
   @Prop({ default: 50 })
   limitHighlight: 50;
 
-  @Prop()
+  @Prop({ default: Date.now() })
   createdAt: Date;
 }
 export const StorySchema = SchemaFactory.createForClass(Story);

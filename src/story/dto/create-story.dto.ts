@@ -6,6 +6,5 @@ export class CreateStoryDto {
    mediaUrl: string;
 
    @IsString()
-   @IsNotEmpty()
    musicId: string;
 }

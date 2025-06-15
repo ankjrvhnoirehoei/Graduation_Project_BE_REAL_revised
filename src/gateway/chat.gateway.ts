@@ -15,15 +15,15 @@ import { UserService } from 'src/user/user.service';
 import { CreateMessageDto } from 'src/message/dto/message.dto';
 
 @WebSocketGateway({
-  namespace: '/chat',
   cors: {
     origin: '*',
     methods: ['GET', 'POST'],
     credentials: true,
   },
+  transports: ['websocket'],
 })
 export class ChatGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
   server: Server;

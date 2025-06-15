@@ -20,7 +20,7 @@ export class StoryService {
     private readonly musicService: MusicService,
   ) {}
 
-  // Standardize for Stories and Highlight
+  // STANDARDIZE FOR STORY & RESPONSE
   private LIMIT_HIGHLIGHTS = 50;
   private LIMIT_PAGINATION = 20;
   private STORY_RESPONSE(story: Story) {
@@ -28,9 +28,9 @@ export class StoryService {
       _id: story._id,
       ownerId: story.ownerId,
       mediaUrl: story.mediaUrl,
-      views: story.viewedByUsers,
-      likes: story.likedByUsers,
-      music: story.musicId,
+      viewedByUsers: story.viewedByUsers,
+      likedByUsers: story.likedByUsers,
+      musicId: story.musicId,
       createdAt: story.createdAt,
       ...(story.type === StoryType.HIGHLIGHTS && {
         collectionName: story.collectionName,
@@ -41,7 +41,9 @@ export class StoryService {
   private async getMusicLink(stories: Story[]) {
     const musicPromises = stories.map(async (story) => {
       if (story.musicId) {
-        const music = await this.musicService.findByID(story.musicId.toString());
+        const music = await this.musicService.findByID(
+          story.musicId.toString(),
+        );
         return { ...story, musicId: music?.link || '' };
       }
       return story;
@@ -103,84 +105,91 @@ export class StoryService {
   async getStoryFollowing(userId: string, page: number) {
     const limit = 20;
     const skip = (page - 1) * limit;
-
-    const currentUserStories = await this.findWorkingStoriesByUser(userId);
-    const currentUserProfile = await this.userService.getPublicProfile(userId);
-    const followingRelations = await this.relationServ.findByUserAndFilter(
-      userId,
-      'following',
-    );
-    if (followingRelations.length === 0) {
-      return [
-        {
-          _id: userId,
-          handleName: currentUserProfile.handleName,
-          profilePic: currentUserProfile.profilePic,
-          stories: currentUserStories.data.map((story) => story._id),
-        },
-      ];
+    
+    // Get ourself-data
+    const [currentUserStories, currentUserProfile] = await Promise.all([
+      this.findWorkingStoriesByUser(userId),
+      this.userService.getPublicProfile(userId),
+    ]);
+  
+    const followingRelations = await this.relationServ.findByUserAndFilter(userId, 'following');
+  
+    if (!followingRelations || followingRelations.length === 0) {
+      return {
+        message: 'Success',
+        data: [
+          {
+            _id: userId,
+            handleName: currentUserProfile.handleName,
+            profilePic: currentUserProfile.profilePic,
+            stories: currentUserStories.data.map((story) => story._id),
+          },
+        ],
+      };
     }
-
-    const followingUserIds = followingRelations.map((relation) => {
-      const userOneIdStr = relation.userOneID.toString();
-      const userTwoIdStr = relation.userTwoID.toString();
-      return userOneIdStr === userId ? userTwoIdStr : userOneIdStr;
-    });
-
-    const paginatedUserIds = followingUserIds.slice(skip, skip + limit - 1);
-
-    const followingObjectIds = paginatedUserIds.map(
-      (id) => new Types.ObjectId(id),
+  
+    const followingUserIds = followingRelations.map((rel) =>
+      rel.userOneID.toString() === userId ? rel.userTwoID.toString() : rel.userOneID.toString(),
     );
-
+    this.logger.log(`[getStoryFollowing] followingUserIds: ${JSON.stringify(followingUserIds)}`);
+  
+    const paginatedUserIds = followingUserIds.slice(skip, skip + limit);
+  
     const stories = await this.storyRepo.find({
-      ownerId: { $in: followingObjectIds },
-      type: 'stories',
+      ownerId: { $in: paginatedUserIds.map((id) => new Types.ObjectId(id)) },
+      type: StoryType.STORIES,
       isArchived: false,
-    });
-
+      viewedByUsers: { $not: { $elemMatch: { $eq: new Types.ObjectId(userId) } } },
+    });  
     const storiesByUserId = stories.reduce((acc, story) => {
-      const userIdStr = story.ownerId.toString();
-      if (!acc[userIdStr]) {
-        acc[userIdStr] = [];
-      }
-      acc[userIdStr].push(story._id);
+      const id = story.ownerId.toString();
+      if (!acc[id]) acc[id] = [];
+      acc[id].push(story._id);
       return acc;
-    }, {});
-
+    }, {} as Record<string, Types.ObjectId[]>);
+  
+    const userIdsWithStory = paginatedUserIds.filter((id) => storiesByUserId[id]?.length > 0);
+  
+    if (userIdsWithStory.length === 0) {
+      this.logger.log(`[getStoryFollowing] No following has story, returning only current user`);
+      return {
+        message: 'Success',
+        data: [
+          {
+            _id: userId,
+            handleName: currentUserProfile.handleName,
+            profilePic: currentUserProfile.profilePic,
+            stories: currentUserStories.data.map((story) => story._id),
+          },
+        ],
+      };
+    }
+  
+    // Lấy profile của các following có story
     const userProfiles = await Promise.all(
-      paginatedUserIds.map(async (userId) => {
+      userIdsWithStory.map(async (id) => {
         try {
-          const profile = await this.userService.getPublicProfile(userId);
-          return {
-            userId,
-            profile,
-          };
+          const profile = await this.userService.getPublicProfile(id);
+          this.logger.log(`[getStoryFollowing] Got profile for userId=${id}`);
+          return { userId: id, profile };
         } catch (error) {
-          console.error(`Error fetching profile for user ${userId}:`, error);
-          return {
-            userId,
-            profile: {
-              handleName: '',
-              profilePic: '',
-            },
-          };
+          return { userId: id, profile: { handleName: '', profilePic: '' } };
         }
       }),
     );
-
-    const userProfileMap = userProfiles.reduce((map, item) => {
-      map[item.userId] = item.profile;
+  
+    const userProfileMap = userProfiles.reduce((map, { userId, profile }) => {
+      map[userId] = profile;
       return map;
-    }, {});
-
-    const followingStories = paginatedUserIds.map((item_id) => ({
-      _id: item_id,
-      handleName: userProfileMap[item_id]?.handleName || '',
-      profilePic: userProfileMap[item_id]?.profilePic || '',
-      stories: storiesByUserId[item_id] || [],
+    }, {} as Record<string, { handleName: string; profilePic: string }>);
+  
+    const followingStories = userIdsWithStory.map((id) => ({
+      _id: id,
+      handleName: userProfileMap[id]?.handleName || '',
+      profilePic: userProfileMap[id]?.profilePic || '',
+      stories: storiesByUserId[id] || [],
     }));
-
+  
     if (page == 1) {
       followingStories.unshift({
         _id: userId,
@@ -210,11 +219,12 @@ export class StoryService {
   async seenStory(uid: string, storyDto: UpdateStoryDto) {
     const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
     const viewerId = new Types.ObjectId(uid);
+
     if (!existingStory) {
-      return new Error('Story not found');
+      throw new Error('Story not found');
     }
 
-    const hasViewed = existingStory.viewedByUsers.some((id) =>
+    const hasViewed = (existingStory.viewedByUsers || []).some((id) =>
       id.equals(viewerId),
     );
 
@@ -223,13 +233,19 @@ export class StoryService {
         message: 'Seen Success',
         data: this.STORY_RESPONSE(existingStory),
       };
-    } else {
-      [...existingStory.viewedByUsers, viewerId];
     }
+    existingStory.viewedByUsers = [...(existingStory.viewedByUsers || []),
+      viewerId,
+    ];
     const updated = await this.storyRepo.updateStory(existingStory._id, {
       viewedByUsers: existingStory.viewedByUsers,
     });
+    return {
+      message: 'Seen Success',
+      data: this.STORY_RESPONSE(updated),
+    };
   }
+  
 
   async createHighlight(uid: string, storyDto: CreateHighlightStoryDto) {
     const res = await this.storyRepo.createStory({

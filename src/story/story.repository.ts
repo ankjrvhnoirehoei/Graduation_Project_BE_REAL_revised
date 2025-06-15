@@ -3,6 +3,7 @@ import { Story as StoryDocument } from "./schema/story.schema";
 import { Injectable, Logger } from "@nestjs/common";
 import { Model, Types } from "mongoose";
 import { InjectModel } from "@nestjs/mongoose";
+import { Cron, CronExpression } from "@nestjs/schedule";
 
 @Injectable()
 export class StoryRepository extends AbstractRepository<StoryDocument> {
@@ -14,6 +15,19 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
   ) {
     super(storyModel);
   }
+  // THIS ONE IS FOR ARCHIVING STORIES AFTER 24 HOURS
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleArchiveStories() {
+    const now = new Date();
+    const expiredDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const result = await this.model.updateMany(
+      { isArchived: false, createdAt: { $lte: expiredDate } },
+      { $set: { isArchived: true } }
+    );
+    this.logger.log(`Archived ${result.modifiedCount} stories at ${now.toISOString()}`);
+  }
+
 
   async findAll() {
     return this.find({});
