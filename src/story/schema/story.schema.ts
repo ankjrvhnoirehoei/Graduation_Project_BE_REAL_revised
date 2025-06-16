@@ -38,7 +38,6 @@ export class Story extends AbstractDocument {
   @Prop({
     type: {
       _id: { type: Types.ObjectId, ref: Music.name },
-      link: { type: String },
       time_start: { type: Number, min: 0 },
       time_end: { type: Number, min: 0 },
     },
@@ -46,7 +45,6 @@ export class Story extends AbstractDocument {
   })
   music: {
     _id: Types.ObjectId;
-    link: string;
     time_start: number;
     time_end: number;
   };

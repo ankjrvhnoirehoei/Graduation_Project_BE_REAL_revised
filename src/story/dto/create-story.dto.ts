@@ -1,9 +1,10 @@
 import { IsMongoId, IsOptional, IsString, ValidateNested, IsNumber } from 'class-validator';
 import { Type } from 'class-transformer';
+import { Types } from 'mongoose';
 
 class MusicDto {
-   @IsMongoId()
-   _id: string;
+   @IsMongoId({ message: 'musicId must be a valid Mongo ID' })
+   _id: Types.ObjectId;
 
    @IsNumber()
    time_start: number;
