@@ -8,6 +8,7 @@ import { Model, Types } from 'mongoose';
 import { Room } from './room.schema';
 import { CreateRoomDto } from './dto/room.dto';
 import { UpdateThemeRoomDto } from './dto/update-theme-room.dto';
+import { UpdateRoomNameDto } from './dto/update-room-name.dto';
 
 @Injectable()
 export class RoomService {
@@ -16,7 +17,7 @@ export class RoomService {
   async createRoom(
     createRoomDto: CreateRoomDto,
     userId: string,
-  ): Promise<Room> {
+  ): Promise<{ room: Room; isExisted: boolean; message: string }> {
     const allUserIds = Array.from(
       new Set([
         ...(createRoomDto.user_ids ?? []).map((id) => new Types.ObjectId(id)),
@@ -24,11 +25,39 @@ export class RoomService {
       ]),
     );
 
-    return this.roomModel.create({
+    const existingRoom = await this.roomModel
+      .findOne({
+        user_ids: { $all: allUserIds, $size: allUserIds.length },
+      })
+      .populate('user_ids', '_id handleName profilePic'); // 👈 Populate thông tin user
+
+    if (existingRoom) {
+      return {
+        room: existingRoom,
+        isExisted: true,
+        message: 'Room already exists',
+      };
+    }
+
+    const createdRoom = await this.roomModel.create({
       ...createRoomDto,
       created_by: new Types.ObjectId(userId),
       user_ids: allUserIds,
     });
+
+    const populatedRoom = await this.roomModel
+      .findById(createdRoom._id)
+      .populate('user_ids', '_id handleName profilePic');
+
+    if (!populatedRoom) {
+      throw new NotFoundException('Created room not found');
+    }
+
+    return {
+      room: populatedRoom,
+      isExisted: false,
+      message: 'Room created successfully',
+    };
   }
 
   async addUserToRoom(roomId: string, userIdToAdd: string): Promise<Room> {
@@ -95,6 +124,23 @@ export class RoomService {
     }
 
     room.theme = updateThemeRoomDto.theme;
+    return room.save();
+  }
+
+  async updateRoomName(
+    roomId: string,
+    userId: string,
+    updateRoomNameDto: UpdateRoomNameDto,
+  ): Promise<Room> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) throw new NotFoundException('Room not found');
+
+    const isMember = room.user_ids.some((id) => id.toString() === userId);
+    if (!isMember) {
+      throw new ForbiddenException('You are not a member of this room');
+    }
+
+    room.name = updateRoomNameDto.name;
     return room.save();
   }
 }
