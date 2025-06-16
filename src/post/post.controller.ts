@@ -9,6 +9,7 @@ import {
   Query,
   DefaultValuePipe,
   ParseIntPipe,
+  Param,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
@@ -119,6 +120,37 @@ export class PostController {
     }
 
     return response;
+  }
+
+    /**
+   * GET /posts/user/:targetUserId/all
+   * Returns paginated posts and/or reels belonging to :targetUserId,
+   * as viewed by the current user (so includes isFollow).
+   */
+  @Get('user/:targetUserId/all')
+  async getOtherUserContent(
+    @Param('targetUserId') targetUserId: string,
+    @CurrentUser('sub') viewerId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('type') type?: 'posts' | 'reels',
+  ) {
+    const pageNum  = parseInt(page  || '1',  10) || 1;
+    const limitNum = parseInt(limit || '20', 10) || 20;
+
+    if (pageNum  < 1)               throw new BadRequestException('Page must be ≥ 1');
+    if (limitNum < 1 || limitNum > 50)
+      throw new BadRequestException('Limit must be between 1 and 50');
+    if (type && !['posts','reels'].includes(type))
+      throw new BadRequestException('Type must be "posts" or "reels"');
+
+    return this.postService.getOtherUserContent(
+      viewerId,
+      targetUserId,
+      pageNum,
+      limitNum,
+      type,
+    );
   }
 
   @Post('search')

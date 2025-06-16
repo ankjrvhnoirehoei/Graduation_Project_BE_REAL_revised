@@ -243,4 +243,37 @@ export class BookmarkItemService {
     });
     return count > 0;
   }
+
+  /** 
+   * Remove a single post from whichever playlist it's in for this user. 
+   * Then decrement that playlist's postCount by 1.
+   */
+  async removeByUserAndPost(userId: string, postId: string): Promise<void> {
+    // find all playlists
+    const playlists = await this.playlistModel
+      .find({ userID: new Types.ObjectId(userId), isDeleted: false })
+      .select('_id')
+      .exec();
+    const pids = playlists.map(p => p._id);
+
+    // find active bookmark
+    const existing = await this.itemModel.findOne({
+      itemID: new Types.ObjectId(postId),
+      playlistID: { $in: pids },
+      isDeleted: false,
+    });
+    if (!existing) {
+      throw new BadRequestException('No active bookmark found for this user/post.');
+    }
+
+    // soft‑delete it
+    existing.isDeleted = true;
+    await existing.save();
+
+    // decrement count
+    await this.playlistModel.updateOne(
+      { _id: existing.playlistID },
+      { $inc: { postCount: -1 } },
+    );
+  }
 }
