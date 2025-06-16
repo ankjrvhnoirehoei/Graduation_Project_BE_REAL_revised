@@ -7,11 +7,13 @@ import {
   BookmarkPlaylistSchema,
 } from './bookmark-playlist.schema';
 import { BookmarkItemModule } from 'src/bookmark-item/bookmark-item.module';
+import { BookmarkItem, BookmarkItemSchema } from 'src/bookmark-item/bookmark-item.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: BookmarkPlaylist.name, schema: BookmarkPlaylistSchema },
+      { name: BookmarkItem.name,     schema: BookmarkItemSchema },
     ]),
     BookmarkItemModule, 
   ],

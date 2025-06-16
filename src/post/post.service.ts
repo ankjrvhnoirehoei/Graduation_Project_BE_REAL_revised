@@ -1704,124 +1704,211 @@ export class PostService {
     ]);
   }    
 
-    /** Helper to build the common “rich” lookup pipeline */
-  private buildUserFeedPipeline(
-    currentUser: Types.ObjectId,
-    includeRelation: boolean,
-    includeHidden: boolean
-  ): PipelineStage[] {
-    const stages: PipelineStage[] = [];
+    /**
+   * Fetches another user’s posts/reels, with full lookups for
+   * isFollow, media, bookmarks, likes, comments, music, etc.
+   */
+  async getOtherUserContent(
+    viewerId:   string,
+    targetUserId: string,
+    page:       number = 1,
+    limit:      number = 20,
+    type?:      'posts' | 'reels',
+  ): Promise<any> {
+    // Reuse a helper for each document‐type
+    const results: any = { message: 'Content retrieved successfully' };
 
-    // 1) optionally relations -> isFollow
-    if (includeRelation) {
-      stages.push(
-        {
-          $lookup: {
-            from: 'relations',
-            let: { pu: '$userID', cu: currentUser },
-            pipeline: [
-              { $project: { _id: 0, relation: 1, userOneIsCurrent: 1 } }
-            ],
-            as: 'relationLookup'
-          }
+    if (!type || type === 'posts') {
+      const posts = await this.fetchByType(
+        viewerId, targetUserId, 'post', page, limit
+      );
+      results.posts = {
+        items: posts.items,
+        pagination: {
+          currentPage: page,
+          totalPages:  Math.ceil(posts.total / limit),
+          totalCount:  posts.total,
+          limit,
+          hasNextPage: page < Math.ceil(posts.total / limit),
+          hasPrevPage: page > 1,
         },
-        {
-          $addFields: {
-            isFollow: {
-              $let: {
-                vars: { r: { $arrayElemAt: ['$relationLookup', 0] } },
-                in: {
+      };
+    }
+
+    if (!type || type === 'reels') {
+      const reels = await this.fetchByType(
+        viewerId, targetUserId, 'reel', page, limit
+      );
+      results.reels = {
+        items: reels.items,
+        pagination: {
+          currentPage: page,
+          totalPages:  Math.ceil(reels.total / limit),
+          totalCount:  reels.total,
+          limit,
+          hasNextPage: page < Math.ceil(reels.total / limit),
+          hasPrevPage: page > 1,
+        },
+      };
+    }
+
+    return results;
+  }
+
+  /**
+   * Core aggregation for one type (“post” or “reel”), owned by targetUserId,
+   * seen by viewerId (so we can compute isFollow).
+   */
+  private async fetchByType(
+    viewerId:     string,
+    targetUserId: string,
+    docType:      'post' | 'reel',
+    page:         number,
+    limit:        number,
+  ): Promise<{ total: number; items: any[] }> {
+    if (!Types.ObjectId.isValid(viewerId) || !Types.ObjectId.isValid(targetUserId)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+    const viewerObj = new Types.ObjectId(viewerId);
+    const targetObj = new Types.ObjectId(targetUserId);
+    const skip      = (page - 1) * limit;
+
+    // total count for pagination
+    const total = await this.postModel.countDocuments({
+      userID: targetObj,
+      type:   docType,
+      isEnable: true,
+      nsfw:     false,
+    });
+
+    const pipeline: any[] = [
+      // 1) Only the target user’s docs:
+      { $match: {
+          userID:   targetObj,
+          type:     docType,
+          isEnable: true,
+          nsfw:     false,
+      }},
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+
+      // 2) Compute isFollow via the same relation‐lookup you have:
+      {
+        $lookup: {
+          from: 'relations',
+          let:  { pu: '$userID', cu: viewerObj },
+          pipeline: [
+            {
+              $addFields: {
+                pair: {
                   $cond: [
-                    { $eq: ['$$r', null] }, false,
-                    {
-                      $switch: {
-                        branches: [
-                          {
-                            case: { $eq: ['$$r.userOneIsCurrent', true] },
-                            then: {
-                              $eq: [
-                                { $arrayElemAt: [{ $split: ['$$r.relation','_'] },0] },
-                                'FOLLOW'
-                              ]
-                            }
-                          },
-                          {
-                            case: { $eq: ['$$r.userOneIsCurrent', false] },
-                            then: {
-                              $eq: [
-                                { $arrayElemAt: [{ $split: ['$$r.relation','_'] },1] },
-                                'FOLLOW'
-                              ]
-                            }
-                          }
-                        ],
-                        default: false
-                      }
-                    }
+                    { $lt: ['$$cu', '$$pu'] },
+                    { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
+                    { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
                   ]
                 }
               }
-            }
-          }
-        },
-        { $project: { relationLookup: 0 } }
-      );
-    }
-
-    // 3) media lookup
-    stages.push(
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media'
-        }
-      },
-      // 4) user lookup
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user'
-        }
-      },
-      { $unwind: '$user' },
-      // 5) likes
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes'
-        }
-      },
-      { $addFields: { likeCount: { $size: '$likes' } } },
-      // 6) comments
-      {
-        $lookup: {
-          from: 'comments',
-          let: { pid: '$_id' },
-          pipeline: [
+            },
             {
               $match: {
                 $expr: {
                   $and: [
-                    { $eq: ['$postID','$$pid'] },
-                    { $eq: ['$isDeleted', false] }
+                    { $eq: ['$userOneID', '$pair.u1'] },
+                    { $eq: ['$userTwoID', '$pair.u2'] }
                   ]
                 }
               }
+            },
+            { $project: { _id: 0, relation: 1, userOneIsCurrent: '$pair.userOneIsCurrent' } }
+          ],
+          as: 'relationLookup'
+        }
+      },
+      {
+        $addFields: {
+          isFollow: {
+            $let: {
+              vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
+              in: {
+                $cond: [
+                  { $eq: ['$$rel', null] },
+                  false,
+                  {
+                    $switch: {
+                      branches: [
+                        {
+                          case: { $eq: ['$$rel.userOneIsCurrent', true] },
+                          then: {
+                            $eq: [
+                              { $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 0] },
+                              'FOLLOW'
+                            ]
+                          }
+                        },
+                        {
+                          case: { $eq: ['$$rel.userOneIsCurrent', false] },
+                          then: {
+                            $eq: [
+                              { $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 1] },
+                              'FOLLOW'
+                            ]
+                          }
+                        }
+                      ],
+                      default: false
+                    }
+                  }
+                ]
+              }
             }
+          }
+        }
+      },
+      { $project: { relationLookup: 0 } },
+
+      // 3) hide any “hiddenposts” entries:
+      {
+        $lookup: {
+          from: 'hiddenposts',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'hidden',
+        }
+      },
+      {
+        $match: {
+          $expr: {
+            $not: {
+              $in: [{ $toObjectId: viewerId }, '$hidden.userId']
+            }
+          }
+        }
+      },
+
+      // 4) attach media, user info, likes, comments, music, etc.
+      { $lookup: { from: 'media', localField: '_id', foreignField: 'postID', as: 'media' } },
+      { $lookup: { from: 'users', localField: 'userID', foreignField: '_id', as: 'user' } },
+      { $unwind: '$user' },
+      { $lookup: { from: 'postlikes', localField: '_id', foreignField: 'postId', as: 'likes' } },
+      { $lookup: {
+          from: 'comments',
+          let: { postID: '$_id' },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postID'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+            }}
           ],
           as: 'comments'
         }
       },
-      { $addFields: { commentCount: { $size: '$comments' } } },
-      // 7) musicInfo
-      {
-        $lookup: {
+      { $addFields: { commentCount: { $size: '$comments' }, likeCount: { $size: '$likes' } } },
+      { $lookup: {
           from: 'musics',
           localField: 'music.musicId',
           foreignField: '_id',
@@ -1829,33 +1916,29 @@ export class PostService {
         }
       },
       { $unwind: { path: '$musicInfo', preserveNullAndEmptyArrays: true } },
-      // 8) isLike
-      {
-        $lookup: {
+      { $lookup: {
           from: 'postlikes',
-          let: { pid: '$_id' },
+          let: { postId: '$_id' },
           pipeline: [
-            {
-              $match: {
+            { $match: {
                 $expr: {
                   $and: [
-                    { $eq: ['$postId','$$pid'] },
-                    { $eq: ['$userId', currentUser] }
+                    { $eq: ['$postId', '$$postId'] },
+                    { $eq: ['$userId', { $toObjectId: viewerId }] }
                   ]
                 }
-              }
-            }
+            }}
           ],
           as: 'userLikeEntry'
         }
       },
-      { $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' },0] } } }
-      ),
-      // lookup the user's non-deleted playlists
+      { $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } } },
+
+      // 5) bookmark lookups exactly as before:
       {
         $lookup: {
           from: 'bookmarkplaylists',
-          let: { uid: currentUser },
+          let: { uid: viewerObj },
           pipeline: [
             { $match: {
                 $expr: {
@@ -1870,8 +1953,6 @@ export class PostService {
           as: 'myPlaylists'
         }
       },
-
-      // lookup any bookmarkItem for this post in any of those playlists
       {
         $lookup: {
           from: 'bookmarkitems',
@@ -1891,97 +1972,43 @@ export class PostService {
           as: 'bookmarkEntry'
         }
       },
+      { $addFields: { isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] } } },
 
-      // set isBookmarked to true if we found at least one entry
+      // 6) final projection
       {
-        $addFields: {
-          isBookmarked: { $gt: [ { $size: '$bookmarkEntry' }, 0 ] }
-        }
-      };
-        const proj: any = {
-          _id: 1,
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          location: 1,
-          isArchived: 1,
-          viewCount: 1,
-          share: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          media: 1,
-          user: { _id:1, handleName:1, profilePic:1 },
-          likeCount: 1,
+        $project: {
+          _id:          1,
+          userID:       1,
+          type:         1,
+          caption:      1,
+          isFlagged:    1,
+          nsfw:         1,
+          isEnable:     1,
+          location:     1,
+          isArchived:   1,
+          viewCount:    1,
+          share:        1,
+          createdAt:    1,
+          updatedAt:    1,
+          media:        1,
+          isLike:       1,
+          likeCount:    1,
           commentCount: 1,
-          isLike: 1,
-          music: 1,
-          musicInfo: { song:1, link:1, coverImg:1, author:1 },
-          isBookmarked: 1
-        };
-        if (includeRelation) proj.isFollow = 1;
-
-        stages.push({ $project: proj });
-        return stages;
-      }
-  /** 1) user/all — current user's own feed (posts + reels) */
-  async getUserContent(
-    userId: string,
-    page = 1,
-    limit = 20,
-    typeFilter?: 'post' | 'reel'
-  ): Promise<{ total: number; items: any[] }> {
-    if (!Types.ObjectId.isValid(userId)) throw new BadRequestException('Invalid user ID');
-    const uid = new Types.ObjectId(userId);
-    const skip = (page - 1) * limit;
-    const match: any = { userID: uid };
-    if (typeFilter) match.type = typeFilter;
-
-    const total = await this.postModel.countDocuments(match);
-
-    const pipeline: PipelineStage[] = [
-      { $match: match },
-      { $sort: { createdAt: -1 } },
-      { $skip: skip },
-      { $limit: limit },
-      // include hidden = true (we want hidden‑posts shown), relation = false
-      ...this.buildUserFeedPipeline(uid, /*relation*/ false, /*includeHidden*/ true)
+          music:        1,
+          'user._id':        1,
+          'user.handleName': 1,
+          'user.profilePic': 1,
+          'musicInfo.song':  1,
+          'musicInfo.link':  1,
+          'musicInfo.coverImg': 1,
+          'musicInfo.author': 1,
+          isFollow:       1,
+          isBookmarked:   1,
+        },
+      },
     ];
 
     const items = await this.postModel.aggregate(pipeline).exec();
     return { total, items };
   }
-
-  /** 2) other user's feed with isFollow */
-  async getOtherUserContent(
-    targetUserId: string,
-    currentUserId: string,
-    page = 1,
-    limit = 20,
-    typeFilter?: 'post' | 'reel'
-  ): Promise<{ total: number; items: any[] }> {
-    if (!Types.ObjectId.isValid(targetUserId) || !Types.ObjectId.isValid(currentUserId))
-      throw new BadRequestException('Invalid user ID');
-    const target = new Types.ObjectId(targetUserId);
-    const current = new Types.ObjectId(currentUserId);
-    const skip = (page - 1) * limit;
-    const match: any = { userID: target };
-    if (typeFilter) match.type = typeFilter;
-
-    const total = await this.postModel.countDocuments(match);
-
-    const pipeline: PipelineStage[] = [
-      { $match: match },
-      { $sort: { createdAt: -1 } },
-      { $skip: skip },
-      { $limit: limit },
-      // include hidden = true, relation = true -> will compute isFollow for each post
-      ...this.buildUserFeedPipeline(current, /*relation*/ true, /*includeHidden*/ true)
-    ];
-
-    const items = await this.postModel.aggregate(pipeline).exec();
-    return { total, items };
-  }      
 }

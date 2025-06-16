@@ -139,29 +139,30 @@ export class BookmarkPlaylistController {
     return this.playlistService.removeMusicFromPlaylist(userId, musicId);
   }  
 
-  /**
-   * For the current user:
-   *  - load all their non-deleted playlists
-   *  - for each, check if `itemId` is already bookmarked
-   */
-  @Get('contains/:itemId')
+  /** POST /bookmark-playlists/add-default */
+  @Post('add-default')
   @UseGuards(JwtRefreshAuthGuard)
-  async checkItemInPlaylists(
-    @Param('itemId') itemId: string,
+  async addToAllPosts(
+    @Body('postId') postId: string,
     @CurrentUser('sub') userId: string,
   ) {
-    // fetch every non-deleted playlist
-    const playlists = await this.playlistService.findAllByUser(userId);
+    if (!postId) {
+      throw new BadRequestException('postId is required.');
+    }
+    return this.playlistService.addPostToDefault(userId, postId);
+  }
 
-    // for each playlist, ask BookmarkItemService if it exists
-    const result = await Promise.all(
-      playlists.map(async (pl) => ({
-        playlistId:   pl._id.toString(),
-        playlistName: pl.playlistName,
-        hasItem:      await this.itemService.exists(pl._id.toString(), itemId),
-      }))
-    );
-
-    return { itemId, playlists: result };
-  }  
+  /** POST /bookmark-playlists/switch */
+  @Post('switch')
+  @UseGuards(JwtRefreshAuthGuard)
+  async switchPlaylist(
+    @Body('postId') postId: string,
+    @Body('playlistId') playlistId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    if (!postId || !playlistId) {
+      throw new BadRequestException('postId and playlistId are both required.');
+    }
+    return this.playlistService.switchPostPlaylist(userId, playlistId, postId);
+  }
 }
