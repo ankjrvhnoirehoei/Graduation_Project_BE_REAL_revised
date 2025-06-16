@@ -7,7 +7,6 @@ import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from'src/common/decorators/current-user.decorator';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { ApiResponse } from '@app/common';
 
 @ApiTags('stories')
 @Controller('stories')
@@ -17,36 +16,12 @@ export class StoryController {
 
   @Post()
   @ApiOperation({ summary: `Get a list of story's details by storyId` })
-  @ApiResponse({
-    status: 200,
-    response: {
-      _id: String,
-      ownerId: String,
-      mediaUrl: String,
-      viewedByUsers: Array,
-      likedByUsers: Array,
-    },
-    description: 'Success',
-    isArray: true
-  })
   async findAll( @Body('storyId') storyId: string[] ) {
     return this.storyService.findStoryById(storyId);
   }
 
   @Get('me')
   @ApiOperation({ summary: `Get all archived-stories & unArchived-stories by cur_user` })
-  @ApiResponse({
-    status: 201,
-    response: {
-      _id: String,
-      ownerId: String,
-      mediaUrl: String,
-      viewedByUsers: Array,
-      likedByUsers: Array,
-    },
-    description: 'Success',
-    isArray: true
-  })
   async findStoriesByUser(@CurrentUser('sub') userId: string,
 ) {
     return this.storyService.findStoriesByCurUser(userId);
@@ -54,36 +29,12 @@ export class StoryController {
 
   @Get('user/:userId')
   @ApiOperation({ summary: `Get all working-stories by userId` })
-  @ApiResponse({
-    status: 201,
-    response: {
-      _id: String,
-      ownerId: String,
-      mediaUrl: String,
-      viewedByUsers: Array,
-      likedByUsers: Array,
-    },
-    description: 'Success',
-    isArray: true
-  })
-  async getStoriesByUser( @Param('userId') userId: string ) {
-    console.log(userId)
-    return this.storyService.findWorkingStoriesByUser(userId);
+  async getStoriesByUser( @Param() param: any) {
+    return this.storyService.findWorkingStoriesByUser(param.userId);
   }
 
   @Get('following') 
   @ApiOperation({ summary: `Get all working-stories of whom followed by current-user` })
-  @ApiResponse({
-    status: 201,
-    response: {
-      _id: String,
-      handleName: String,
-      profilePic: String,
-      stories: Array
-    },
-    description: 'Success',
-    isArray: true
-  })
   async getFollowingStories(
     @CurrentUser('sub') userId: string,
     @Query() query,
@@ -93,33 +44,12 @@ export class StoryController {
 
   @Get('highlights/user/:userId')
   @ApiOperation({ summary: 'Get all Highlights collection by userId' })
-  @ApiResponse({
-    status: 201,
-    response: {
-      _id: String,
-      mediaUrl: String,
-      collectionName: String,
-      storyId: Array,
-    },
-    description: 'Success',
-    isArray: true
-  })
   async findHighlights( @Param('userId') userId: string ) {
     return this.storyService.findHighlightsByUser(userId);
   }
 
   @Post('create')
   @ApiOperation({ summary: `Created story by currentUser` })
-  @ApiResponse({
-    status: 201,
-    response: {
-      _id: String,
-      ownerId: String,
-      mediaUrl: String,
-    },
-    description: 'Created Story Successful',
-    isArray: true
-  })
   async createStory(
     @CurrentUser('sub') userId: string,
     @Body(new ValidationPipe()) storyDto: CreateStoryDto
@@ -129,15 +59,6 @@ export class StoryController {
 
   @Post('create/highlight')
   @ApiOperation({ summary: `Created Highlight collection by currentUser` })
-  @ApiResponse({
-    status: 201,
-    response: {
-      _id: String,
-      collectionName: String,
-      stoies: Array,
-    },
-    description: 'Created Success',
-  })
   async createHighlightStory(
     @CurrentUser('sub') userId: string,
     @Body(new ValidationPipe()) storyDto: CreateHighlightStoryDto
@@ -147,15 +68,6 @@ export class StoryController {
 
   @Patch('update/highlight')
   @ApiOperation({ summary: `Updated highlightStories by currentUser` })
-  @ApiResponse({
-    status: 201,
-    response: {
-      _id: String,
-      CollectionName: String,
-      stoies: Array,
-    },
-    description: 'Updated Success',
-  })
   async updateHighlightStory(
     @CurrentUser('sub') userId: string,
     @Body(new ValidationPipe()) storyDto: UpdateHighlightDto
@@ -165,14 +77,6 @@ export class StoryController {
 
   @Patch('seen')
   @ApiOperation({ summary: `Seen story by currentUser` })
-  @ApiResponse({
-    status: 201,
-    response: {
-      _id: String,
-      viewer: Array,
-    },
-    description: 'Seen Success',
-  })
   async seenStory(
     @CurrentUser('sub') userId: string,
     @Body(new ValidationPipe()) storyDto: UpdateStoryDto
@@ -182,13 +86,6 @@ export class StoryController {
 
   @Patch('archive')
   @ApiOperation({ summary: `Archive story by currentUser` })
-  @ApiResponse({
-    status: 201,
-    response: {
-      _id: String,
-    },
-    description: 'Archived Success',
-  })
   async archiveStory(
     @CurrentUser('sub') userId: string,
     @Body(new ValidationPipe()) storyDto: UpdateStoryDto
@@ -198,15 +95,6 @@ export class StoryController {
 
   @Patch('like')
   @ApiOperation({ summary: `Like story by currentUser` })
-  @ApiResponse({
-    status: 201,
-    response: {
-      _id: String,
-      likeByUser: Array,
-    },
-    description: 'Liked Success',
-    isArray: true
-  })
   async likedStory(
     @CurrentUser('sub') userId: string,
     @Body(new ValidationPipe()) storyDto: UpdateStoryDto

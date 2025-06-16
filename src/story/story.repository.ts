@@ -1,5 +1,5 @@
 import { AbstractRepository } from "@app/common";
-import { Story as StoryDocument } from "./schema/story.schema";
+import { Story as StoryDocument, StoryType } from "./schema/story.schema";
 import { Injectable, Logger } from "@nestjs/common";
 import { Model, Types } from "mongoose";
 import { InjectModel } from "@nestjs/mongoose";
@@ -27,7 +27,6 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
     );
     this.logger.log(`Archived ${result.modifiedCount} stories at ${now.toISOString()}`);
   }
-
 
   async findAll() {
     return this.find({});
@@ -58,16 +57,25 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
     });
   }
 
-  async findUserHighlights(userId: Types.ObjectId) {
+  async findAllUserHighlights(userId: Types.ObjectId) {
     return this.find({
       ownerId: userId,
-      type: 'highlights'
+      type: StoryType.HIGHLIGHTS,
+    });
+  }
+
+  async findUserHighlights(id: Types.ObjectId, userId: Types.ObjectId) {
+    return this.findOne({
+      _id: id,
+      ownerId: userId,
+      type: StoryType.HIGHLIGHTS,
     });
   }
 
   async findStoriesByIds(ids: Types.ObjectId[]) {
     return this.find({
-      _id: { $in: ids }
+      _id: { $in: ids },
+      type: 'stories'
     });
   }
 
@@ -104,4 +112,5 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
       ]
     );
   }
+
 }
