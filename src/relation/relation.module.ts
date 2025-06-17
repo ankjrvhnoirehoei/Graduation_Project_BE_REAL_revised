@@ -19,7 +19,7 @@ import { UserModule } from '../user/user.module';
         secret: configService.get('JWT_ACCESS_SECRET'),
         signOptions: { expiresIn: '15m' },
       }),
-    }),  
+    }),
   ],
   providers: [RelationService],
   controllers: [RelationController],

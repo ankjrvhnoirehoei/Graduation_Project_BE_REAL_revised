@@ -17,10 +17,14 @@ import { GetFollowingDto } from './dto/get-following.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { GetBlockingDto } from './dto/get-blocking.dto';
+import { UserService } from '../user/user.service'
 
 @Controller('relations')
 export class RelationController {
-  constructor(private readonly relationService: RelationService) {}
+  constructor(
+    private readonly relationService: RelationService,
+    private readonly userService: UserService,
+  ) {}
 
   /**
    * PUT /relations/relation-action
@@ -100,12 +104,18 @@ export class RelationController {
     );
 
     // map each record to the follower's ID
-    const followers = records.map(r => {
+    const followerIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // if userId is in userTwoID, follower is userOneID; otherwise follower is userTwoID
       return u2 === userId ? u1 : u2;
     });
+
+    // Fetch detailed user information
+    const followers = await Promise.all(
+      followerIds.map((id) => this.userService.getUserById(id)),
+    );
+    console.log('Request Body:', dto);
 
     return { userId, followers };
   }
@@ -129,12 +139,17 @@ export class RelationController {
     );
 
     // map each record to the followed‐user’s ID
-    const following = records.map(r => {
+    const followingIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // if userId is in userTwoID, then userId follows userOneID; otherwise userId follows userTwoID
       return u2 === userId ? u1 : u2;
     });
+
+    // Fetch detailed user information
+    const following = await Promise.all(
+      followingIds.map((id) => this.userService.getUserById(id)),
+    );
 
     return { userId, following };
   }
@@ -158,12 +173,17 @@ export class RelationController {
     );
 
     // map each record to the blocked-user's ID
-    const blocking = records.map(r => {
+    const blockingIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // if userId is in userTwoID, then userId blocks userOneID; otherwise userId blocks userTwoID
       return u2 === userId ? u1 : u2;
     });
+
+    // Fetch detailed user information
+    const blocking = await Promise.all(
+      blockingIds.map((id) => this.userService.getUserById(id)),
+    );
 
     return { userId, blocking };
   }  

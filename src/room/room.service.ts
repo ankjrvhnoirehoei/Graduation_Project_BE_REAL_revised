@@ -7,6 +7,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Room } from './room.schema';
 import { CreateRoomDto } from './dto/room.dto';
+import { UpdateThemeRoomDto } from './dto/update-theme-room.dto';
 
 @Injectable()
 export class RoomService {
@@ -79,5 +80,21 @@ export class RoomService {
       user_ids: room.user_ids,
       created_by: room.created_by,
     }));
+  }
+
+  async updateTheme(
+    roomId: string,
+    userId: string,
+    updateThemeRoomDto: UpdateThemeRoomDto,
+  ): Promise<Room> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) throw new NotFoundException('Room not found');
+
+    if (!room.user_ids.some((id) => id.toString() === userId)) {
+      throw new ForbiddenException('You are not a member of this room');
+    }
+
+    room.theme = updateThemeRoomDto.theme;
+    return room.save();
   }
 }
