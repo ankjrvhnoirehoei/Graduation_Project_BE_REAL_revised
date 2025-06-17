@@ -111,9 +111,26 @@ export class RelationController {
       return u2 === userId ? u1 : u2;
     });
 
+    const followingRelations = await this.relationService.findByUserAndFilter(
+      userId,
+      'following',
+    );
+    const followingIds = followingRelations.map((relation) => {
+      const u1 = relation.userOneID.toString();
+      const u2 = relation.userTwoID.toString();
+      return u1 === userId ? u2 : u1;
+    });
+
     // Fetch detailed user information
     const followers = await Promise.all(
-      followerIds.map((id) => this.userService.getUserById(id)),
+      followerIds.map(async (followerId) => {
+        const user = await this.userService.getUserById(followerId);
+        const isFollowing = followingIds.includes(followerId);
+        return {
+          ...user,
+          isFollowing,
+        };
+      }),
     );
     console.log('Request Body:', dto);
 
