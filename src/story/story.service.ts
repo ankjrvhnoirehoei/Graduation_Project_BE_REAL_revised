@@ -131,7 +131,6 @@ export class StoryService {
     const limit = 20;
     const skip = (page - 1) * limit;
 
-    // Get ourself-data
     const [currentUserStories, currentUserProfile] = await Promise.all([
       this.findWorkingStoriesByUser(userId),
       this.userService.getPublicProfile(userId),
@@ -164,16 +163,15 @@ export class StoryService {
         : rel.userOneID.toString(),
     );
 
-    this.logger.log(
-      `[getStoryFollowing] followingUserIds: ${JSON.stringify(followingUserIds)}`,
-    );
-
     const paginatedUserIds = followingUserIds.slice(skip, skip + limit);
+
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const stories = await this.storyRepo.find({
       ownerId: { $in: paginatedUserIds.map((id) => new Types.ObjectId(id)) },
       type: StoryType.STORIES,
       isArchived: false,
+      createdAt: { $gte: twentyFourHoursAgo },
     });
 
     const storiesByUserId = stories.reduce(
@@ -194,7 +192,6 @@ export class StoryService {
       userIdsWithStory.map(async (id) => {
         try {
           const profile = await this.userService.getPublicProfile(id);
-          this.logger.log(`[getStoryFollowing] Got profile for userId=${id}`);
           return { userId: id, profile };
         } catch (error) {
           return { userId: id, profile: { handleName: '', profilePic: '' } };
