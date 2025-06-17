@@ -7,7 +7,6 @@ import { UserModule } from './user/user.module';
 import { CommentModule } from './comment/comment.module';
 import { MusicModule } from './music/music.module';
 import { RelationModule } from './relation/relation.module';
-import { ReactionModule } from './reaction/reaction.module';
 import { StoryModule } from './story/story.module';
 import { PostLikeModule } from './like_post/like_post.module';
 import { UserHiddenPostModule } from './hide_post/hide_post.module';
@@ -19,6 +18,7 @@ import { R2UploadModule } from './r2/r2.module';
 import { RoomModule } from './room/room.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { MessageModule } from './message/message.module';
+import { LikeCommentModule } from './like-comment/like-comment.module';
 
 @Module({
   imports: [
@@ -49,7 +49,6 @@ import { MessageModule } from './message/message.module';
     CommentModule,
     MusicModule,
     RelationModule,
-    ReactionModule,
     StoryModule,
     PostLikeModule,
     UserHiddenPostModule,
@@ -58,6 +57,7 @@ import { MessageModule } from './message/message.module';
     StreamModule,
     R2UploadModule,
     RoomModule,
+    LikeCommentModule,
     MessageModule,
   ],
   // providers: [
