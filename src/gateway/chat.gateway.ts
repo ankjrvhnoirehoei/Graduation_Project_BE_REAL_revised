@@ -21,9 +21,7 @@ import { CreateMessageDto } from 'src/message/dto/message.dto';
   },
   transports: ['websocket'],
 })
-export class ChatGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
-{
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
@@ -76,28 +74,26 @@ export class ChatGateway
     }
 
     try {
-      const newMessage = await this.messageService.create({
-        roomId,
+      const message = await this.messageService.create({
+        ...payload,
         senderId,
-        content: content || '',
-        media: media || undefined, // optional object
       });
 
-      const populated = await newMessage.populate({
+      const populatedMessage = await message.populate({
         path: 'senderId',
         select: 'handleName profilePic',
       });
 
       this.server.to(roomId).emit('receiveMessage', {
-        _id: populated._id,
-        roomId: populated.roomId,
-        content: populated.content,
-        media: populated.media || null,
-        createdAt: populated.createdAt,
+        _id: populatedMessage._id,
+        roomId: populatedMessage.roomId,
+        content: populatedMessage.content,
+        media: populatedMessage.media,
+        createdAt: populatedMessage.createdAt,
         sender: {
-          userId: populated.senderId._id,
-          handleName: populated.senderId.handleName,
-          profilePic: populated.senderId.profilePic,
+          userId: senderId,
+          handleName: populatedMessage.senderId.handleName,
+          profilePic: populatedMessage.senderId.profilePic,
         },
       });
     } catch (err) {
