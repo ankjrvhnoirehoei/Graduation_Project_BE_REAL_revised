@@ -79,7 +79,7 @@ export class StoryService {
       data: stories.map(this.STORY_RESPONSE),
     };
   }
-  
+
   async findWorkingStoriesByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
     let stories = await this.storyRepo.findUserStories(uid);
@@ -130,98 +130,94 @@ export class StoryService {
   async getStoryFollowing(userId: string, page: number) {
     const limit = 20;
     const skip = (page - 1) * limit;
-    
-    // Get ourself-data
+
     const [currentUserStories, currentUserProfile] = await Promise.all([
       this.findWorkingStoriesByUser(userId),
       this.userService.getPublicProfile(userId),
     ]);
-  
-    const followingRelations = await this.relationServ.findByUserAndFilter(userId, 'following');
-  
+
+    const followingRelations = await this.relationServ.findByUserAndFilter(
+      userId,
+      'following',
+    );
+
+    const defaultUserList = [
+      {
+        _id: userId,
+        handleName: currentUserProfile.handleName,
+        profilePic: currentUserProfile.profilePic,
+        stories: currentUserStories.data.map((story) => story._id),
+      },
+    ];
+
     if (!followingRelations || followingRelations.length === 0) {
       return {
         message: 'Success',
-        data: [
-          {
-            _id: userId,
-            handleName: currentUserProfile.handleName,
-            profilePic: currentUserProfile.profilePic,
-            stories: currentUserStories.data.map((story) => story._id),
-          },
-        ],
+        data: defaultUserList,
       };
     }
-  
+
     const followingUserIds = followingRelations.map((rel) =>
-      rel.userOneID.toString() === userId ? rel.userTwoID.toString() : rel.userOneID.toString(),
+      rel.userOneID.toString() === userId
+        ? rel.userTwoID.toString()
+        : rel.userOneID.toString(),
     );
-    this.logger.log(`[getStoryFollowing] followingUserIds: ${JSON.stringify(followingUserIds)}`);
-  
+
     const paginatedUserIds = followingUserIds.slice(skip, skip + limit);
-  
+
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
     const stories = await this.storyRepo.find({
       ownerId: { $in: paginatedUserIds.map((id) => new Types.ObjectId(id)) },
       type: StoryType.STORIES,
       isArchived: false,
-      viewedByUsers: { $not: { $elemMatch: { $eq: new Types.ObjectId(userId) } } },
-    });  
-    const storiesByUserId = stories.reduce((acc, story) => {
-      const id = story.ownerId.toString();
-      if (!acc[id]) acc[id] = [];
-      acc[id].push(story._id);
-      return acc;
-    }, {} as Record<string, Types.ObjectId[]>);
-  
-    const userIdsWithStory = paginatedUserIds.filter((id) => storiesByUserId[id]?.length > 0);
-  
-    if (userIdsWithStory.length === 0) {
-      this.logger.log(`[getStoryFollowing] No following has story, returning only current user`);
-      return {
-        message: 'Success',
-        data: [
-          {
-            _id: userId,
-            handleName: currentUserProfile.handleName,
-            profilePic: currentUserProfile.profilePic,
-            stories: currentUserStories.data.map((story) => story._id),
-          },
-        ],
-      };
-    }
-  
+      createdAt: { $gte: twentyFourHoursAgo },
+    });
+
+    const storiesByUserId = stories.reduce(
+      (acc, story) => {
+        const id = story.ownerId.toString();
+        if (!acc[id]) acc[id] = [];
+        acc[id].push(story._id);
+        return acc;
+      },
+      {} as Record<string, Types.ObjectId[]>,
+    );
+
+    const userIdsWithStory = paginatedUserIds.filter(
+      (id) => storiesByUserId[id]?.length > 0,
+    );
+
     const userProfiles = await Promise.all(
       userIdsWithStory.map(async (id) => {
         try {
           const profile = await this.userService.getPublicProfile(id);
-          this.logger.log(`[getStoryFollowing] Got profile for userId=${id}`);
           return { userId: id, profile };
         } catch (error) {
           return { userId: id, profile: { handleName: '', profilePic: '' } };
         }
       }),
     );
-  
-    const userProfileMap = userProfiles.reduce((map, { userId, profile }) => {
-      map[userId] = profile;
-      return map;
-    }, {} as Record<string, { handleName: string; profilePic: string }>);
-  
+
+    const userProfileMap = userProfiles.reduce(
+      (map, { userId, profile }) => {
+        map[userId] = profile;
+        return map;
+      },
+      {} as Record<string, { handleName: string; profilePic: string }>,
+    );
+
     const followingStories = userIdsWithStory.map((id) => ({
       _id: id,
       handleName: userProfileMap[id]?.handleName || '',
       profilePic: userProfileMap[id]?.profilePic || '',
       stories: storiesByUserId[id] || [],
     }));
-  
-    if (page == 1) {
-      followingStories.unshift({
-        _id: userId,
-        handleName: currentUserProfile.handleName,
-        profilePic: currentUserProfile.profilePic,
-        stories: currentUserStories.data.map((story) => story._id),
-      });
+
+    if (page === 1) {
+      followingStories.unshift(defaultUserList[0]);
     }
+
     return {
       message: 'Success',
       data: followingStories,
@@ -258,7 +254,8 @@ export class StoryService {
         data: this.STORY_RESPONSE(existingStory),
       };
     }
-    existingStory.viewedByUsers = [...(existingStory.viewedByUsers || []),
+    existingStory.viewedByUsers = [
+      ...(existingStory.viewedByUsers || []),
       viewerId,
     ];
     const updated = await this.storyRepo.updateStory(existingStory._id, {
@@ -269,7 +266,6 @@ export class StoryService {
       data: this.STORY_RESPONSE(updated),
     };
   }
-  
 
   async createHighlight(uid: string, storyDto: CreateHighlightStoryDto) {
     const res = await this.storyRepo.createStory({
@@ -286,7 +282,7 @@ export class StoryService {
   async updatedHighlight(uid: string, storyDto: UpdateHighlightDto) {
     const ref = await this.storyRepo.findUserHighlights(
       new Types.ObjectId(storyDto._id),
-      new Types.ObjectId(uid)
+      new Types.ObjectId(uid),
     );
     if (!ref) {
       return 'Highlight Not found';

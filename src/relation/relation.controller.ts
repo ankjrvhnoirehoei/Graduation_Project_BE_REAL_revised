@@ -17,10 +17,14 @@ import { GetFollowingDto } from './dto/get-following.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { GetBlockingDto } from './dto/get-blocking.dto';
+import { UserService } from '../user/user.service'
 
 @Controller('relations')
 export class RelationController {
-  constructor(private readonly relationService: RelationService) {}
+  constructor(
+    private readonly relationService: RelationService,
+    private readonly userService: UserService,
+  ) {}
 
   /**
    * PUT /relations/relation-action
@@ -100,12 +104,35 @@ export class RelationController {
     );
 
     // map each record to the follower's ID
-    const followers = records.map(r => {
+    const followerIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // if userId is in userTwoID, follower is userOneID; otherwise follower is userTwoID
       return u2 === userId ? u1 : u2;
     });
+
+    const followingRelations = await this.relationService.findByUserAndFilter(
+      userId,
+      'following',
+    );
+    const followingIds = followingRelations.map((relation) => {
+      const u1 = relation.userOneID.toString();
+      const u2 = relation.userTwoID.toString();
+      return u1 === userId ? u2 : u1;
+    });
+
+    // Fetch detailed user information
+    const followers = await Promise.all(
+      followerIds.map(async (followerId) => {
+        const user = await this.userService.getUserById(followerId);
+        const isFollowing = followingIds.includes(followerId);
+        return {
+          ...user,
+          isFollowing,
+        };
+      }),
+    );
+    console.log('Request Body:', dto);
 
     return { userId, followers };
   }
@@ -129,12 +156,17 @@ export class RelationController {
     );
 
     // map each record to the followed‐user’s ID
-    const following = records.map(r => {
+    const followingIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // if userId is in userTwoID, then userId follows userOneID; otherwise userId follows userTwoID
       return u2 === userId ? u1 : u2;
     });
+
+    // Fetch detailed user information
+    const following = await Promise.all(
+      followingIds.map((id) => this.userService.getUserById(id)),
+    );
 
     return { userId, following };
   }
@@ -158,13 +190,49 @@ export class RelationController {
     );
 
     // map each record to the blocked-user's ID
-    const blocking = records.map(r => {
+    const blockingIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // if userId is in userTwoID, then userId blocks userOneID; otherwise userId blocks userTwoID
       return u2 === userId ? u1 : u2;
     });
 
+    // Fetch detailed user information
+    const blocking = await Promise.all(
+      blockingIds.map((id) => this.userService.getUserById(id)),
+    );
+
     return { userId, blocking };
   }  
+
+  /**
+   * GET /relations/recommendations?limit=10
+   * Protected. Returns up to `limit` users recommended to follow.
+   */
+  @UseGuards(JwtRefreshAuthGuard)
+  @Get('recommendations')
+  async recommendations(
+    @CurrentUser('sub') userId: string,
+    @Query('limit') limitQ?: string,
+  ) {
+    const limit = limitQ ? parseInt(limitQ, 10) : 10;
+    if (isNaN(limit) || limit <= 0) {
+      throw new BadRequestException('`limit` must be a positive integer');
+    }
+
+    const recIds = await this.relationService.getRecommendations(
+      userId,
+      Math.min(limit, 10),
+    );
+
+    if (recIds.length === 0) {
+      return { message: 'No recommendations available. Follow more users to get suggestions.' };
+    }
+
+    const recommendations = await Promise.all(
+      recIds.map(id => this.userService.getUserById(id)),
+    );
+
+    return { recommendations };
+  }
 }
