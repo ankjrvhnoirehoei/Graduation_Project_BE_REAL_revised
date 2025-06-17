@@ -136,11 +136,6 @@ export class StoryService {
       this.userService.getPublicProfile(userId),
     ]);
 
-    const followingRelations = await this.relationServ.findByUserAndFilter(
-      userId,
-      'following',
-    );
-
     const defaultUserList = [
       {
         _id: userId,
@@ -150,12 +145,10 @@ export class StoryService {
       },
     ];
 
-    if (!followingRelations || followingRelations.length === 0) {
-      return {
-        message: 'Success',
-        data: defaultUserList,
-      };
-    }
+    const followingRelations = await this.relationServ.findByUserAndFilter(
+      userId,
+      'following',
+    );
 
     const followingUserIds = followingRelations.map((rel) =>
       rel.userOneID.toString() === userId
@@ -184,12 +177,8 @@ export class StoryService {
       {} as Record<string, Types.ObjectId[]>,
     );
 
-    const userIdsWithStory = paginatedUserIds.filter(
-      (id) => storiesByUserId[id]?.length > 0,
-    );
-
     const userProfiles = await Promise.all(
-      userIdsWithStory.map(async (id) => {
+      paginatedUserIds.map(async (id) => {
         try {
           const profile = await this.userService.getPublicProfile(id);
           return { userId: id, profile };
@@ -207,20 +196,17 @@ export class StoryService {
       {} as Record<string, { handleName: string; profilePic: string }>,
     );
 
-    const followingStories = userIdsWithStory.map((id) => ({
+    const followingStories = paginatedUserIds.map((id) => ({
       _id: id,
       handleName: userProfileMap[id]?.handleName || '',
       profilePic: userProfileMap[id]?.profilePic || '',
       stories: storiesByUserId[id] || [],
     }));
 
-    if (page === 1) {
-      followingStories.unshift(defaultUserList[0]);
-    }
-
+    // ✅ Luôn trả về chính chủ ở đầu (kể cả khi không follow ai)
     return {
       message: 'Success',
-      data: followingStories,
+      data: [...defaultUserList, ...followingStories],
     };
   }
 
