@@ -204,4 +204,35 @@ export class RelationController {
 
     return { userId, blocking };
   }  
+
+  /**
+   * GET /relations/recommendations?limit=10
+   * Protected. Returns up to `limit` users recommended to follow.
+   */
+  @UseGuards(JwtRefreshAuthGuard)
+  @Get('recommendations')
+  async recommendations(
+    @CurrentUser('sub') userId: string,
+    @Query('limit') limitQ?: string,
+  ) {
+    const limit = limitQ ? parseInt(limitQ, 10) : 10;
+    if (isNaN(limit) || limit <= 0) {
+      throw new BadRequestException('`limit` must be a positive integer');
+    }
+
+    const recIds = await this.relationService.getRecommendations(
+      userId,
+      Math.min(limit, 10),
+    );
+
+    if (recIds.length === 0) {
+      return { message: 'No recommendations available. Follow more users to get suggestions.' };
+    }
+
+    const recommendations = await Promise.all(
+      recIds.map(id => this.userService.getUserById(id)),
+    );
+
+    return { recommendations };
+  }
 }
