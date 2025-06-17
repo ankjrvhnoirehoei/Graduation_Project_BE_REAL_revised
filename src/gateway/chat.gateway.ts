@@ -1,7 +1,6 @@
 import {
   WebSocketGateway,
   WebSocketServer,
-  OnGatewayInit,
   OnGatewayConnection,
   OnGatewayDisconnect,
   SubscribeMessage,
@@ -34,15 +33,15 @@ export class ChatGateway
   ) {}
 
   afterInit(server: Server) {
-    console.log('WebSocket server initialized at /chat');
+    console.log('✅ WebSocket server initialized');
   }
 
   handleConnection(client: Socket) {
-    console.log(`Client connected: ${client.id}`);
+    console.log(`🔌 Client connected: ${client.id}`);
   }
 
   handleDisconnect(client: Socket) {
-    console.log(`Client disconnected: ${client.id}`);
+    console.log(`❌ Client disconnected: ${client.id}`);
   }
 
   @SubscribeMessage('joinRoom')
@@ -51,7 +50,7 @@ export class ChatGateway
     @ConnectedSocket() client: Socket,
   ) {
     client.join(roomId);
-    console.log(`Client ${client.id} joined room: ${roomId}`);
+    console.log(`📥 Client ${client.id} joined room: ${roomId}`);
   }
 
   @SubscribeMessage('leaveRoom')
@@ -60,7 +59,7 @@ export class ChatGateway
     @ConnectedSocket() client: Socket,
   ) {
     client.leave(roomId);
-    console.log(`Client ${client.id} left room: ${roomId}`);
+    console.log(`📤 Client ${client.id} left room: ${roomId}`);
   }
 
   @SubscribeMessage('sendMessage')
@@ -69,33 +68,41 @@ export class ChatGateway
     payload: CreateMessageDto & { senderId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const { roomId, senderId } = payload;
+    const { roomId, senderId, content, media } = payload;
 
     if (!senderId || !roomId) {
-      return client.emit('errorMessage', 'Missing senderId or roomId');
+      client.emit('errorMessage', 'Missing senderId or roomId');
+      return;
     }
 
-    const message = await this.messageService.create({
-      ...payload,
-      senderId,
-    });
+    try {
+      const newMessage = await this.messageService.create({
+        roomId,
+        senderId,
+        content: content || '',
+        media: media || undefined, // optional object
+      });
 
-    const populatedMessage = await message.populate({
-      path: 'senderId',
-      select: 'handleName profilePic',
-    });
+      const populated = await newMessage.populate({
+        path: 'senderId',
+        select: 'handleName profilePic',
+      });
 
-    this.server.to(roomId).emit('receiveMessage', {
-      _id: populatedMessage._id,
-      roomId: populatedMessage.roomId,
-      content: populatedMessage.content,
-      media: populatedMessage.media,
-      createdAt: populatedMessage.createdAt,
-      sender: {
-        userId: senderId,
-        handleName: populatedMessage.senderId.handleName,
-        profilePic: populatedMessage.senderId.profilePic,
-      },
-    });
+      this.server.to(roomId).emit('receiveMessage', {
+        _id: populated._id,
+        roomId: populated.roomId,
+        content: populated.content,
+        media: populated.media || null,
+        createdAt: populated.createdAt,
+        sender: {
+          userId: populated.senderId._id,
+          handleName: populated.senderId.handleName,
+          profilePic: populated.senderId.profilePic,
+        },
+      });
+    } catch (err) {
+      console.error('❗ Error sending message:', err);
+      client.emit('errorMessage', 'Failed to send message');
+    }
   }
 }

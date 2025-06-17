@@ -29,7 +29,7 @@ export class MessageService {
     const newMessage = new this.messageModel({
       roomId: createMessageDto.roomId,
       content: createMessageDto.content || '',
-      media: createMessageDto.media || '',
+      media: createMessageDto.media || null,
       senderId: createMessageDto.senderId,
     });
 
