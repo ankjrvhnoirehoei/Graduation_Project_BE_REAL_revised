@@ -7,6 +7,7 @@ import {
 } from './bookmark-playlist.schema';
 import { Document } from 'mongoose';
 import { BookmarkItemService } from 'src/bookmark-item/bookmark-item.service';
+import { BookmarkItem, BookmarkItemDocument } from 'src/bookmark-item/bookmark-item.schema';
 
 @Injectable()
 export class BookmarkPlaylistService {
@@ -14,6 +15,8 @@ export class BookmarkPlaylistService {
     @InjectModel(BookmarkPlaylist.name)
     private readonly playlistModel: Model<BookmarkPlaylistDocument>,
     private readonly bookmarkItemService: BookmarkItemService,
+    @InjectModel(BookmarkItem.name) 
+    private readonly bookmarkItemModel: Model<BookmarkItemDocument>,
   ) {}
 
   /**
@@ -233,5 +236,100 @@ export class BookmarkPlaylistService {
     // decrement by however many we removed (should be 1)
     await this.adjustPostCount(playlist._id.toString(), userId, -removedCount);
     return { removedCount };
+  }  
+
+  /** find the user's “All posts” playlist (auto‑creates via findAllByUser) */
+  private async findAllPostsPlaylist(userId: string): Promise<BookmarkPlaylistDocument> {
+    const playlists = await this.findAllByUser(userId);
+    const all = playlists.find(p => p.playlistName === 'All posts');
+    // findAllByUser always yields one, but guard defensively:
+    if (!all) {
+      throw new BadRequestException('Could not locate “All posts” playlist');
+    }
+    return all as BookmarkPlaylistDocument;
+  }
+
+  /** add a post to “All posts” by default (resurrects if soft‑deleted) */
+  async addPostToDefault(userId: string, postId: string) {
+    // get the playlist
+    const playlist = await this.findAllPostsPlaylist(userId);
+
+    // delegate to item service
+    const bookmark = await this.bookmarkItemService.create(
+      playlist._id.toString(),
+      postId,
+      userId,
+    );
+
+    // bump count
+    await this.adjustPostCount(playlist._id.toString(), userId, 1);
+
+    return bookmark;
+  }
+  
+  /**
+   * Move a post from whatever playlist it's in (if any) into `newPlaylistId`.
+   * - If not in any playlist -> add it there.
+   * - If already in `newPlaylistId` and active -> throw.
+   * - If in another playlist -> reassign, bump new count, decrement old count.
+   * - If there's a soft‑deleted bookmark for this user+post in `newPlaylistId`, resurrect it.
+   */
+  async switchPostPlaylist(
+    userId: string,
+    newPlaylistId: string,
+    postId: string,
+  ) {
+    // ensure target exists & belongs to user
+    const target = await this.findByIdAndUser(newPlaylistId, userId);
+
+    // find any existing bookmark for this user+post across all their playlists
+    const allPlaylists = await this.findAllByUser(userId);
+    const userPlaylistIds = allPlaylists.map(p => p._id);
+
+    const existing = await this.bookmarkItemModel
+      .findOne({ itemID: new Types.ObjectId(postId), playlistID: { $in: userPlaylistIds } })
+      .exec();
+
+    // CASE 1: not in any playlist -> just create
+    if (!existing) {
+      const bookmark = await this.bookmarkItemService.create(
+        newPlaylistId,
+        postId,
+        userId,
+      );
+      await this.adjustPostCount(newPlaylistId, userId, 1);
+      return bookmark;
+    }
+
+    // CASE 2: already active in target
+    if (!existing.isDeleted && existing.playlistID.equals(target._id)) {
+      throw new BadRequestException('Post is already bookmarked in that playlist.');
+    }
+
+    // CASE 3: soft‑deleted in target -> resurrect there
+    if (existing.isDeleted && existing.playlistID.equals(target._id)) {
+      existing.isDeleted = false;
+      await existing.save();
+      await this.adjustPostCount(newPlaylistId, userId, 1);
+      return existing;
+    }
+
+    // CASE 4: active in another playlist -> reassign
+    if (!existing.isDeleted && !existing.playlistID.equals(target._id)) {
+      const oldPlaylistId = existing.playlistID.toString();
+      existing.playlistID = target._id;
+      await existing.save();
+      // adjust both counts
+      await this.adjustPostCount(oldPlaylistId, userId, -1);
+      await this.adjustPostCount(newPlaylistId, userId, 1);
+      return existing;
+    }
+
+    // CASE 5: soft‑deleted somewhere else? treat like create
+    existing.isDeleted = false;
+    existing.playlistID = target._id;
+    await existing.save();
+    await this.adjustPostCount(newPlaylistId, userId, 1);
+    return existing;
   }  
 }

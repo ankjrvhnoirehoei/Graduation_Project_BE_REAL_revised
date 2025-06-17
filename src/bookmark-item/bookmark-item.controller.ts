@@ -5,6 +5,8 @@ import {
   UseGuards,
   BadRequestException,
   Query,
+  Delete,
+  Body,
 } from '@nestjs/common';
 import { BookmarkItemService } from './bookmark-item.service';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
@@ -55,4 +57,18 @@ async getItemsByPlaylist(
     }
   };
 }
+
+  /** DELETE /bookmark-items/remove */
+  @Delete('remove')
+  @UseGuards(JwtRefreshAuthGuard)
+  async removeDefault(
+    @Body('postId') postId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    if (!postId) {
+      throw new BadRequestException('postId is required.');
+    }
+    await this.itemService.removeByUserAndPost(userId, postId);
+    return { message: 'Bookmark removed.' };
+  }
 }
