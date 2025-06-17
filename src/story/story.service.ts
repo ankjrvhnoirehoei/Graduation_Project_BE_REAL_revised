@@ -31,14 +31,30 @@ export class StoryService {
       viewedByUsers: story.viewedByUsers,
       likedByUsers: story.likedByUsers,
       music: story.music,
+
       content: story.content,
       createdAt: story.createdAt,
+
       ...(story.type === StoryType.HIGHLIGHTS && {
         collectionName: story.collectionName,
         storyId: story.storyId,
       }),
     };
   }
+  private STORY_RESPONSE_WITH_VIEWER(
+    story: Story,
+    viewerId?: string | Types.ObjectId,
+  ) {
+    const isSeen = viewerId
+      ? story.viewedByUsers?.some((id) => id.toString() === viewerId.toString())
+      : false;
+
+    return {
+      ...this.STORY_RESPONSE(story),
+      isSeen,
+    };
+  }
+
   private async getMusicLink(_id: string) {
     return await this.musicService.findByID(_id.toString());
   }
@@ -105,25 +121,21 @@ export class StoryService {
     };
   }
 
-  async findStoryById(ids: string[]) {
+  async findStoryById(ids: string[], viewerId?: string) {
     if (!ids || ids.length === 0) {
-      return {
-        message: 'Success',
-        data: [],
-      };
+      return { message: 'Success', data: [] };
     }
     const objectIds = ids.map((id) => new Types.ObjectId(id));
     let stories = await this.storyRepo.findStoriesByIds(objectIds);
     if (!stories || stories.length === 0) {
-      return {
-        message: 'Success',
-        data: [],
-      };
+      return { message: 'Success', data: [] };
     }
     stories = await this.getStoriesMusic(stories);
     return {
       message: 'Success',
-      data: stories.map(this.STORY_RESPONSE),
+      data: stories.map((story) =>
+        this.STORY_RESPONSE_WITH_VIEWER(story, viewerId),
+      ),
     };
   }
 
@@ -249,7 +261,7 @@ export class StoryService {
     });
     return {
       message: 'Seen Success',
-      data: this.STORY_RESPONSE(updated),
+      data: this.STORY_RESPONSE_WITH_VIEWER(updated, viewerId),
     };
   }
 
