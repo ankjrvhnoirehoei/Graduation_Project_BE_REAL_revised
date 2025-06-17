@@ -117,7 +117,7 @@ export class RelationController {
     );
     console.log('Request Body:', dto);
 
-    return { userId, followerIds };
+    return { userId, followers };
   }
 
   /**
@@ -139,12 +139,17 @@ export class RelationController {
     );
 
     // map each record to the followed‐user’s ID
-    const following = records.map(r => {
+    const followingIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // if userId is in userTwoID, then userId follows userOneID; otherwise userId follows userTwoID
       return u2 === userId ? u1 : u2;
     });
+
+    // Fetch detailed user information
+    const following = await Promise.all(
+      followingIds.map((id) => this.userService.getUserById(id)),
+    );
 
     return { userId, following };
   }
@@ -168,12 +173,17 @@ export class RelationController {
     );
 
     // map each record to the blocked-user's ID
-    const blocking = records.map(r => {
+    const blockingIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // if userId is in userTwoID, then userId blocks userOneID; otherwise userId blocks userTwoID
       return u2 === userId ? u1 : u2;
     });
+
+    // Fetch detailed user information
+    const blocking = await Promise.all(
+      blockingIds.map((id) => this.userService.getUserById(id)),
+    );
 
     return { userId, blocking };
   }  
