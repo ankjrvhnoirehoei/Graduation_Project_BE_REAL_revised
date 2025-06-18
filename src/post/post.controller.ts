@@ -130,10 +130,10 @@ export class PostController {
   @Get('user/:targetUserId/all')
   async getOtherUserContent(
     @Param('targetUserId') targetUserId: string,
-    @CurrentUser('sub') viewerId: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-    @Query('type') type?: 'posts' | 'reels',
+    @CurrentUser('sub') viewerId:        string,
+    @Query('page')      page?:           string,
+    @Query('limit')     limit?:          string,
+    @Query('type')      type?:           'posts' | 'reels',
   ) {
     const pageNum  = parseInt(page  || '1',  10) || 1;
     const limitNum = parseInt(limit || '20', 10) || 20;
@@ -152,6 +152,7 @@ export class PostController {
       type,
     );
   }
+
 
   @Post('search')
   async searchByCaption(
@@ -177,5 +178,18 @@ export class PostController {
   async getRecentTags(@CurrentUser('sub') userId: string) {
     const tags = await this.postService.getRecentTags(userId);
     return { tags };
+  }
+
+  @Get('user/:userId/reels-simple')
+  async getReelsSimple(
+    @Param('userId') targetUserId: string, @CurrentUser('sub') userId: string,
+  ) {
+    if (!userId.match(/^[0-9a-fA-F]{24}$/)) {
+      throw new BadRequestException('Invalid user ID.');
+    }
+    if (!targetUserId.match(/^[0-9a-fA-F]{24}$/)) {
+      throw new BadRequestException('Invalid target user ID.');
+    }
+    return this.postService.getUserReelsSimple(targetUserId, userId);
   }
 }
