@@ -1,12 +1,24 @@
-import { IsMongoId, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsEnum,
+  IsMongoId,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class MediaDto {
-  @IsString()
-  type: 'image' | 'video' | 'audio' | 'file';
+  @IsEnum(['image', 'video', 'audio', 'call'])
+  type: 'image' | 'video' | 'audio' | 'call';
 
   @IsString()
   url: string;
+
+  @IsNumber()
+  @IsOptional()
+  duration?: number;
 }
 
 export class CreateMessageDto {

@@ -101,4 +101,68 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('errorMessage', 'Failed to send message');
     }
   }
+
+  @SubscribeMessage('incomingCall')
+  handleIncomingCall(
+    @MessageBody()
+    payload: { callerName: string; type: 'video' | 'voice'; roomId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { callerName, type, roomId } = payload;
+
+    client.to(roomId).emit('incomingCall', { callerName, type });
+  }
+
+  @SubscribeMessage('callEnded')
+  async handleCallEnded(
+    @MessageBody()
+    payload: {
+      roomId: string;
+      senderId: string;
+      callType: 'voice' | 'video';
+      missed: boolean;
+      duration?: number;
+    },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { roomId, senderId, callType, missed, duration } = payload;
+
+    const messageContent = missed
+      ? `Bạn đã bỏ lỡ cuộc gọi ${callType === 'voice' ? 'thoại' : 'video'}.`
+      : `Cuộc gọi ${callType === 'voice' ? 'thoại' : 'video'} kéo dài ${duration} giây.`;
+
+    try {
+      const message = await this.messageService.create({
+        roomId,
+        senderId,
+        content: messageContent,
+        media: {
+          type: 'call',
+          url: '',
+          duration: missed ? 0 : duration || 0,
+        },
+      });
+
+      const populatedMessage = await message.populate({
+        path: 'senderId',
+        select: 'handleName profilePic',
+      });
+
+      this.server.to(roomId).emit('receiveMessage', {
+        _id: populatedMessage._id,
+        roomId: populatedMessage.roomId,
+        content: populatedMessage.content,
+        media: populatedMessage.media,
+        createdAt: populatedMessage.createdAt,
+        sender: {
+          userId: senderId,
+          handleName: populatedMessage.senderId.handleName,
+          profilePic: populatedMessage.senderId.profilePic,
+        },
+      });
+    } catch (err) {
+      console.error('❗ Error saving call message:', err);
+      client.emit('errorMessage', 'Failed to save call message');
+    }
+  }
 }
