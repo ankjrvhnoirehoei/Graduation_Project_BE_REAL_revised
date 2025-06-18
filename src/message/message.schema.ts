@@ -12,8 +12,17 @@ export class Message extends Document {
   @Prop({ type: String, default: '' })
   content: string;
 
-  @Prop({ type: String, default: '' })
-  media: string;
+  @Prop({
+    type: {
+      type: String,
+      enum: ['image', 'video', 'audio', 'file'],
+    },
+    url: String,
+  })
+  media?: {
+    type: 'image' | 'video' | 'audio' | 'file';
+    url: string;
+  };
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);

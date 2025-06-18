@@ -227,4 +227,62 @@ export class RelationService {
 
     return this.relationModel.find({ $or: or }).exec();
   }
+
+  /**
+   * Get up to 'limit' (10) user IDs recommended for `userId` to follow.
+   * Recommendations are second-degree connections (followers/followings of your followings),
+   * excluding anyone you already follow or have blocked/been blocked by.
+   */
+  async getRecommendations(userId: string, limit = 10): Promise<string[]> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID format');
+    }
+    const u = new Types.ObjectId(userId);
+
+    // 1. Direct followings of U
+    const followingRecords = await this.findByUserAndFilter(userId, 'following');
+    const followingIds = followingRecords.map(r => {
+      const u1 = r.userOneID.toString();
+      const u2 = r.userTwoID.toString();
+      return u1 === userId ? u2 : u1;
+    });
+    if (followingIds.length === 0) {
+      return [];
+    }
+
+    // 2. Second-degree relations: followings of followings and followers of followings
+    const followingObjectIds = followingIds.map(id => new Types.ObjectId(id));
+    const rels = await this.relationModel.find({
+      $and: [
+        { $or: [ { userOneID: { $in: followingObjectIds } }, { userTwoID: { $in: followingObjectIds } } ] },
+        { $or: [ { relation: { $regex: '^FOLLOW_' } }, { relation: { $regex: '_FOLLOW$' } } ] },
+      ],
+    }).exec();
+
+    // 3. Extract candidates (the other side of each relation)
+    const candidates = rels.map(r => {
+      const u1 = r.userOneID.toString();
+      const u2 = r.userTwoID.toString();
+      // return the ID that isn't in followingIds
+      return followingIds.includes(u1) ? u2 : u1;
+    });
+    const uniqueCandidates = Array.from(new Set(candidates));
+
+    // 4. Exclude U, existing followings, and any block relations
+    const blocking = await this.findByUserAndFilter(userId, 'blocking');
+    const blockers = await this.findByUserAndFilter(userId, 'blockers');
+    const blockedSet = new Set<string>([
+      ...blocking.map(r => (r.userOneID.toString() === userId ? r.userTwoID : r.userOneID).toString()),
+      ...blockers.map(r => (r.userOneID.toString() === userId ? r.userTwoID : r.userOneID).toString()),
+    ]);
+
+    const filtered = uniqueCandidates.filter(id =>
+      id !== userId &&
+      !followingIds.includes(id) &&
+      !blockedSet.has(id)
+    );
+
+    // 5. Cap at `limit`
+    return filtered.slice(0, limit);
+  }
 }

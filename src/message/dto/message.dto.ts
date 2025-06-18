@@ -1,4 +1,13 @@
-import { IsMongoId, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsMongoId, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class MediaDto {
+  @IsString()
+  type: 'image' | 'video' | 'audio' | 'file';
+
+  @IsString()
+  url: string;
+}
 
 export class CreateMessageDto {
   @IsMongoId()
@@ -9,7 +18,8 @@ export class CreateMessageDto {
   @IsOptional()
   content?: string;
 
-  @IsString()
+  @ValidateNested()
+  @Type(() => MediaDto)
   @IsOptional()
-  media?: string;
+  media?: MediaDto;
 }

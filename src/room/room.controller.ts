@@ -11,6 +11,8 @@ import { RoomService } from './room.service';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { AddUserToRoomDto, CreateRoomDto } from './dto/room.dto';
+import { UpdateThemeRoomDto } from './dto/update-theme-room.dto';
+import { UpdateRoomNameDto } from './dto/update-room-name.dto';
 
 @Controller('rooms')
 @UseGuards(JwtRefreshAuthGuard)
@@ -51,5 +53,23 @@ export class RoomController {
   @Get('my')
   getMyRooms(@CurrentUser('sub') userId: string) {
     return this.roomService.getRoomsOfUser(userId);
+  }
+
+  @Post(':id/theme')
+  async updateRoomTheme(
+    @Param('id') roomId: string,
+    @Body() updateThemeRoomDto: UpdateThemeRoomDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.roomService.updateTheme(roomId, userId, updateThemeRoomDto);
+  }
+
+  @Post(':roomId/name')
+  async updateRoomName(
+    @Param('roomId') roomId: string,
+    @Body() updateRoomNameDto: UpdateRoomNameDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.roomService.updateRoomName(roomId, userId, updateRoomNameDto);
   }
 }

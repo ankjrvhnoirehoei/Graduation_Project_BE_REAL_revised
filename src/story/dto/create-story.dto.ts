@@ -2,7 +2,7 @@ import { IsMongoId, IsOptional, IsString, ValidateNested, IsNumber } from 'class
 import { Type } from 'class-transformer';
 
 class MusicDto {
-   @IsMongoId()
+   @IsMongoId({ message: 'musicId must be a valid Mongo ID' })
    _id: string;
 
    @IsNumber()
