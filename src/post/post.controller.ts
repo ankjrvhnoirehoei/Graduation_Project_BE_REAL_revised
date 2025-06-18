@@ -189,10 +189,10 @@ export class PostController {
     if (!userId.match(/^[0-9a-fA-F]{24}$/)) {
       throw new BadRequestException('Invalid user ID.');
     }
-    const reels = await this.postService.getAllReelsForUser(userId);
+    const data = await this.postService.getAllReelsForUser(userId);
     return {
       message: "User reels retrieved successfully",
-      reels
+      data
     };
   }
 }
