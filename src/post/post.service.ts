@@ -8,6 +8,15 @@ import { CreateMediaDto } from 'src/media/dto/media.dto';
 import { MusicService } from 'src/music/music.service';
 import { MusicPostDto } from 'src/music/dto/music.dto';
 
+interface Pagination {
+  currentPage: number;
+  totalPages: number;
+  totalCount: number;
+  limit: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
 @Injectable()
 export class PostService {
   constructor(
@@ -115,10 +124,15 @@ export class PostService {
     return post.type as 'post' | 'reel' | 'music';
   }
 
-  async findAllWithMedia(userId: string): Promise<any[]> {
+  async findAllWithMedia(
+    userId: string,
+    page = 1,
+    limit = 20,
+  ): Promise<{ items: any[]; pagination: Pagination }> {
     const currentUser = new Types.ObjectId(userId);
-    return this.postModel.aggregate([
-        {
+    const skip = (page - 1) * limit;
+    const basePipeline: PipelineStage[] = [
+      {
           $lookup: {
             from: 'relations',
             let: {
@@ -401,12 +415,50 @@ export class PostService {
           isBookmarked: 1,
         },
       },
-    ]);
+    ];
+
+        const countResult = await this.postModel
+      .aggregate([
+        ...basePipeline,
+        { $count: 'count' }
+      ])
+      .exec();
+
+    const totalCount = countResult[0]?.count ?? 0;
+    const totalPages = Math.ceil(totalCount / limit) || 1;
+
+    // 3) Fetch one page of data
+    const items = await this.postModel
+      .aggregate([
+        ...basePipeline,
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit },
+        // (then the final lookups, $project, etc. that you already have)
+      ])
+      .exec();
+
+    // 4) Build pagination object
+    const pagination: Pagination = {
+      currentPage: page,
+      totalPages,
+      totalCount,
+      limit,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    };
+
+    return { items, pagination };
   }
 
-  async findReelsWithMedia(userId: string): Promise<any[]> {
+  async findReelsWithMedia(
+    userId: string,
+    page = 1,
+    limit = 20,
+  ): Promise<{ items: any[]; pagination: Pagination }> {
     const currentUser = new Types.ObjectId(userId);
-    return this.postModel.aggregate([
+    const skip = (page - 1) * limit;
+    const basePipeline: PipelineStage[] = [
       {
       $lookup: {
         from: 'relations',
@@ -665,7 +717,142 @@ export class PostService {
           isBookmarked: 1,
         },
       },
-    ]);
+    ];
+       const countResult = await this.postModel
+      .aggregate([
+        ...basePipeline,
+        { $count: 'count' }
+      ])
+      .exec();
+    const totalCount = countResult[0]?.count ?? 0;
+    const totalPages = Math.max(Math.ceil(totalCount / limit), 1);
+
+    // 3) Fetch the page: re‑append sort/sample/limit and all your lookup/project stages
+    const items = await this.postModel
+      .aggregate([
+        ...basePipeline,
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit },
+        { $sample: { size: 20 } },                // if you really want sampling AFTER paging
+        { $lookup: { from: 'media', localField: '_id', foreignField: 'postID', as: 'media' } },
+        { $lookup: { from: 'users', localField: 'userID', foreignField: '_id', as: 'user' } },
+        { $unwind: '$user' },
+        { $lookup: { from: 'postlikes', localField: '_id', foreignField: 'postId', as: 'likes' } },
+        { $lookup: {
+            from: 'comments',
+            let: { postID: '$_id' },
+            pipeline: [
+              { $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$postID', '$$postID'] },
+                      { $eq: ['$isDeleted', false] },
+                    ]
+                  }
+                }
+              }
+            ],
+            as: 'comments'
+          }
+        },
+        { $addFields: { commentCount: { $size: '$comments' }, likeCount: { $size: '$likes' } } },
+        { $lookup: {
+            from: 'postlikes',
+            let: { postId: '$_id' },
+            pipeline: [
+              { $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$postId', '$$postId'] },
+                      { $eq: ['$userId', { $toObjectId: userId }] },
+                    ]
+                  }
+                }
+              }
+            ],
+            as: 'userLikeEntry'
+          }
+        },
+        { $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } } },
+        { $lookup: {
+            from: 'bookmarkplaylists',
+            let: { uid: currentUser },
+            pipeline: [
+              { $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$userID', '$$uid'] },
+                      { $eq: ['$isDeleted', false] }
+                    ]
+                  }
+                }
+              },
+              { $project: { _id: 1 } }
+            ],
+            as: 'myPlaylists'
+          }
+        },
+        { $lookup: {
+            from: 'bookmarkitems',
+            let: { postId: '$_id', pls: '$myPlaylists._id' },
+            pipeline: [
+              { $match: {
+                  $expr: {
+                    $and: [
+                      { $in: ['$playlistID', '$$pls'] },
+                      { $eq: ['$itemID', '$$postId'] },
+                      { $eq: ['$isDeleted', false] }
+                    ]
+                  }
+                }
+              },
+              { $limit: 1 }
+            ],
+            as: 'bookmarkEntry'
+          }
+        },
+        { $addFields: { isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] } } },
+        { $project: {
+            _id: 1,
+            userID: 1,
+            type: 1,
+            caption: 1,
+            isFlagged: 1,
+            nsfw: 1,
+            isEnable: 1,
+            location: 1,
+            isArchived: 1,
+            viewCount: 1,
+            share: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            media: 1,
+            isLike: 1,
+            likeCount: 1,
+            commentCount: 1,
+            music: 1,
+            'user._id': 1,
+            'user.handleName': 1,
+            'user.profilePic': 1,
+            isFollow: 1,
+            isBookmarked: 1,
+          }
+        },
+      ])
+      .exec();
+
+    // 4) Build pagination metadata
+    const pagination = {
+      currentPage: page,
+      totalPages,
+      totalCount,
+      limit,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    };
+
+    return { items, pagination }; 
   }
 
   // returns up to 50 'post'‐type documents for the given user, plus a total count
@@ -708,6 +895,16 @@ export class PostService {
             as: 'media',
           },
         },
+
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'userID',
+            foreignField: '_id',
+            as: 'user',
+          }
+        },
+        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
 
         // lookup likes just to compute likeCount
         {
@@ -783,6 +980,30 @@ export class PostService {
             as: 'myPlaylists'
           }
         },
+        {
+          $lookup: {
+            from: 'comments',
+            let: { postID: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$postID', '$$postID'] },
+                      { $eq: ['$isDeleted', false] }
+                    ]
+                  }
+                }
+              }
+            ],
+            as: 'comments'
+          }
+        },
+        {
+          $addFields: {
+            commentCount: { $size: '$comments' }
+          }
+        },
         // lookup bookmarkItems for this post
         {
           $lookup: {
@@ -823,6 +1044,10 @@ export class PostService {
             isArchived: 1,
             viewCount: 1,
             share: 1,
+            'user._id': 1,
+            'user.handleName': 1,
+            'user.profilePic': 1,
+            commentCount: 1,
             createdAt: 1,
             updatedAt: 1,
             isBookmarked: 1,
@@ -876,6 +1101,16 @@ export class PostService {
             as: 'media',
           },
         },
+
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'userID',
+            foreignField: '_id',
+            as: 'user',
+          }
+        },
+        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
 
         // lookup likes to compute likeCount
         {
@@ -952,6 +1187,32 @@ export class PostService {
             as: 'myPlaylists'
           }
         },
+
+        // lookup comments just to count non‑deleted ones
+        {
+          $lookup: {
+            from: 'comments',
+            let: { postID: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$postID', '$$postID'] },
+                      { $eq: ['$isDeleted', false] }
+                    ]
+                  }
+                }
+              }
+            ],
+            as: 'comments'
+          }
+        },
+        {
+          $addFields: {
+            commentCount: { $size: '$comments' }
+          }
+        },
         // lookup bookmarkItems for this post
         {
           $lookup: {
@@ -983,6 +1244,9 @@ export class PostService {
         {
           $project: {
             _id: 1,
+            'user._id': 1,
+            'user.handleName': 1,
+            'user.profilePic': 1,
             userID: 1,
             type: 1,
             caption: 1,
@@ -998,6 +1262,7 @@ export class PostService {
             isBookmarked: 1,
             media: 1,
             isLike: 1,
+            commentCount: 1,
             likeCount: 1,
             music: 1,
           },
@@ -1705,17 +1970,16 @@ export class PostService {
   }    
 
     /**
-   * Fetches another user’s posts/reels, with full lookups for
+   * Fetches another user's posts/reels, with full lookups for
    * isFollow, media, bookmarks, likes, comments, music, etc.
    */
   async getOtherUserContent(
-    viewerId:   string,
+    viewerId:     string,
     targetUserId: string,
-    page:       number = 1,
-    limit:      number = 20,
-    type?:      'posts' | 'reels',
+    page:          number = 1,
+    limit:         number = 20,
+    type?:        'posts' | 'reels',
   ): Promise<any> {
-    // Reuse a helper for each document‐type
     const results: any = { message: 'Content retrieved successfully' };
 
     if (!type || type === 'posts') {
@@ -1723,7 +1987,7 @@ export class PostService {
         viewerId, targetUserId, 'post', page, limit
       );
       results.posts = {
-        items: posts.items,
+        items:      posts.items,
         pagination: {
           currentPage: page,
           totalPages:  Math.ceil(posts.total / limit),
@@ -1740,7 +2004,7 @@ export class PostService {
         viewerId, targetUserId, 'reel', page, limit
       );
       results.reels = {
-        items: reels.items,
+        items:      reels.items,
         pagination: {
           currentPage: page,
           totalPages:  Math.ceil(reels.total / limit),
@@ -1755,10 +2019,7 @@ export class PostService {
     return results;
   }
 
-  /**
-   * Core aggregation for one type (“post” or “reel”), owned by targetUserId,
-   * seen by viewerId (so we can compute isFollow).
-   */
+
   private async fetchByType(
     viewerId:     string,
     targetUserId: string,
@@ -1775,14 +2036,14 @@ export class PostService {
 
     // total count for pagination
     const total = await this.postModel.countDocuments({
-      userID: targetObj,
-      type:   docType,
+      userID:   targetObj,
+      type:     docType,
       isEnable: true,
       nsfw:     false,
     });
 
-    const pipeline: any[] = [
-      // 1) Only the target user’s docs:
+    const pipeline: PipelineStage[] = [
+      // 1) Only the target user's documents
       { $match: {
           userID:   targetObj,
           type:     docType,
@@ -1793,14 +2054,13 @@ export class PostService {
       { $skip: skip },
       { $limit: limit },
 
-      // 2) Compute isFollow via the same relation‐lookup you have:
+      // 2) Compute isFollow
       {
         $lookup: {
           from: 'relations',
           let:  { pu: '$userID', cu: viewerObj },
           pipeline: [
-            {
-              $addFields: {
+            { $addFields: {
                 pair: {
                   $cond: [
                     { $lt: ['$$cu', '$$pu'] },
@@ -1808,18 +2068,15 @@ export class PostService {
                     { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
                   ]
                 }
-              }
-            },
-            {
-              $match: {
+            }},
+            { $match: {
                 $expr: {
                   $and: [
                     { $eq: ['$userOneID', '$pair.u1'] },
                     { $eq: ['$userTwoID', '$pair.u2'] }
                   ]
                 }
-              }
-            },
+            }},
             { $project: { _id: 0, relation: 1, userOneIsCurrent: '$pair.userOneIsCurrent' } }
           ],
           as: 'relationLookup'
@@ -1867,7 +2124,7 @@ export class PostService {
       },
       { $project: { relationLookup: 0 } },
 
-      // 3) hide any “hiddenposts” entries:
+      // 3) Exclude hidden posts
       {
         $lookup: {
           from: 'hiddenposts',
@@ -1879,19 +2136,45 @@ export class PostService {
       {
         $match: {
           $expr: {
-            $not: {
-              $in: [{ $toObjectId: viewerId }, '$hidden.userId']
-            }
+            $not: { $in: [viewerObj, '$hidden.userId'] }
           }
         }
       },
 
-      // 4) attach media, user info, likes, comments, music, etc.
-      { $lookup: { from: 'media', localField: '_id', foreignField: 'postID', as: 'media' } },
-      { $lookup: { from: 'users', localField: 'userID', foreignField: '_id', as: 'user' } },
-      { $unwind: '$user' },
+      // 4) Media
+      { $lookup: { from: 'media',  localField: '_id', foreignField: 'postID', as: 'media' } },
+
+      // 5) Author profile
+      { $lookup: { from: 'users',  localField: 'userID', foreignField: '_id',   as: 'user' } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+
+      // 6) Likes -> likeCount
       { $lookup: { from: 'postlikes', localField: '_id', foreignField: 'postId', as: 'likes' } },
-      { $lookup: {
+      { $addFields: { likeCount: { $size: '$likes' } } },
+
+      // 7) isLike
+      {
+        $lookup: {
+          from: 'postlikes',
+          let: { postId: '$_id' },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postId', '$$postId'] },
+                    { $eq: ['$userId', viewerObj] }
+                  ]
+                }
+            }}
+          ],
+          as: 'userLikeEntry'
+        }
+      },
+      { $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } } },
+
+      // 8) Comments -> commentCount
+      {
+        $lookup: {
           from: 'comments',
           let: { postID: '$_id' },
           pipeline: [
@@ -1907,8 +2190,11 @@ export class PostService {
           as: 'comments'
         }
       },
-      { $addFields: { commentCount: { $size: '$comments' }, likeCount: { $size: '$likes' } } },
-      { $lookup: {
+      { $addFields: { commentCount: { $size: '$comments' } } },
+
+      // 9) Music info
+      {
+        $lookup: {
           from: 'musics',
           localField: 'music.musicId',
           foreignField: '_id',
@@ -1916,25 +2202,8 @@ export class PostService {
         }
       },
       { $unwind: { path: '$musicInfo', preserveNullAndEmptyArrays: true } },
-      { $lookup: {
-          from: 'postlikes',
-          let: { postId: '$_id' },
-          pipeline: [
-            { $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', { $toObjectId: viewerId }] }
-                  ]
-                }
-            }}
-          ],
-          as: 'userLikeEntry'
-        }
-      },
-      { $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } } },
 
-      // 5) bookmark lookups exactly as before:
+      // 10) Bookmark
       {
         $lookup: {
           from: 'bookmarkplaylists',
@@ -1974,41 +2243,152 @@ export class PostService {
       },
       { $addFields: { isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] } } },
 
-      // 6) final projection
+      // 11) Final projection
       {
         $project: {
-          _id:          1,
-          userID:       1,
-          type:         1,
-          caption:      1,
-          isFlagged:    1,
-          nsfw:         1,
-          isEnable:     1,
-          location:     1,
-          isArchived:   1,
-          viewCount:    1,
-          share:        1,
-          createdAt:    1,
-          updatedAt:    1,
-          media:        1,
-          isLike:       1,
-          likeCount:    1,
-          commentCount: 1,
-          music:        1,
-          'user._id':        1,
-          'user.handleName': 1,
-          'user.profilePic': 1,
-          'musicInfo.song':  1,
-          'musicInfo.link':  1,
-          'musicInfo.coverImg': 1,
-          'musicInfo.author': 1,
-          isFollow:       1,
-          isBookmarked:   1,
-        },
-      },
+          _id:           1,
+          userID:        1,
+          type:          1,
+          caption:       1,
+          isFlagged:     1,
+          nsfw:          1,
+          isEnable:      1,
+          location:      1,
+          isArchived:    1,
+          viewCount:     1,
+          share:         1,
+          createdAt:     1,
+          updatedAt:     1,
+          media:         1,
+          user: {
+            _id:         1,
+            handleName:  1,
+            profilePic:  1,
+          },
+          isFollow:      1,
+          isLike:        1,
+          likeCount:     1,
+          commentCount:  1,
+          musicInfo: {
+            song:      1,
+            link:      1,
+            coverImg:  1,
+            author:    1,
+          },
+          isBookmarked:  1,
+        }
+      }
     ];
 
     const items = await this.postModel.aggregate(pipeline).exec();
     return { total, items };
   }
+  
+  async getAllReelsForUser(targetUserId: string): Promise<any[]> {
+    if (!Types.ObjectId.isValid(targetUserId)) {
+      throw new BadRequestException('Invalid user ID format');
+    }
+    const userObj = new Types.ObjectId(targetUserId);
+
+    const pipeline: PipelineStage[] = [
+      // 1) match reels for that user
+      {
+        $match: {
+          userID:   userObj,
+          type:     'reel',
+          isEnable: true,
+          nsfw:     false,
+        }
+      },
+      { $sort: { createdAt: -1 } },
+
+      // 2) owner info
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'owner'
+        }
+      },
+      { $unwind: '$owner' },
+
+      // 3) comments -> commentCount
+      {
+        $lookup: {
+          from: 'comments',
+          let: { postId: '$_id' },
+          pipeline: [
+            { $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postId'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+            }}
+          ],
+          as: 'comments'
+        }
+      },
+      { $addFields: { commentCount: { $size: '$comments' } } },
+
+      // 4) likes -> likeCount
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likes'
+        }
+      },
+      { $addFields: { likeCount: { $size: '$likes' } } },
+
+      // 5) shareCount from share field
+      { $addFields: { shareCount: '$share' } },
+
+      // 6) musicInfo
+      {
+        $lookup: {
+          from: 'musics',
+          localField: 'music.musicId',
+          foreignField: '_id',
+          as: 'musicArr'
+        }
+      },
+      {
+        $addFields: {
+          music: {
+            $cond: [
+              { $gt: [{ $size: '$musicArr' }, 0] },
+              {
+                _id:   { $arrayElemAt: ['$musicArr._id', 0] },
+                media: { $arrayElemAt: ['$musicArr.link', 0] }
+              },
+              {}
+            ]
+          }
+        }
+      },
+
+      // 7) final projection
+      {
+        $project: {
+          _id:          1,
+          caption:      1,
+          owner: {
+            handleName: '$owner.handleName',
+            profilePic: '$owner.profilePic',
+          },
+          music:        1,
+          commentCount: 1,
+          likeCount:    1,
+          shareCount:   1,
+          createdAt:    1,
+        }
+      }
+    ];
+
+    return this.postModel.aggregate(pipeline).exec();
+  }  
 }

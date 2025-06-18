@@ -10,6 +10,7 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
   Param,
+  NotFoundException,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
@@ -39,13 +40,42 @@ export class PostController {
   }
 
   @Get('get-all-with-media')
-  async getAllWithMedia(@CurrentUser('sub') userId: string) {
-    return this.postService.findAllWithMedia(userId);
+  async getAllWithMedia(
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ): Promise<{
+    items: any[];
+    pagination: {
+      currentPage: number;
+      totalPages: number;
+      totalCount: number;
+      limit: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
+  }> {
+    return this.postService.findAllWithMedia(userId, page, limit);
   }
 
+
   @Get('get-all-reel-media')
-  async getAllReelMedia(@CurrentUser('sub') userId: string) {
-    return this.postService.findReelsWithMedia(userId);
+  async getAllReelMedia(
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ): Promise<{
+    items: any[];
+    pagination: {
+      currentPage: number;
+      totalPages: number;
+      totalCount: number;
+      limit: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
+  }> {
+    return this.postService.findReelsWithMedia(userId, page, limit);
   }
 
   @Get('get-all-reel-with-music')
@@ -130,10 +160,10 @@ export class PostController {
   @Get('user/:targetUserId/all')
   async getOtherUserContent(
     @Param('targetUserId') targetUserId: string,
-    @CurrentUser('sub') viewerId: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-    @Query('type') type?: 'posts' | 'reels',
+    @CurrentUser('sub') viewerId:        string,
+    @Query('page')      page?:           string,
+    @Query('limit')     limit?:          string,
+    @Query('type')      type?:           'posts' | 'reels',
   ) {
     const pageNum  = parseInt(page  || '1',  10) || 1;
     const limitNum = parseInt(limit || '20', 10) || 20;
@@ -152,6 +182,7 @@ export class PostController {
       type,
     );
   }
+
 
   @Post('search')
   async searchByCaption(
@@ -177,5 +208,20 @@ export class PostController {
   async getRecentTags(@CurrentUser('sub') userId: string) {
     const tags = await this.postService.getRecentTags(userId);
     return { tags };
+  }
+
+  @Get('reels/:userId')
+  async getReelsByUser(
+    @Param('userId') userId: string,
+  ) {
+    // basic 24‑hex check
+    if (!userId.match(/^[0-9a-fA-F]{24}$/)) {
+      throw new BadRequestException('Invalid user ID.');
+    }
+    const data = await this.postService.getAllReelsForUser(userId);
+    return {
+      message: "User reels retrieved successfully",
+      data
+    };
   }
 }

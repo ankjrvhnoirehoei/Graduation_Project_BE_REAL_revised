@@ -31,14 +31,30 @@ export class StoryService {
       viewedByUsers: story.viewedByUsers,
       likedByUsers: story.likedByUsers,
       music: story.music,
+
       content: story.content,
       createdAt: story.createdAt,
+
       ...(story.type === StoryType.HIGHLIGHTS && {
         collectionName: story.collectionName,
         storyId: story.storyId,
       }),
     };
   }
+  private STORY_RESPONSE_WITH_VIEWER(
+    story: Story,
+    viewerId?: string | Types.ObjectId,
+  ) {
+    const isSeen = viewerId
+      ? story.viewedByUsers?.some((id) => id.toString() === viewerId.toString())
+      : false;
+
+    return {
+      ...this.STORY_RESPONSE(story),
+      isSeen,
+    };
+  }
+
   private async getMusicLink(_id: string) {
     return await this.musicService.findByID(_id.toString());
   }
@@ -105,25 +121,21 @@ export class StoryService {
     };
   }
 
-  async findStoryById(ids: string[]) {
+  async findStoryById(ids: string[], viewerId?: string) {
     if (!ids || ids.length === 0) {
-      return {
-        message: 'Success',
-        data: [],
-      };
+      return { message: 'Success', data: [] };
     }
     const objectIds = ids.map((id) => new Types.ObjectId(id));
     let stories = await this.storyRepo.findStoriesByIds(objectIds);
     if (!stories || stories.length === 0) {
-      return {
-        message: 'Success',
-        data: [],
-      };
+      return { message: 'Success', data: [] };
     }
     stories = await this.getStoriesMusic(stories);
     return {
       message: 'Success',
-      data: stories.map(this.STORY_RESPONSE),
+      data: stories.map((story) =>
+        this.STORY_RESPONSE_WITH_VIEWER(story, viewerId),
+      ),
     };
   }
 
@@ -139,8 +151,9 @@ export class StoryService {
     const defaultUserList = [
       {
         _id: userId,
-        handleName: currentUserProfile.handleName,
-        profilePic: currentUserProfile.profilePic,
+        username: currentUserProfile.username || '',
+        handleName: currentUserProfile.handleName || '',
+        profilePic: currentUserProfile.profilePic || '',
         stories: currentUserStories.data.map((story) => story._id),
       },
     ];
@@ -183,21 +196,26 @@ export class StoryService {
           const profile = await this.userService.getPublicProfile(id);
           return { userId: id, profile };
         } catch (error) {
-          return { userId: id, profile: { handleName: '', profilePic: '' } };
+          return { userId: id, profile: { username: '', handleName: '', profilePic: '' } };
         }
       }),
     );
 
     const userProfileMap = userProfiles.reduce(
       (map, { userId, profile }) => {
-        map[userId] = profile;
+        map[userId] = {
+          username: profile.username || '',
+          handleName: profile.handleName || '',
+          profilePic: profile.profilePic || '',
+        };
         return map;
       },
-      {} as Record<string, { handleName: string; profilePic: string }>,
+      {} as Record<string, { username: string, handleName: string, profilePic: string }>,
     );
 
     const followingStories = paginatedUserIds.map((id) => ({
       _id: id,
+      username: userProfileMap[id]?.username || '',
       handleName: userProfileMap[id]?.handleName || '',
       profilePic: userProfileMap[id]?.profilePic || '',
       stories: storiesByUserId[id] || [],
@@ -249,7 +267,7 @@ export class StoryService {
     });
     return {
       message: 'Seen Success',
-      data: this.STORY_RESPONSE(updated),
+      data: this.STORY_RESPONSE_WITH_VIEWER(updated, viewerId),
     };
   }
 
