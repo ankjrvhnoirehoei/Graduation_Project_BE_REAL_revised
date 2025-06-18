@@ -151,8 +151,9 @@ export class StoryService {
     const defaultUserList = [
       {
         _id: userId,
-        handleName: currentUserProfile.handleName,
-        profilePic: currentUserProfile.profilePic,
+        username: currentUserProfile.username || '',
+        handleName: currentUserProfile.handleName || '',
+        profilePic: currentUserProfile.profilePic || '',
         stories: currentUserStories.data.map((story) => story._id),
       },
     ];
@@ -195,21 +196,26 @@ export class StoryService {
           const profile = await this.userService.getPublicProfile(id);
           return { userId: id, profile };
         } catch (error) {
-          return { userId: id, profile: { handleName: '', profilePic: '' } };
+          return { userId: id, profile: { username: '', handleName: '', profilePic: '' } };
         }
       }),
     );
 
     const userProfileMap = userProfiles.reduce(
       (map, { userId, profile }) => {
-        map[userId] = profile;
+        map[userId] = {
+          username: profile.username || '',
+          handleName: profile.handleName || '',
+          profilePic: profile.profilePic || '',
+        };
         return map;
       },
-      {} as Record<string, { handleName: string; profilePic: string }>,
+      {} as Record<string, { username: string, handleName: string, profilePic: string }>,
     );
 
     const followingStories = paginatedUserIds.map((id) => ({
       _id: id,
+      username: userProfileMap[id]?.username || '',
       handleName: userProfileMap[id]?.handleName || '',
       profilePic: userProfileMap[id]?.profilePic || '',
       stories: storiesByUserId[id] || [],
