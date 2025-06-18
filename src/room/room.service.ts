@@ -29,7 +29,7 @@ export class RoomService {
       .findOne({
         user_ids: { $all: allUserIds, $size: allUserIds.length },
       })
-      .populate('user_ids', '_id handleName profilePic'); // 👈 Populate thông tin user
+      .populate('user_ids', '_id handleName profilePic');
 
     if (existingRoom) {
       return {
