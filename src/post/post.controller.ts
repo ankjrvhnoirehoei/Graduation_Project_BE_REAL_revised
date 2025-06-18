@@ -40,13 +40,42 @@ export class PostController {
   }
 
   @Get('get-all-with-media')
-  async getAllWithMedia(@CurrentUser('sub') userId: string) {
-    return this.postService.findAllWithMedia(userId);
+  async getAllWithMedia(
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ): Promise<{
+    items: any[];
+    pagination: {
+      currentPage: number;
+      totalPages: number;
+      totalCount: number;
+      limit: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
+  }> {
+    return this.postService.findAllWithMedia(userId, page, limit);
   }
 
+
   @Get('get-all-reel-media')
-  async getAllReelMedia(@CurrentUser('sub') userId: string) {
-    return this.postService.findReelsWithMedia(userId);
+  async getAllReelMedia(
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ): Promise<{
+    items: any[];
+    pagination: {
+      currentPage: number;
+      totalPages: number;
+      totalCount: number;
+      limit: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
+  }> {
+    return this.postService.findReelsWithMedia(userId, page, limit);
   }
 
   @Get('get-all-reel-with-music')
