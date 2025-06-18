@@ -10,6 +10,7 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
   Param,
+  NotFoundException,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
@@ -180,16 +181,21 @@ export class PostController {
     return { tags };
   }
 
-  @Get('user/:userId/reels-simple')
-  async getReelsSimple(
-    @Param('userId') targetUserId: string, @CurrentUser('sub') userId: string,
+  @Get('reels/:reelId')
+  async getMyReelDetail(
+    @Param('reelId') reelId: string,
+    @CurrentUser('sub') userId: string,
   ) {
-    if (!userId.match(/^[0-9a-fA-F]{24}$/)) {
-      throw new BadRequestException('Invalid user ID.');
+    const detail = await this.postService.getReelDetailForOwner(
+      userId,
+      reelId,
+    );
+    if (!detail) {
+      throw new NotFoundException('Reel not found or not owned by you');
     }
-    if (!targetUserId.match(/^[0-9a-fA-F]{24}$/)) {
-      throw new BadRequestException('Invalid target user ID.');
-    }
-    return this.postService.getUserReelsSimple(targetUserId, userId);
+    return {
+      message: 'Success',
+      data: detail,
+    };
   }
 }
