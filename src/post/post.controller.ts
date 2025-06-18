@@ -181,21 +181,18 @@ export class PostController {
     return { tags };
   }
 
-  @Get('reels/:reelId')
-  async getMyReelDetail(
-    @Param('reelId') reelId: string,
-    @CurrentUser('sub') userId: string,
+  @Get('reels/:userId')
+  async getReelsByUser(
+    @Param('userId') userId: string,
   ) {
-    const detail = await this.postService.getReelDetailForOwner(
-      userId,
-      reelId,
-    );
-    if (!detail) {
-      throw new NotFoundException('Reel not found or not owned by you');
+    // basic 24‑hex check
+    if (!userId.match(/^[0-9a-fA-F]{24}$/)) {
+      throw new BadRequestException('Invalid user ID.');
     }
+    const reels = await this.postService.getAllReelsForUser(userId);
     return {
-      message: 'Success',
-      data: detail,
+      message: "User reels retrieved successfully",
+      reels
     };
   }
 }

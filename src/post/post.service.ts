@@ -2096,30 +2096,37 @@ export class PostService {
     const items = await this.postModel.aggregate(pipeline).exec();
     return { total, items };
   }
-
-  async getUserReelsSimple(targetUserId: string, currentUser: string): Promise<any[]> {
-    if (!Types.ObjectId.isValid(targetUserId) || !Types.ObjectId.isValid(currentUser)) {
+  
+  async getAllReelsForUser(targetUserId: string): Promise<any[]> {
+    if (!Types.ObjectId.isValid(targetUserId)) {
       throw new BadRequestException('Invalid user ID format');
     }
-    const targetObj = new Types.ObjectId(targetUserId);
-    const currentObj = new Types.ObjectId(currentUser);
+    const userObj = new Types.ObjectId(targetUserId);
 
-    const items = await this.postModel.aggregate([
-      // 1) only reels for that user
-      { $match: { userID: targetObj, type: 'reel', isEnable: true, nsfw: false } },
+    const pipeline: PipelineStage[] = [
+      // 1) match reels for that user
+      {
+        $match: {
+          userID:   userObj,
+          type:     'reel',
+          isEnable: true,
+          nsfw:     false,
+        }
+      },
       { $sort: { createdAt: -1 } },
 
-      // 2) media array
+      // 2) owner info
       {
         $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        },
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'owner'
+        }
       },
+      { $unwind: '$owner' },
 
-      // 3) commentCount
+      // 3) comments -> commentCount
       {
         $lookup: {
           from: 'comments',
@@ -2139,7 +2146,7 @@ export class PostService {
       },
       { $addFields: { commentCount: { $size: '$comments' } } },
 
-      // 4) likeCount
+      // 4) likes -> likeCount
       {
         $lookup: {
           from: 'postlikes',
@@ -2149,25 +2156,9 @@ export class PostService {
         }
       },
       { $addFields: { likeCount: { $size: '$likes' } } },
-      // 5) isLiked
-      {
-        $lookup: {
-          from: 'postlikes',
-          let: { postId: '$_id' },
-          pipeline: [
-            { $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', currentObj] }
-                  ]
-                }
-            }}
-          ],
-          as: 'userLikeEntry'
-        }
-      },
-      { $addFields: { isLiked: false } },
+
+      // 5) shareCount from share field
+      { $addFields: { shareCount: '$share' } },
 
       // 6) musicInfo
       {
@@ -2175,16 +2166,18 @@ export class PostService {
           from: 'musics',
           localField: 'music.musicId',
           foreignField: '_id',
-          as: 'musicInfo'
+          as: 'musicArr'
         }
       },
-      // unwind to single object, but preserve empty arrays as [{}]
       {
         $addFields: {
-          musicInfo: {
+          music: {
             $cond: [
-              { $gt: [{ $size: '$musicInfo' }, 0] },
-              { $arrayElemAt: ['$musicInfo', 0] },
+              { $gt: [{ $size: '$musicArr' }, 0] },
+              {
+                _id:   { $arrayElemAt: ['$musicArr._id', 0] },
+                media: { $arrayElemAt: ['$musicArr.link', 0] }
+              },
               {}
             ]
           }
@@ -2194,140 +2187,21 @@ export class PostService {
       // 7) final projection
       {
         $project: {
-          _id:         1,
-          media:       1,
-          commentCount:1,
-          likeCount:   1,
-          isLiked:     1,
-          musicInfo: {
-            song:      '$musicInfo.song',
-            link:      '$musicInfo.link',
-            coverImg:  '$musicInfo.coverImg',
-            author:    '$musicInfo.author'
-          }
-        }
-      }
-    ]).exec();
-
-    return items;
-  }  
-
-  async getReelDetailForOwner(
-    viewerId: string,
-    reelId: string,
-  ): Promise<any | null> {
-    if (!Types.ObjectId.isValid(viewerId) || !Types.ObjectId.isValid(reelId)) {
-      throw new BadRequestException('Invalid ID format');
-    }
-    const viewerObj = new Types.ObjectId(viewerId);
-    const reelObj   = new Types.ObjectId(reelId);
-
-    const pipeline: PipelineStage[] = [
-      // 1) match exactly this reel, owned by current user
-      {
-        $match: {
-          _id:      reelObj,
-          userID:   viewerObj,
-          type:     'reel',
-          isEnable: true,
-        },
-      },
-
-      // 2) lookup owner info
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'owner',
-        },
-      },
-      {
-        $unwind: {
-          path: '$owner',
-          preserveNullAndEmptyArrays: false,
-        },
-      },
-
-      // 3) lookup comments → commentCount
-      {
-        $lookup: {
-          from: 'comments',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postId'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'comments',
-        },
-      },
-      { $addFields: { commentCount: { $size: '$comments' } } },
-
-      // 4) lookup likes → likeCount
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes',
-        },
-      },
-      { $addFields: { likeCount: { $size: '$likes' } } },
-
-      // 5) shareCount directly from `share` field
-      { $addFields: { shareCount: '$share' } },
-
-      // 6) lookup musicInfo
-      {
-        $lookup: {
-          from: 'musics',
-          localField: 'music.musicId',
-          foreignField: '_id',
-          as: 'musicArr',
-        },
-      },
-      {
-        $addFields: {
-          music: {
-            $cond: [
-              { $gt: [{ $size: '$musicArr' }, 0] },
-              {
-                _id:        { $arrayElemAt: ['$musicArr._id', 0] },
-                media:      { $arrayElemAt: ['$musicArr.link', 0] },
-              },
-              {},
-            ],
-          },
-        },
-      },
-
-      // 7) final projection
-      {
-        $project: {
           _id:          1,
           caption:      1,
           owner: {
-            handleName:  '$owner.handleName',
-            profilePic:  '$owner.profilePic',
+            handleName: '$owner.handleName',
+            profilePic: '$owner.profilePic',
           },
           music:        1,
           commentCount: 1,
           likeCount:    1,
           shareCount:   1,
           createdAt:    1,
-        },
-      },
+        }
+      }
     ];
 
-    const [result] = await this.postModel.aggregate(pipeline).exec();
-    return result || null;
+    return this.postModel.aggregate(pipeline).exec();
   }  
 }
