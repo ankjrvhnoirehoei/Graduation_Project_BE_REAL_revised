@@ -2370,24 +2370,58 @@ export class PostService {
           }
         }
       },
-
-      // 7) final projection
+      // 7) lookup media by post ID
       {
-        $project: {
-          _id:          1,
-          caption:      1,
-          owner: {
-            handleName: '$owner.handleName',
-            profilePic: '$owner.profilePic',
+        $lookup: {
+          from: 'media',           
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'mediaArr'
+        }
+      },
+          // 9) pull out the first media doc for easy access
+    {
+      $addFields: {
+        mediaObj: { $arrayElemAt: ['$mediaArr', 0] }
+      }
+    },
+
+    // 10) build combined allMedia field
+    {
+      $addFields: {
+        media: {
+          // mediaId: '$mediaObj._id',
+          // choose videoUrl if present, otherwise imageUrl
+          videoUrl: {
+            $cond: [
+              { $gt: ['$$ROOT.mediaObj.videoUrl', null] },
+              '$$ROOT.mediaObj.videoUrl',
+              '$$ROOT.mediaObj.imageUrl'
+            ]
           },
-          music:        1,
-          commentCount: 1,
-          likeCount:    1,
-          shareCount:   1,
-          createdAt:    1,
+          audioId: '$music._id',
+          audioUrl: '$music.media'
         }
       }
-    ];
+    },
+
+    // 11) final projection
+    {
+      $project: {
+        _id:          1,
+        caption:      1,
+        owner: {
+          handleName: 1,
+          profilePic: 1
+        },
+        commentCount: 1,
+        likeCount:    1,
+        shareCount:   1,
+        createdAt:    1,
+        media:        1    
+      }
+    }
+  ];
 
     return this.postModel.aggregate(pipeline).exec();
   }  

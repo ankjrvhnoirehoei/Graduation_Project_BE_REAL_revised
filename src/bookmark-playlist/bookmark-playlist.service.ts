@@ -8,6 +8,8 @@ import {
 import { Document } from 'mongoose';
 import { BookmarkItemService } from 'src/bookmark-item/bookmark-item.service';
 import { BookmarkItem, BookmarkItemDocument } from 'src/bookmark-item/bookmark-item.schema';
+import { Media, MediaDocument } from 'src/media/media.schema';
+import { Music, MusicDocument } from 'src/music/music.schema';
 
 @Injectable()
 export class BookmarkPlaylistService {
@@ -17,6 +19,10 @@ export class BookmarkPlaylistService {
     private readonly bookmarkItemService: BookmarkItemService,
     @InjectModel(BookmarkItem.name) 
     private readonly bookmarkItemModel: Model<BookmarkItemDocument>,
+    @InjectModel(Media.name)
+    private readonly mediaModel: Model<MediaDocument>,
+    @InjectModel(Music.name)
+    private readonly musicModel: Model<MusicDocument>,
   ) {}
 
   /**
@@ -24,39 +30,90 @@ export class BookmarkPlaylistService {
    * if none exist, automatically creates the two default playlists
    * ("All posts" and "Music") and returns them.
    */
-  async findAllByUser(userId: string): Promise<BookmarkPlaylist[]> {
+  async findAllByUser(userId: string): Promise<(BookmarkPlaylist & { thumbnails: string[] })[]> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid user ID format.');
     }
-    const objectUserId = new Types.ObjectId(userId);
+    const uid = new Types.ObjectId(userId);
 
-    const existing = await this.playlistModel
-      .find({ userID: objectUserId, isDeleted: false })
+    // 1) load existing playlists
+    let playlists = await this.playlistModel
+      .find({ userID: uid, isDeleted: false })
       .sort({ createdAt: 1 })
       .exec();
 
-    if (existing.length > 0) {
-      return existing;
+    // 2) if none exist, insert defaults and reload
+    if (playlists.length === 0) {
+      const defaults = [
+        { userID: uid, playlistName: 'All posts' },
+        { userID: uid, playlistName: 'Music' },
+      ];
+      await this.playlistModel.insertMany(defaults);
+      playlists = await this.playlistModel
+        .find({ userID: uid, isDeleted: false })
+        .sort({ createdAt: 1 })
+        .exec();
     }
 
-    // no playlists exist yet: create the two defaults
-    const defaults = [
-      {
-        userID: objectUserId,
-        playlistName: 'All posts',
-        postCount: 0,
-        isDeleted: false,
-      },
-      {
-        userID: objectUserId,
-        playlistName: 'Music',
-        postCount: 0,
-        isDeleted: false,
-      },
-    ];
+    // 3) enrich each with thumbnails
+    return this.addThumbnails(playlists);
+  }
 
-    const created = await this.playlistModel.insertMany(defaults);
-    return created;
+  /**
+   * For each playlist: grab its newest 4 bookmark‐items,
+   * fetch up to 4 media URLs for post/reel items and coverImgs for music items,
+   * merge, slice to 4, pad with "".
+   */
+  private async addThumbnails(
+    playlists: BookmarkPlaylistDocument[],
+  ): Promise<(BookmarkPlaylist & { thumbnails: string[] })[]> {
+    return Promise.all(
+      playlists.map(async (pl) => {
+        // a) load newest 4 items
+        const items = await this.bookmarkItemModel
+          .find({ playlistID: pl._id, isDeleted: false })
+          .sort({ createdAt: -1 })
+          .limit(4)
+          .exec();
+
+        // b) split types
+        const postIds: Types.ObjectId[] = [];
+        const musicIds: Types.ObjectId[] = [];
+        for (const it of items) {
+          if (it.itemType === 'music') {
+            musicIds.push(it.itemID);
+          } else {
+            postIds.push(it.itemID);
+          }
+        }
+
+        // c) fetch up to 4 medias for all post/reel IDs
+        const mediaDocs = await this.mediaModel
+          .find({ postID: { $in: postIds } })
+          .limit(4)
+          .exec();
+
+        const mediaUrls = mediaDocs.map((m) => m.videoUrl ?? m.imageUrl);
+
+        // d) fetch coverImg for each music ID
+        const musicDocs = await this.musicModel
+          .find({ _id: { $in: musicIds } })
+          .select('coverImg')
+          .exec();
+
+        const musicUrls = musicDocs.map((m) => m.coverImg);
+
+        // e) combine, slice/pad to exactly 4 entries
+        const combined = [...mediaUrls, ...musicUrls].slice(0, 4);
+        while (combined.length < 4) combined.push('');
+
+        // f) return playlist plus thumbnails
+        return {
+          ...pl.toObject(),
+          thumbnails: combined,
+        };
+      }),
+    );
   }
 
   // find a single playlist by ID, ensure it belongs to user, and is not deleted.
@@ -215,6 +272,9 @@ export class BookmarkPlaylistService {
   // add music to playlist
   async addMusicToPlaylist(userId: string, musicId: string) {
     const playlist = await this.findMusicPlaylist(userId);
+    if (playlist.playlistName != 'Music') {
+      throw new BadRequestException(`Can't add music to non-music playlists.`)
+    }
     const bookmark = await this.bookmarkItemService.createMusic(
       playlist._id.toString(),
       musicId,
@@ -240,14 +300,24 @@ export class BookmarkPlaylistService {
 
   /** find the user's “All posts” playlist (auto‑creates via findAllByUser) */
   private async findAllPostsPlaylist(userId: string): Promise<BookmarkPlaylistDocument> {
-    const playlists = await this.findAllByUser(userId);
-    const all = playlists.find(p => p.playlistName === 'All posts');
-    // findAllByUser always yields one, but guard defensively:
-    if (!all) {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+    const uid = new Types.ObjectId(userId);
+
+    const playlist = await this.playlistModel.findOne({
+      userID: uid,
+      playlistName: 'All posts',
+      isDeleted: false,
+    }).exec();
+
+    if (!playlist) {
       throw new BadRequestException('Could not locate “All posts” playlist');
     }
-    return all as BookmarkPlaylistDocument;
+
+    return playlist;
   }
+
 
   /** add a post to “All posts” by default (resurrects if soft‑deleted) */
   async addPostToDefault(userId: string, postId: string) {
@@ -281,6 +351,10 @@ export class BookmarkPlaylistService {
   ) {
     // ensure target exists & belongs to user
     const target = await this.findByIdAndUser(newPlaylistId, userId);
+
+    if (target.playlistName == 'Music') {
+      throw new BadRequestException(`Incompatible playlist item type and playlist type.`);
+    }
 
     // find any existing bookmark for this user+post across all their playlists
     const allPlaylists = await this.findAllByUser(userId);
