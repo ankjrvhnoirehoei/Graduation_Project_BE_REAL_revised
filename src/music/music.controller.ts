@@ -1,6 +1,8 @@
-import { Controller, Post, Body, Get, Query, Delete } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Delete, UseGuards } from '@nestjs/common';
 import { MusicService } from './music.service';
 import { MusicDto } from './dto/music.dto';
+import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
 @Controller('music')
 export class MusicController {
@@ -11,9 +13,10 @@ export class MusicController {
     return this.musicService.create(musicDto);
   }
 
-  @Get("find-all")
-  findAll() {
-    return this.musicService.findAll();
+  @Get('find-all')
+  @UseGuards(JwtRefreshAuthGuard)
+  async findAll(@CurrentUser('sub') userId: string) {
+    return this.musicService.findAll(userId);
   }
 
   @Get('by-post')

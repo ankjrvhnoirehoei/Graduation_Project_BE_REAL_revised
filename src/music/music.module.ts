@@ -8,6 +8,9 @@ import { MusicController } from './music.controller';
   imports: [MongooseModule.forFeature([{ name: Music.name, schema: MusicSchema }])],
   providers: [MusicService],
   controllers: [MusicController],
-  exports: [MusicService],
+  exports: [
+    MusicService,
+    MongooseModule.forFeature([{ name: Music.name, schema: MusicSchema }]), // Export the model
+  ],
 })
 export class MusicModule {}

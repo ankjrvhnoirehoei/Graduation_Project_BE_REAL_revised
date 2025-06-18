@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-
+export type MusicDocument = Music & Document;
 @Schema({ timestamps: true })
 export class Music extends Document {
   @Prop({ required: true })

@@ -10,6 +10,9 @@ import { Media, MediaSchema } from './media.schema';
   ],
   controllers: [MediaController],
   providers: [MediaService],
-  exports: [MediaService],
+  exports: [
+    MediaService,
+    DatabaseModule.forFeature([{ name: Media.name, schema: MediaSchema }]), // Export the model
+  ],
 })
 export class MediaModule {}
