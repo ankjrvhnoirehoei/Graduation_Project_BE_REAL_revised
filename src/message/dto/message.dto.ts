@@ -10,7 +10,7 @@ import {
 import { Type } from 'class-transformer';
 
 class MediaDto {
-  @IsString()
+  @IsEnum(['image', 'video', 'audio', 'call'])
   type: 'image' | 'video' | 'audio' | 'call';
 
   @IsString()

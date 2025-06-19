@@ -119,17 +119,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     payload: {
       roomId: string;
       senderId: string;
-      callType: 'voice' | 'video';
       missed: boolean;
       duration?: number;
     },
     @ConnectedSocket() client: Socket,
   ) {
-    const { roomId, senderId, callType, missed, duration } = payload;
+    const { roomId, senderId, missed, duration } = payload;
 
     const messageContent = missed
-      ? `Bạn đã bỏ lỡ cuộc gọi ${callType === 'voice' ? 'thoại' : 'video'}.`
-      : `Cuộc gọi ${callType === 'voice' ? 'thoại' : 'video'} kéo dài ${duration} giây.`;
+      ? `Cuộc gọi nhở`
+      : `Cuộc gọi đã kết thúc`;
 
     try {
       const message = await this.messageService.create({

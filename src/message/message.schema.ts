@@ -15,12 +15,12 @@ export class Message extends Document {
   @Prop({
     type: {
       type: String,
-      enum: ['image', 'video', 'audio', 'file'],
+      enum: ['image', 'video', 'audio', 'file', 'call'],
     },
     url: String,
   })
   media?: {
-    type: 'image' | 'video' | 'audio' | 'file';
+    type: 'image' | 'video' | 'audio' | 'file' | 'call';
     url: string;
   };
 }
