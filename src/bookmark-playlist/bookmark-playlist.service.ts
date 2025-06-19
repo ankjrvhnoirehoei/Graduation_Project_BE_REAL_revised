@@ -181,8 +181,9 @@ export class BookmarkPlaylistService {
       throw new BadRequestException('You already have a playlist with that exact name.');
     }
 
-    // create and return
+    // create and return - ADD the _id generation
     const created = new this.playlistModel({
+      _id: new Types.ObjectId(), 
       userID: objectUserId,
       playlistName,
       postCount: 0,
