@@ -117,4 +117,13 @@ export class StoryController {
   ) {
     return this.storyService.likedStory(userId, storyDto);
   }
+
+  @Patch('delete')
+  @ApiOperation({ summary: `Delete story by currentUser` })
+  async deleteStory(
+    @CurrentUser('sub') userId: string,
+    @Body(new ValidationPipe()) storyDto: UpdateStoryDto,
+  ) {
+    return this.storyService.likedStory(userId, storyDto);
+  }
 }

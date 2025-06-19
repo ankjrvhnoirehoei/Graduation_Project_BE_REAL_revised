@@ -49,11 +49,10 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
     );
   }
 
-  async findUserStories(userId: Types.ObjectId, isArchived = false) {
+  async findUserStories(userId: Types.ObjectId) {
     return this.find({
       ownerId: userId,
       type: 'stories',
-      isArchived
     });
   }
 
@@ -113,4 +112,7 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
     );
   }
 
+  async deleteStory(storyId: Types.ObjectId) {
+    return this.findOneAndDelete({ _id: storyId });
+  }
 }

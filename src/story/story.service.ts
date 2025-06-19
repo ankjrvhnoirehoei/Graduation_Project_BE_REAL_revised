@@ -339,4 +339,17 @@ export class StoryService {
       data: this.STORY_RESPONSE(res),
     };
   }
+
+  async deletedStory(uid: string, storyDto: UpdateStoryDto) {
+    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
+    const uids = new Types.ObjectId(uid);
+    if (!existingStory.ownerId.equals(uids)) {
+      return new Error("You can't delete this story");
+    }
+    const res = await this.storyRepo.deleteStory(existingStory._id);
+    return {
+      message: 'Success',
+      data: this.STORY_RESPONSE(res),
+    };
+  }
 }

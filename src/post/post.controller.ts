@@ -220,7 +220,7 @@ export class PostController {
     }
     const data = await this.postService.getAllReelsForUser(userId);
     return {
-      message: "User reels retrieved successfully",
+      message: "Success",
       data
     };
   }
