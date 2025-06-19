@@ -156,13 +156,31 @@ export class BookmarkPlaylistController {
   @Post('switch')
   @UseGuards(JwtRefreshAuthGuard)
   async switchPlaylist(
-    @Body('postId') postId: string,
     @Body('playlistId') playlistId: string,
     @CurrentUser('sub') userId: string,
+    @Body('postId') postId?: string,
+    @Body('postIds') postIds?: string[],
   ) {
-    if (!postId || !playlistId) {
-      throw new BadRequestException('postId and playlistId are both required.');
+    if (!playlistId) {
+      throw new BadRequestException('playlistId is required.');
     }
-    return this.playlistService.switchPostPlaylist(userId, playlistId, postId);
+
+    // Handle both single postId and multiple postIds
+    let idsToProcess: string[] = [];
+    
+    if (postIds && Array.isArray(postIds) && postIds.length > 0) {
+      idsToProcess = postIds;
+    } else if (postId) {
+      idsToProcess = [postId];
+    } else {
+      throw new BadRequestException('Either postId or postIds array is required.');
+    }
+
+    // Validate all IDs are provided
+    if (idsToProcess.some(id => !id || typeof id !== 'string')) {
+      throw new BadRequestException('All post IDs must be valid strings.');
+    }
+
+    return this.playlistService.switchPostsPlaylist(userId, playlistId, idsToProcess);
   }
 }

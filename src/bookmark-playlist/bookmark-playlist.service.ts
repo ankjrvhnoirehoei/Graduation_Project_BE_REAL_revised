@@ -344,66 +344,199 @@ export class BookmarkPlaylistService {
    * - If in another playlist -> reassign, bump new count, decrement old count.
    * - If there's a soft‑deleted bookmark for this user+post in `newPlaylistId`, resurrect it.
    */
-  async switchPostPlaylist(
+  async switchPostsPlaylist(
     userId: string,
     newPlaylistId: string,
-    postId: string,
+    postIds: string[],
   ) {
-    // ensure target exists & belongs to user
+    // Ensure target playlist exists & belongs to user
     const target = await this.findByIdAndUser(newPlaylistId, userId);
 
-    if (target.playlistName == 'Music') {
+    if (target.playlistName === 'Music') {
       throw new BadRequestException(`Incompatible playlist item type and playlist type.`);
     }
 
-    // find any existing bookmark for this user+post across all their playlists
+    // Get all user's playlists for lookup
     const allPlaylists = await this.findAllByUser(userId);
     const userPlaylistIds = allPlaylists.map(p => p._id);
 
-    const existing = await this.bookmarkItemModel
-      .findOne({ itemID: new Types.ObjectId(postId), playlistID: { $in: userPlaylistIds } })
+    // Find all existing bookmarks for these posts across user's playlists
+    const postObjectIds = postIds.map(id => new Types.ObjectId(id));
+    const existingBookmarks = await this.bookmarkItemModel
+      .find({ 
+        itemID: { $in: postObjectIds }, 
+        playlistID: { $in: userPlaylistIds } 
+      })
       .exec();
 
-    // CASE 1: not in any playlist -> just create
-    if (!existing) {
-      const bookmark = await this.bookmarkItemService.create(
-        newPlaylistId,
-        postId,
-        userId,
-      );
-      await this.adjustPostCount(newPlaylistId, userId, 1);
-      return bookmark;
+    // Create a map for quick lookup: postId -> existing bookmark
+    const bookmarkMap = new Map<string, any>();
+    existingBookmarks.forEach(bookmark => {
+      bookmarkMap.set(bookmark.itemID.toString(), bookmark);
+    });
+
+    // Track playlist count changes
+    const playlistCountChanges = new Map<string, number>();
+    const results: Array<{ 
+      postId: string; 
+      action: string; 
+      bookmark?: any; 
+      message?: string;
+      error?: string;
+    }> = [];
+
+    // Process each post
+    for (const postId of postIds) {
+      const existing = bookmarkMap.get(postId);
+
+      try {
+        // CASE 1: not in any playlist -> create new
+        if (!existing) {
+          try {
+            const bookmark = await this.bookmarkItemService.create(
+              newPlaylistId,
+              postId,
+              userId,
+            );
+            this.adjustCountChange(playlistCountChanges, newPlaylistId, 1);
+            results.push({ postId, action: 'created', bookmark });
+          } catch (error) {
+            // Handle duplicate key error - item might already exist
+            if (error.code === 11000) {
+              // Re-query to find the existing bookmark
+              const existingBookmark = await this.bookmarkItemModel
+                .findOne({ 
+                  itemID: new Types.ObjectId(postId), 
+                  playlistID: new Types.ObjectId(newPlaylistId)
+                })
+                .exec();
+              
+              if (existingBookmark && !existingBookmark.isDeleted) {
+                results.push({ 
+                  postId, 
+                  action: 'already_exists', 
+                  message: 'Post is already bookmarked in that playlist.',
+                  bookmark: existingBookmark 
+                });
+              } else {
+                throw error; // Re-throw if it's not the expected scenario
+              }
+            } else {
+              throw error; // Re-throw non-duplicate key errors
+            }
+          }
+          continue;
+        }
+
+        // CASE 2: already active in target playlist
+        if (!existing.isDeleted && existing.playlistID.equals(target._id)) {
+          results.push({ 
+            postId, 
+            action: 'already_exists', 
+            message: 'Post is already bookmarked in that playlist.',
+            bookmark: existing 
+          });
+          continue;
+        }
+
+        // CASE 3: soft-deleted in target -> resurrect
+        if (existing.isDeleted && existing.playlistID.equals(target._id)) {
+          existing.isDeleted = false;
+          await existing.save();
+          this.adjustCountChange(playlistCountChanges, newPlaylistId, 1);
+          results.push({ postId, action: 'resurrected', bookmark: existing });
+          continue;
+        }
+
+        // CASE 4: active in another playlist -> reassign
+        if (!existing.isDeleted && !existing.playlistID.equals(target._id)) {
+          const oldPlaylistId = existing.playlistID.toString();
+          existing.playlistID = target._id;
+          await existing.save();
+          
+          // Adjust counts for both playlists
+          this.adjustCountChange(playlistCountChanges, oldPlaylistId, -1);
+          this.adjustCountChange(playlistCountChanges, newPlaylistId, 1);
+          results.push({ postId, action: 'moved', bookmark: existing });
+          continue;
+        }
+
+        // CASE 5: soft-deleted somewhere else -> treat like create in new playlist
+        existing.isDeleted = false;
+        existing.playlistID = target._id;
+        await existing.save();
+        this.adjustCountChange(playlistCountChanges, newPlaylistId, 1);
+        results.push({ postId, action: 'moved_from_deleted', bookmark: existing });
+
+      } catch (error) {
+        // If individual post fails, record the error but continue with others
+        results.push({ 
+          postId, 
+          action: 'error', 
+          error: error.message || 'Unknown error occurred' 
+        });
+      }
     }
 
-    // CASE 2: already active in target
-    if (!existing.isDeleted && existing.playlistID.equals(target._id)) {
-      throw new BadRequestException('Post is already bookmarked in that playlist.');
-    }
+    // Apply all playlist count changes in batch
+    await this.applyCountChanges(playlistCountChanges, userId);
 
-    // CASE 3: soft‑deleted in target -> resurrect there
-    if (existing.isDeleted && existing.playlistID.equals(target._id)) {
-      existing.isDeleted = false;
-      await existing.save();
-      await this.adjustPostCount(newPlaylistId, userId, 1);
-      return existing;
-    }
+    return {
+      success: true,
+      totalProcessed: postIds.length,
+      results,
+      summary: this.generateSummary(results),
+    };
+  }
 
-    // CASE 4: active in another playlist -> reassign
-    if (!existing.isDeleted && !existing.playlistID.equals(target._id)) {
-      const oldPlaylistId = existing.playlistID.toString();
-      existing.playlistID = target._id;
-      await existing.save();
-      // adjust both counts
-      await this.adjustPostCount(oldPlaylistId, userId, -1);
-      await this.adjustPostCount(newPlaylistId, userId, 1);
-      return existing;
-    }
+  // Helper method to track count changes
+  private adjustCountChange(countChanges: Map<string, number>, playlistId: string, delta: number): void {
+    const current = countChanges.get(playlistId) || 0;
+    countChanges.set(playlistId, current + delta);
+  }
 
-    // CASE 5: soft‑deleted somewhere else? treat like create
-    existing.isDeleted = false;
-    existing.playlistID = target._id;
-    await existing.save();
-    await this.adjustPostCount(newPlaylistId, userId, 1);
-    return existing;
-  }  
+  // Helper method to apply all count changes
+  private async applyCountChanges(countChanges: Map<string, number>, userId: string): Promise<void> {
+    const promises: Promise<void>[] = [];
+    for (const [playlistId, delta] of countChanges.entries()) {
+      if (delta !== 0) {
+        promises.push(this.adjustPostCount(playlistId, userId, delta));
+      }
+    }
+    await Promise.all(promises);
+  }
+
+  // Helper method to generate a summary of actions
+  private generateSummary(results: any[]): any {
+    const summary = {
+      created: 0,
+      moved: 0,
+      resurrected: 0,
+      already_exists: 0,
+      errors: 0,
+    };
+
+    results.forEach(result => {
+      switch (result.action) {
+        case 'created':
+          summary.created++;
+          break;
+        case 'moved':
+        case 'moved_from_deleted':
+          summary.moved++;
+          break;
+        case 'resurrected':
+          summary.resurrected++;
+          break;
+        case 'already_exists':
+          summary.already_exists++;
+          break;
+        case 'error':
+          summary.errors++;
+          break;
+      }
+    });
+
+    return summary;
+  }
 }
