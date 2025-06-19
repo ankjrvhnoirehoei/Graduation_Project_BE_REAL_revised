@@ -49,10 +49,18 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
     );
   }
 
+  async findUserWorkingStories(userId: Types.ObjectId) {
+    return this.find({
+      ownerId: userId,
+      type: StoryType.STORIES,
+      isArchived: false,
+    });
+  }
+
   async findUserStories(userId: Types.ObjectId) {
     return this.find({
       ownerId: userId,
-      type: 'stories',
+      type: StoryType.STORIES,
     });
   }
 
@@ -74,14 +82,14 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
   async findStoriesByIds(ids: Types.ObjectId[]) {
     return this.find({
       _id: { $in: ids },
-      type: 'stories'
+      type: StoryType.STORIES
     });
   }
 
   async findFollowingStories(userIds: Types.ObjectId[]) {
     return this.find({
       ownerId: { $in: userIds },
-      type: 'stories',
+      type: StoryType.STORIES,
       isArchived: false
     });
   }

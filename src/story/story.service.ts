@@ -98,7 +98,7 @@ export class StoryService {
 
   async findWorkingStoriesByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
-    let stories = await this.storyRepo.findUserStories(uid);
+    let stories = await this.storyRepo.findUserWorkingStories(uid);
     if (!stories || stories.length === 0) {
       return {
         message: 'Success',
