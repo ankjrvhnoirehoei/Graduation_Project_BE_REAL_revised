@@ -349,7 +349,7 @@ export class StoryService {
     const res = await this.storyRepo.deleteStory(existingStory._id);
     return {
       message: 'Success',
-      data: this.STORY_RESPONSE(res),
+      // data: this.STORY_RESPONSE(res),
     };
   }
 }

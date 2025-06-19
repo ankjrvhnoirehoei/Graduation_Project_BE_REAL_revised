@@ -124,6 +124,6 @@ export class StoryController {
     @CurrentUser('sub') userId: string,
     @Body(new ValidationPipe()) storyDto: UpdateStoryDto,
   ) {
-    return this.storyService.likedStory(userId, storyDto);
+    return this.storyService.deletedStory(userId, storyDto);
   }
 }
