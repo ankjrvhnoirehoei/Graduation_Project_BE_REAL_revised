@@ -21,9 +21,7 @@ import { CreateMessageDto } from 'src/message/dto/message.dto';
   },
   transports: ['websocket'],
 })
-export class ChatGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
-{
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
@@ -76,33 +74,94 @@ export class ChatGateway
     }
 
     try {
-      const newMessage = await this.messageService.create({
-        roomId,
+      const message = await this.messageService.create({
+        ...payload,
         senderId,
-        content: content || '',
-        media: media || undefined, // optional object
       });
 
-      const populated = await newMessage.populate({
+      const populatedMessage = await message.populate({
         path: 'senderId',
         select: 'handleName profilePic',
       });
 
       this.server.to(roomId).emit('receiveMessage', {
-        _id: populated._id,
-        roomId: populated.roomId,
-        content: populated.content,
-        media: populated.media || null,
-        createdAt: populated.createdAt,
+        _id: populatedMessage._id,
+        roomId: populatedMessage.roomId,
+        content: populatedMessage.content,
+        media: populatedMessage.media,
+        createdAt: populatedMessage.createdAt,
         sender: {
-          userId: populated.senderId._id,
-          handleName: populated.senderId.handleName,
-          profilePic: populated.senderId.profilePic,
+          userId: senderId,
+          handleName: populatedMessage.senderId.handleName,
+          profilePic: populatedMessage.senderId.profilePic,
         },
       });
     } catch (err) {
       console.error('❗ Error sending message:', err);
       client.emit('errorMessage', 'Failed to send message');
+    }
+  }
+
+  @SubscribeMessage('incomingCall')
+  handleIncomingCall(
+    @MessageBody()
+    payload: { callerName: string; type: 'video' | 'voice'; roomId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { callerName, type, roomId } = payload;
+
+    client.to(roomId).emit('incomingCall', { callerName, type });
+  }
+
+  @SubscribeMessage('callEnded')
+  async handleCallEnded(
+    @MessageBody()
+    payload: {
+      roomId: string;
+      senderId: string;
+      missed: boolean;
+      duration?: number;
+    },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { roomId, senderId, missed, duration } = payload;
+
+    const messageContent = missed
+      ? `Cuộc gọi nhở`
+      : `Cuộc gọi đã kết thúc`;
+
+    try {
+      const message = await this.messageService.create({
+        roomId,
+        senderId,
+        content: messageContent,
+        media: {
+          type: 'call',
+          url: '',
+          duration: missed ? 0 : duration || 0,
+        },
+      });
+
+      const populatedMessage = await message.populate({
+        path: 'senderId',
+        select: 'handleName profilePic',
+      });
+
+      this.server.to(roomId).emit('receiveMessage', {
+        _id: populatedMessage._id,
+        roomId: populatedMessage.roomId,
+        content: populatedMessage.content,
+        media: populatedMessage.media,
+        createdAt: populatedMessage.createdAt,
+        sender: {
+          userId: senderId,
+          handleName: populatedMessage.senderId.handleName,
+          profilePic: populatedMessage.senderId.profilePic,
+        },
+      });
+    } catch (err) {
+      console.error('❗ Error saving call message:', err);
+      client.emit('errorMessage', 'Failed to save call message');
     }
   }
 }

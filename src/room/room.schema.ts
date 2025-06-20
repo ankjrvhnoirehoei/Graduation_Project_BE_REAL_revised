@@ -3,7 +3,7 @@ import mongoose, { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Room extends Document {
-  @Prop({ required: true })
+  @Prop({ required: false })
   name: string;
 
   @Prop({ required: true })
