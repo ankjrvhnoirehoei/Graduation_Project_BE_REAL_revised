@@ -87,7 +87,7 @@ export class StoryService {
         data: [],
       };
     }
-    stories = await this.getStoriesMusic(stories);
+    stories = (await this.getStoriesMusic(stories)) as any as Story[];
     return {
       message: 'Success',
       data: stories.map(this.STORY_RESPONSE),
@@ -96,14 +96,14 @@ export class StoryService {
 
   async findWorkingStoriesByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
-    let stories = await this.storyRepo.findUserWorkingStories(uid);
+    let stories = (await this.storyRepo.findUserWorkingStories(uid)) as any as Story[];
     if (!stories || stories.length === 0) {
       return {
         message: 'Success',
         data: [],
       };
     }
-    stories = await this.getStoriesMusic(stories);
+    stories = (await this.getStoriesMusic(stories)) as any as Story[];
     return {
       message: 'Success',
       data: stories.map(this.STORY_RESPONSE),
@@ -113,9 +113,6 @@ export class StoryService {
   async findHighlightsByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
     let hlights = await this.storyRepo.findAllUserHighlights(uid);
-    if (hlights && hlights.length > 0) {
-      hlights = await this.getStoriesMusic(hlights);
-    }
     return {
       message: 'Success',
       data: hlights.map(this.STORY_RESPONSE),
@@ -131,7 +128,7 @@ export class StoryService {
     if (!stories || stories.length === 0) {
       return { message: 'Success', data: [] };
     }
-    stories = await this.getStoriesMusic(stories);
+    stories = (await this.getStoriesMusic(stories)) as any as Story[];
     return {
       message: 'Success',
       data: stories.map((story) =>

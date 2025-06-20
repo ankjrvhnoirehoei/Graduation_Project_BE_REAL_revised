@@ -61,13 +61,23 @@ export class BookmarkItemController {
   @Delete('remove')
   @UseGuards(JwtRefreshAuthGuard)
   async removeDefault(
-    @Body('postId') postId: string,
+    @Body('postIds') postIds: string | string[], // Accept both single string and array
     @CurrentUser('sub') userId: string,
   ) {
-    if (!postId) {
-      throw new BadRequestException('postId is required.');
+    // Normalize input to always be an array
+    const postIdArray = Array.isArray(postIds) ? postIds : [postIds];
+    
+    if (!postIdArray.length || postIdArray.some(id => !id)) {
+      throw new BadRequestException('At least one valid postId is required.');
     }
-    await this.itemService.removeByUserAndPost(userId, postId);
-    return { message: 'Bookmark removed.' };
+
+    const result = await this.itemService.removeByUserAndPosts(userId, postIdArray);
+    
+    return { 
+      message: `${result.deletedCount} bookmark(s) removed.`,
+      deletedCount: result.deletedCount,
+      notFoundCount: result.notFoundCount,
+      details: result.details
+    };
   }
 }
