@@ -7,6 +7,15 @@ import {
   BookmarkPlaylistDocument,
 } from 'src/bookmark-playlist/bookmark-playlist.schema';
 import { PostService } from 'src/post/post.service';
+interface RemovalResult {
+  deletedCount: number;
+  notFoundCount: number;
+  details: Array<{
+    postId: string;
+    status: 'deleted' | 'not_found';
+    playlistId?: string;
+  }>;
+}
 
 @Injectable()
 export class BookmarkItemService {
@@ -516,32 +525,86 @@ export class BookmarkItemService {
    * Remove a single post from whichever playlist it's in for this user. 
    * Then decrement that playlist's postCount by 1.
    */
-  async removeByUserAndPost(userId: string, postId: string): Promise<void> {
-    // find all playlists
+  async removeByUserAndPosts(userId: string, postIds: string[]): Promise<RemovalResult> {
+    // Find all playlists for this user
     const playlists = await this.playlistModel
       .find({ userID: new Types.ObjectId(userId), isDeleted: false })
       .select('_id')
       .exec();
     const pids = playlists.map(p => p._id);
 
-    // find active bookmark
-    const existing = await this.itemModel.findOne({
-      itemID: new Types.ObjectId(postId),
-      playlistID: { $in: pids },
-      isDeleted: false,
-    });
-    if (!existing) {
-      throw new BadRequestException('No active bookmark found for this user/post.');
+    if (pids.length === 0) {
+      throw new BadRequestException('No active playlists found for this user.');
     }
 
-    // soft‑delete it
-    existing.isDeleted = true;
-    await existing.save();
+    // Convert postIds to ObjectIds
+    const postObjectIds = postIds.map(id => new Types.ObjectId(id));
 
-    // decrement count
-    await this.playlistModel.updateOne(
-      { _id: existing.playlistID },
-      { $inc: { postCount: -1 } },
+    // Find all existing bookmarks that match the criteria
+    const existingBookmarks = await this.itemModel.find({
+      itemID: { $in: postObjectIds },
+      playlistID: { $in: pids },
+      isDeleted: false,
+    }).exec();
+
+    if (existingBookmarks.length === 0) {
+      return {
+        deletedCount: 0,
+        notFoundCount: postIds.length,
+        details: postIds.map(postId => ({
+          postId,
+          status: 'not_found' as const,
+        }))
+      };
+    }
+
+    // Soft delete all found bookmarks
+    const bookmarkIds = existingBookmarks.map(bookmark => bookmark._id);
+    await this.itemModel.updateMany(
+      { _id: { $in: bookmarkIds } },
+      { $set: { isDeleted: true } }
     );
+
+    // Count deletions per playlist to update postCount
+    const playlistDeletionCounts = new Map<string, number>();
+    existingBookmarks.forEach(bookmark => {
+      const playlistIdStr = bookmark.playlistID.toString();
+      playlistDeletionCounts.set(
+        playlistIdStr, 
+        (playlistDeletionCounts.get(playlistIdStr) || 0) + 1
+      );
+    });
+
+    // Update postCount for affected playlists
+    const updatePromises = Array.from(playlistDeletionCounts.entries()).map(
+      ([playlistId, count]) => 
+        this.playlistModel.updateOne(
+          { _id: new Types.ObjectId(playlistId) },
+          { $inc: { postCount: -count } }
+        )
+    );
+    await Promise.all(updatePromises);
+
+    // Create result details
+    const deletedPostIds = new Set(
+      existingBookmarks.map(bookmark => bookmark.itemID.toString())
+    );
+
+    const details = postIds.map(postId => {
+      const wasDeleted = deletedPostIds.has(postId);
+      const bookmark = existingBookmarks.find(b => b.itemID.toString() === postId);
+      
+      return {
+        postId,
+        status: wasDeleted ? 'deleted' as const : 'not_found' as const,
+        ...(wasDeleted && bookmark && { playlistId: bookmark.playlistID.toString() })
+      };
+    });
+
+    return {
+      deletedCount: existingBookmarks.length,
+      notFoundCount: postIds.length - existingBookmarks.length,
+      details
+    };
   }
 }
