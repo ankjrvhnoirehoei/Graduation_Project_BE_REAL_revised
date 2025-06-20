@@ -29,7 +29,10 @@ export class Story extends AbstractDocument {
   @Prop({ type: [Types.ObjectId], default: [], ref: User.name })
   likedByUsers: Types.ObjectId[];
 
-  @Prop()
+  @Prop({ default: '' })
+  thumbnail: string;
+
+  @Prop({ default: '' })
   collectionName: string;
 
   @Prop({ type: [Types.ObjectId], default: [], ref: Story.name })
