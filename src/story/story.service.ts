@@ -23,7 +23,7 @@ export class StoryService {
   // STANDARDIZE FOR STORY & RESPONSE
   private LIMIT_HIGHLIGHTS = 50;
   private LIMIT_PAGINATION = 20;
-  private STORY_RESPONSE(story: Story) {
+  private STORY_RESPONSE(story: any) {
     return {
       _id: story._id,
       ownerId: story.ownerId,
@@ -31,12 +31,11 @@ export class StoryService {
       viewedByUsers: story.viewedByUsers,
       likedByUsers: story.likedByUsers,
       music: story.music,
-
       content: story.content,
       createdAt: story.createdAt,
-
       ...(story.type === StoryType.HIGHLIGHTS && {
         collectionName: story.collectionName,
+        thumbnail: story.thumbnail,
         storyId: story.storyId,
       }),
     };
@@ -62,7 +61,7 @@ export class StoryService {
     if (!stories || stories.length === 0) {
       return stories;
     }
-    stories.map(async (sto) => {
+    return await Promise.all(stories.map(async (sto) => {
       if (!sto.music) {
         return sto;
       }
@@ -76,8 +75,7 @@ export class StoryService {
           time_end: sto.music.time_end,
         },
       };
-    });
-    return stories;
+    }));
   }
 
   async findStoriesByCurUser(userId: string) {
@@ -114,7 +112,10 @@ export class StoryService {
 
   async findHighlightsByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
-    const hlights = await this.storyRepo.findAllUserHighlights(uid);
+    let hlights = await this.storyRepo.findAllUserHighlights(uid);
+    if (hlights && hlights.length > 0) {
+      hlights = await this.getStoriesMusic(hlights);
+    }
     return {
       message: 'Success',
       data: hlights.map(this.STORY_RESPONSE),
@@ -279,7 +280,9 @@ export class StoryService {
     });
     return {
       message: 'Created Success',
-      data: this.STORY_RESPONSE(res),
+      data: {
+        ...this.STORY_RESPONSE(res),
+      },
     };
   }
 

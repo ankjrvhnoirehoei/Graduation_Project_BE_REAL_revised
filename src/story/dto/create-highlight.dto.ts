@@ -7,6 +7,10 @@ export class CreateHighlightStoryDto {
    @Type(() => String)
    collectionName: string
 
+   @IsString()
+   @IsNotEmpty()
+   thumbnail: string
+
    @IsArray()
    @IsNotEmpty()
    storyId: string[]
