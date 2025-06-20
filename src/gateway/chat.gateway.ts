@@ -126,9 +126,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { roomId, senderId, missed, duration } = payload;
 
-    const messageContent = missed
-      ? `Cuộc gọi nhở`
-      : `Cuộc gọi đã kết thúc`;
+    const messageContent = missed ? `Cuộc gọi nhở` : `Cuộc gọi đã kết thúc`;
 
     try {
       const message = await this.messageService.create({
@@ -163,5 +161,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       console.error('❗ Error saving call message:', err);
       client.emit('errorMessage', 'Failed to save call message');
     }
+  }
+
+  @SubscribeMessage('callCancelled')
+  handleCallCancelled(
+    @MessageBody() payload: { roomId: string; senderId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { roomId, senderId } = payload;
+
+    console.log(`📞 Call cancelled by ${senderId} in room ${roomId}`);
+
+    client.to(roomId).emit('callCancelled', { senderId });
   }
 }
