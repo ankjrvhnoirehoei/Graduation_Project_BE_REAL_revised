@@ -13,7 +13,10 @@ import {
   ParseIntPipe,
   BadRequestException,
   Patch,
+  Res,
+  NotFoundException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from 'src/auth/dto/login.dto';
@@ -286,4 +289,82 @@ export class UserController {
     await this.userService.confirmEmailChange(userId, dto);
     return { message: 'Email updated successfully' };
   }  
+  
+  @Get('admin/all')
+  async getAllUsersForAdmin(
+    @Res() res: Response,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('sort') sort?: string,    
+  ) {
+    
+    // sanitize inputs
+    if (page < 1) page = 1;
+    if (limit < 1 || limit > 100) limit = 10;
+
+    // parse and validate sort parameter
+    let sortField = 'createdAt';
+    let sortOrder: 1 | -1 = -1; // default: newest first
+
+    if (sort) {
+      // Handle formats like "username:asc", "email:desc", or just "username"
+      const [field, order] = sort.split(':');
+      const allowedFields = ['username', 'email', 'handleName', 'gender', 'createdAt', 'updatedAt', 'deletedAt'];
+      
+      if (allowedFields.includes(field)) {
+        sortField = field;
+        sortOrder = order === 'asc' ? 1 : -1;
+      }
+    }
+
+    // fetch users + total count
+    const { users, pagination } = await this.userService.getAllUsers(page, limit, sortField, sortOrder);
+    const total = pagination.totalUsers;
+
+    // compute the range indexes
+    const start = (page - 1) * limit;
+    const end = start + users.length - 1;
+
+    // users is an array of plain objects from `.lean()`
+    const usersWithId = users.map(user => ({
+      ...user,
+      id: user._id,          // add `id` for React-Admin
+    }));
+
+    // set headers for React-Admin pagination
+    const resource = 'users/admin/all';
+    res.setHeader('Content-Range', `${resource} ${start}-${end}/${total}`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range');
+
+    // send only the array
+    return res.json(usersWithId);
+  }
+
+  @Get('admin/:id')
+  async getUserByIdForAdmin(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    // Validate MongoDB ObjectId format
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      throw new BadRequestException('Invalid user ID format');
+    }
+
+    const user = await this.userService.getUserByIdForAdmin(id);
+    
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Add id field for React-Admin compatibility
+    const userWithId = {
+      ...user,
+      id: user._id,
+    };
+
+    // Set headers for React-Admin
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range');
+    
+    return res.json(userWithId);
+  }
 }

@@ -383,4 +383,61 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
   }
+
+  // *************** ADMIN-ONLY APIS *******************
+  async getAllUsers(
+    page: number = 1, 
+    limit: number = 10, 
+    sortField: string = 'createdAt', 
+    sortOrder: 1 | -1 = -1
+  ) {
+    const skip = (page - 1) * limit;
+    
+    // Create sort object
+    const sortObj: Record<string, 1 | -1> = {};
+    sortObj[sortField] = sortOrder;
+    
+    const [users, total] = await Promise.all([
+      this.userModel
+        .find()
+        .select('-password -refreshToken -__v') // Exclude sensitive fields
+        .sort(sortObj) // Dynamic sorting
+        .skip(skip)
+        .lean() 
+        .limit(limit)
+        .exec(),
+      this.userModel.countDocuments({ deletedAt: { $ne: true } })
+    ]);
+
+    return {
+      users,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalUsers: total,
+        hasNext: page < Math.ceil(total / limit),
+        hasPrev: page > 1
+      }
+    };
+  }
+
+  async getUserByIdForAdmin(id: string) {
+    try {
+      const user = await this.userModel
+        .findOne({ 
+          _id: new Types.ObjectId(id),
+        })
+        .select('-password -refreshToken -__v') // Exclude sensitive fields
+        .lean()
+        .exec();
+
+      return user;
+    } catch (error) {
+      // Handle invalid ObjectId format
+      if (error.name === 'CastError') {
+        throw new BadRequestException('Invalid user ID format');
+      }
+      throw error;
+    }
+  }
 }

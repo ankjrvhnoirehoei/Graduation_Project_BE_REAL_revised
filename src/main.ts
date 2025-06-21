@@ -13,6 +13,7 @@ async function bootstrap() {
       'http://localhost:5173',
     ],
     credentials: true,
+    exposedHeaders: ['Content-Range'], 
   });
   app.use(cookieParser());
   SwaggerConfig(app);
