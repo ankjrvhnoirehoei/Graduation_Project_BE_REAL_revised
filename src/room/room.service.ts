@@ -100,7 +100,69 @@ export class RoomService {
 
   async getRoomsOfUser(userId: string): Promise<any[]> {
     const rooms = await this.roomModel
-      .find({ user_ids: new Types.ObjectId(userId) })
+      .find({ user_ids: new Types.ObjectId(userId), type: 'accept' })
+      .populate('user_ids', '_id handleName profilePic')
+      .lean();
+
+    const stringRoomIds = rooms.map((room) => room._id.toString());
+
+    const messages = await this.messageModel.aggregate([
+      {
+        $match: {
+          roomId: { $in: stringRoomIds },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: '$roomId',
+          messageId: { $first: '$_id' },
+          content: { $first: '$content' },
+          senderId: { $first: '$senderId' },
+          media: { $first: '$media' },
+          createdAt: { $first: '$createdAt' },
+        },
+      },
+    ]);
+
+    const latestMessageMap = new Map<string, any>();
+    messages.forEach((msg) => {
+      latestMessageMap.set(msg._id, msg);
+    });
+
+    const roomsWithMessages = rooms.map((room) => {
+      const latestMessage = latestMessageMap.get(room._id.toString()) ?? null;
+
+      return {
+        _id: room._id,
+        name: room.name,
+        theme: room.theme,
+        type: room.type,
+        user_ids: room.user_ids,
+        created_by: room.created_by,
+        latestMessage,
+      };
+    });
+
+    roomsWithMessages.sort((a, b) => {
+      const aTime = a.latestMessage?.createdAt
+        ? new Date(a.latestMessage.createdAt).getTime()
+        : 0;
+      const bTime = b.latestMessage?.createdAt
+        ? new Date(b.latestMessage.createdAt).getTime()
+        : 0;
+      return bTime - aTime;
+    });
+
+    return roomsWithMessages;
+  }
+
+  async getWaitingRoomsOfUser(userId: string): Promise<any[]> {
+    const rooms = await this.roomModel
+      .find({
+        user_ids: new Types.ObjectId(userId),
+        type: 'waiting',
+      })
       .populate('user_ids', '_id handleName profilePic')
       .lean();
 
