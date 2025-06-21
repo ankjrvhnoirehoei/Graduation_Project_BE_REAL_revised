@@ -69,4 +69,21 @@ export class MessageService {
       },
     }));
   }
+
+  async deleteMessagesByRoom(
+    roomId: string,
+  ): Promise<{ deletedCount: number }> {
+    const result = await this.messageModel.deleteMany({ roomId }).exec();
+    return { deletedCount: result.deletedCount || 0 };
+  }
+
+  async deleteMessageById(
+    messageId: string,
+    userId: string,
+  ): Promise<{ deleted: boolean }> {
+    const result = await this.messageModel
+      .deleteOne({ _id: messageId, senderId: userId })
+      .exec();
+    return { deleted: result.deletedCount === 1 };
+  }
 }

@@ -9,10 +9,13 @@ import { Room } from './room.schema';
 import { CreateRoomDto } from './dto/room.dto';
 import { UpdateThemeRoomDto } from './dto/update-theme-room.dto';
 import { UpdateRoomNameDto } from './dto/update-room-name.dto';
-
+import { Message } from '../message/message.schema';
 @Injectable()
 export class RoomService {
-  constructor(@InjectModel(Room.name) private roomModel: Model<Room>) {}
+  constructor(
+    @InjectModel(Room.name) private roomModel: Model<Room>,
+    @InjectModel(Message.name) private messageModel: Model<Message>,
+  ) {}
 
   async createRoom(
     createRoomDto: CreateRoomDto,
@@ -99,16 +102,59 @@ export class RoomService {
     const rooms = await this.roomModel
       .find({ user_ids: new Types.ObjectId(userId) })
       .populate('user_ids', '_id handleName profilePic')
-      .exec();
+      .lean();
 
-    return rooms.map((room) => ({
-      _id: room._id,
-      name: room.name,
-      theme: room.theme,
-      type: room.type,
-      user_ids: room.user_ids,
-      created_by: room.created_by,
-    }));
+    const stringRoomIds = rooms.map((room) => room._id.toString());
+
+    const messages = await this.messageModel.aggregate([
+      {
+        $match: {
+          roomId: { $in: stringRoomIds },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: '$roomId',
+          messageId: { $first: '$_id' },
+          content: { $first: '$content' },
+          senderId: { $first: '$senderId' },
+          media: { $first: '$media' },
+          createdAt: { $first: '$createdAt' },
+        },
+      },
+    ]);
+
+    const latestMessageMap = new Map<string, any>();
+    messages.forEach((msg) => {
+      latestMessageMap.set(msg._id, msg);
+    });
+
+    const roomsWithMessages = rooms.map((room) => {
+      const latestMessage = latestMessageMap.get(room._id.toString()) ?? null;
+
+      return {
+        _id: room._id,
+        name: room.name,
+        theme: room.theme,
+        type: room.type,
+        user_ids: room.user_ids,
+        created_by: room.created_by,
+        latestMessage,
+      };
+    });
+
+    roomsWithMessages.sort((a, b) => {
+      const aTime = a.latestMessage?.createdAt
+        ? new Date(a.latestMessage.createdAt).getTime()
+        : 0;
+      const bTime = b.latestMessage?.createdAt
+        ? new Date(b.latestMessage.createdAt).getTime()
+        : 0;
+      return bTime - aTime;
+    });
+
+    return roomsWithMessages;
   }
 
   async updateTheme(

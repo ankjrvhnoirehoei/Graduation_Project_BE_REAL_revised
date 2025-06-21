@@ -10,7 +10,6 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
   Param,
-  NotFoundException,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
