@@ -55,6 +55,11 @@ export class RoomController {
     return this.roomService.getRoomsOfUser(userId);
   }
 
+  @Get('waiting/my')
+  getMyWaitingRooms(@CurrentUser('sub') userId: string) {
+    return this.roomService.getWaitingRoomsOfUser(userId);
+  }
+
   @Post(':id/theme')
   async updateRoomTheme(
     @Param('id') roomId: string,
