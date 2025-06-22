@@ -304,6 +304,17 @@ export class UserController {
     return this.userService.getTopFollowers(3);
   }
 
+  @Get('debug/verify-follower/:userId')
+  @UseGuards(JwtRefreshAuthGuard)
+  async verifyFollowerCount(@Param('userId') userId: string, @CurrentUser('sub') currentUserId: string) {
+    const user = await this.userService.findById(currentUserId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    
+    return this.userService.verifyFollowerCount(userId);
+  }
+
   @Get('admin/today-stats')
   @UseGuards(JwtRefreshAuthGuard)
   async todayStats(@CurrentUser('sub') userId: string) {

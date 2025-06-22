@@ -85,13 +85,6 @@ export class RelationController {
     }));
   }
 
-  /**
-   * POST /relations/followers
-   * body: { userId: string }
-   *
-   * Returns an array of “who follows userId”.
-   * This is still a protected route (only an authenticated user can call).
-   */
   @UseGuards(JwtRefreshAuthGuard)
   @Post('followers')
   async getFollowers(@Body() dto: GetFollowersDto) {
@@ -103,70 +96,69 @@ export class RelationController {
       'followers',
     );
 
-    // map each record to the follower's ID
+    // map each record to the follower's ID 
     const followerIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
-      // if userId is in userTwoID, follower is userOneID; otherwise follower is userTwoID
-      return u2 === userId ? u1 : u2;
+      
+      // Check which pattern matched and return the correct follower
+      if (u2 === userId && r.relation.startsWith('FOLLOW_')) {
+        return u1;
+      } else if (u1 === userId && r.relation.endsWith('_FOLLOW')) {
+        return u2;
+      }
+      throw new BadRequestException('Unexpected relation pattern in followers');
     });
 
-    const followingRelations = await this.relationService.findByUserAndFilter(
-      userId,
-      'following',
-    );
-    const followingIds = followingRelations.map((relation) => {
-      const u1 = relation.userOneID.toString();
-      const u2 = relation.userTwoID.toString();
-      return u1 === userId ? u2 : u1;
-    });
+    // Remove duplicates
+    const uniqueFollowerIds = [...new Set(followerIds)];
 
     // Fetch detailed user information
     const followers = await Promise.all(
-      followerIds.map(async (followerId) => {
-        const user = await this.userService.getUserById(followerId);
-        const isFollowing = followingIds.includes(followerId);
-        return {
-          ...user,
-          isFollowing,
-        };
-      }),
+      uniqueFollowerIds.map((id) => this.userService.getUserById(id)),
     );
+
     console.log('Request Body:', dto);
+    console.log('Followers count:', uniqueFollowerIds.length);
 
     return { userId, followers };
   }
 
-  /**
-   * POST /relations/following
-   * body: { userId: string }
-   *
-   * Returns an array of “who userId is following.”
-   * Also protected by JwtRefreshAuthGuard.
-   */
   @UseGuards(JwtRefreshAuthGuard)
   @Post('following')
   async getFollowing(@Body() dto: GetFollowingDto) {
     const { userId } = dto;
-
+    
     // fetch all relationship records where userId follows someone
     const records = await this.relationService.findByUserAndFilter(
       userId,
       'following',
     );
-
-    // map each record to the followed‐user’s ID
+    
+    // map each record to the followed user's ID 
     const followingIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
-      // if userId is in userTwoID, then userId follows userOneID; otherwise userId follows userTwoID
-      return u2 === userId ? u1 : u2;
+      
+      // Check which pattern matched and return the correct following
+      if (u1 === userId && r.relation.startsWith('FOLLOW_')) {
+        return u2; 
+      } else if (u2 === userId && r.relation.endsWith('_FOLLOW')) {
+        return u1;
+      }
+      throw new BadRequestException('Unexpected relation pattern in following');
     });
+
+    // Remove duplicates 
+    const uniqueFollowingIds = [...new Set(followingIds)];
 
     // Fetch detailed user information
     const following = await Promise.all(
-      followingIds.map((id) => this.userService.getUserById(id)),
+      uniqueFollowingIds.map((id) => this.userService.getUserById(id)),
     );
+
+    console.log('Request Body:', dto);
+    console.log('Following count:', uniqueFollowingIds.length);
 
     return { userId, following };
   }
