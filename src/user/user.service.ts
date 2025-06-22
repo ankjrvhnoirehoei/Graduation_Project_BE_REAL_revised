@@ -17,6 +17,9 @@ import {
   EditUserDto,
 } from './dto/update-user.dto';
 import { JwtService } from '@nestjs/jwt';
+import { TopFollowerDto } from './dto/top-followers.dto';
+import { Relation, RelationDocument } from 'src/relation/relation.schema';
+import { Post, PostDocument } from 'src/post/post.schema';
 
 @Injectable()
 export class UserService {
@@ -24,6 +27,8 @@ export class UserService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly jwtService: JwtService,
+    @InjectModel(Relation.name) private readonly relationModel: Model<RelationDocument>,
+    @InjectModel(Post.name) private readonly postModel: Model<PostDocument>,
   ) {
     // configure your SMTP transport via environment variables
     this.mailer = nodemailer.createTransport({
@@ -38,7 +43,7 @@ export class UserService {
   }
 
   async findById(id: string) {
-    return this.userModel.findById(id).select('_id handleName profilePic');
+    return this.userModel.findById(id).select('_id handleName profilePic role');
   }
 
   async register(registerDto: RegisterDto): Promise<User> {
@@ -385,59 +390,93 @@ export class UserService {
   }
 
   // *************** ADMIN-ONLY APIS *******************
-  async getAllUsers(
-    page: number = 1, 
-    limit: number = 10, 
-    sortField: string = 'createdAt', 
-    sortOrder: 1 | -1 = -1
-  ) {
-    const skip = (page - 1) * limit;
-    
-    // Create sort object
-    const sortObj: Record<string, 1 | -1> = {};
-    sortObj[sortField] = sortOrder;
-    
-    const [users, total] = await Promise.all([
-      this.userModel
-        .find()
-        .select('-password -refreshToken -__v') // Exclude sensitive fields
-        .sort(sortObj) // Dynamic sorting
-        .skip(skip)
-        .lean() 
-        .limit(limit)
-        .exec(),
-      this.userModel.countDocuments({ deletedAt: { $ne: true } })
+
+  async getTopFollowers(limit = 3): Promise<TopFollowerDto[]> {
+    const docs = await this.relationModel.aggregate([
+      // project each relation into a single 'follow' target, or null if it isn't a follow
+      {
+        $project: {
+          followTarget: {
+            $switch: {
+              branches: [
+                // userOne -> userTwo
+                {
+                  case: { $regexMatch: { input: '$relation', regex: '^FOLLOW_' } },
+                  then: '$userTwoID',
+                },
+                // userTwo -> userOne
+                {
+                  case: { $regexMatch: { input: '$relation', regex: '_FOLLOW$' } },
+                  then: '$userOneID',
+                },
+              ],
+              default: null,
+            },
+          },
+        },
+      },
+      // drop non-follow relations
+      { $match: { followTarget: { $ne: null } } },
+
+      // count per user
+      {
+        $group: {
+          _id: '$followTarget',
+          count: { $sum: 1 },
+        },
+      },
+
+      // sort & limit
+      { $sort: { count: -1 } },
+      { $limit: limit },
+
+      // lookup user details
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+
+      // shape final output
+      {
+        $project: {
+          _id: 0,
+          id: { $toString: '$_id' },
+          avatar: '$user.profilePic',
+          handle: '$user.handleName',
+          fullName: '$user.username',
+          followers: '$count',
+        },
+      },
+    ]);
+
+    return docs as TopFollowerDto[];
+  }
+
+  async getTodayStats(): Promise<{
+    newUsers: string;
+    newPosts: string;
+    newReports: string;
+  }> {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+
+    const [usersCount, postsCount] = await Promise.all([
+      this.userModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+      this.postModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
     ]);
 
     return {
-      users,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        totalUsers: total,
-        hasNext: page < Math.ceil(total / limit),
-        hasPrev: page > 1
-      }
+      newUsers: usersCount.toString(),
+      newPosts: postsCount.toString(),
+      newReports: '0', // TODO: build a reports collection and hookup here
     };
-  }
-
-  async getUserByIdForAdmin(id: string) {
-    try {
-      const user = await this.userModel
-        .findOne({ 
-          _id: new Types.ObjectId(id),
-        })
-        .select('-password -refreshToken -__v') // Exclude sensitive fields
-        .lean()
-        .exec();
-
-      return user;
-    } catch (error) {
-      // Handle invalid ObjectId format
-      if (error.name === 'CastError') {
-        throw new BadRequestException('Invalid user ID format');
-      }
-      throw error;
-    }
-  }
+  }  
 }

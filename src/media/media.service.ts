@@ -20,6 +20,6 @@ export class MediaService {
   }
 
   async findByPostId(postID: string): Promise<Media[]> {
-    return this.mediaModel.find({ postID }).exec();
+    return this.mediaModel.find({ postID: postID }).exec();
   }
 }

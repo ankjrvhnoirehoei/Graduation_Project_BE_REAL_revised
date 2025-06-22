@@ -41,6 +41,9 @@ export class User {
   @Prop()
   refreshToken?: string;
 
+  @Prop()
+  role?: string;
+
   @Prop({ default: false })
   deletedAt?: boolean;
 }

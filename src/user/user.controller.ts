@@ -30,6 +30,7 @@ import { JwtService } from '@nestjs/jwt';
 import { RelationService } from 'src/relation/relation.service';
 import { SearchUserDto } from './dto/search-user.dto';
 import { ChangeEmailDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
+import { TopFollowerDto } from './dto/top-followers.dto';
 
 @Controller('users')
 export class UserController {
@@ -290,81 +291,29 @@ export class UserController {
     return { message: 'Email updated successfully' };
   }  
   
-  @Get('admin/all')
-  async getAllUsersForAdmin(
-    @Res() res: Response,
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
-    @Query('sort') sort?: string,    
-  ) {
-    
-    // sanitize inputs
-    if (page < 1) page = 1;
-    if (limit < 1 || limit > 100) limit = 10;
-
-    // parse and validate sort parameter
-    let sortField = 'createdAt';
-    let sortOrder: 1 | -1 = -1; // default: newest first
-
-    if (sort) {
-      // Handle formats like "username:asc", "email:desc", or just "username"
-      const [field, order] = sort.split(':');
-      const allowedFields = ['username', 'email', 'handleName', 'gender', 'createdAt', 'updatedAt', 'deletedAt'];
-      
-      if (allowedFields.includes(field)) {
-        sortField = field;
-        sortOrder = order === 'asc' ? 1 : -1;
-      }
+  @Get('admin/top-followers')
+  @UseGuards(JwtRefreshAuthGuard)
+  async topFollowers(@CurrentUser('sub') userId: string): Promise<TopFollowerDto[]> {
+    const user = await this.userService.findById(userId);
+    if (!user || typeof user.role !== 'string') {
+      throw new BadRequestException('User role not found.');
     }
-
-    // fetch users + total count
-    const { users, pagination } = await this.userService.getAllUsers(page, limit, sortField, sortOrder);
-    const total = pagination.totalUsers;
-
-    // compute the range indexes
-    const start = (page - 1) * limit;
-    const end = start + users.length - 1;
-
-    // users is an array of plain objects from `.lean()`
-    const usersWithId = users.map(user => ({
-      ...user,
-      id: user._id,          // add `id` for React-Admin
-    }));
-
-    // set headers for React-Admin pagination
-    const resource = 'users/admin/all';
-    res.setHeader('Content-Range', `${resource} ${start}-${end}/${total}`);
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Range');
-
-    // send only the array
-    return res.json(usersWithId);
+    if (user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }    
+    return this.userService.getTopFollowers(3);
   }
 
-  @Get('admin/:id')
-  async getUserByIdForAdmin(
-    @Param('id') id: string,
-    @Res() res: Response,
-  ) {
-    // Validate MongoDB ObjectId format
-    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
-      throw new BadRequestException('Invalid user ID format');
+  @Get('admin/today-stats')
+  @UseGuards(JwtRefreshAuthGuard)
+  async todayStats(@CurrentUser('sub') userId: string) {
+    const user = await this.userService.findById(userId);
+    if (!user || typeof user.role !== 'string') {
+      throw new BadRequestException('User role not found.');
     }
-
-    const user = await this.userService.getUserByIdForAdmin(id);
-    
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    // Add id field for React-Admin compatibility
-    const userWithId = {
-      ...user,
-      id: user._id,
-    };
-
-    // Set headers for React-Admin
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Range');
-    
-    return res.json(userWithId);
+    if (user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }    
+    return this.userService.getTodayStats();
   }
 }

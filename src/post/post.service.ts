@@ -7,6 +7,12 @@ import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
 import { MusicService } from 'src/music/music.service';
 import { MusicPostDto } from 'src/music/dto/music.dto';
+import { WeeklyPostsDto } from './dto/weekly-posts.dto';
+import { LastTwoWeeksDto } from './dto/last-two-weeks.dto';
+import { PostLikeService } from 'src/like_post/like_post.service';
+import { CommentService } from 'src/comment/comment.service';
+import { TopPostDto } from './dto/top-posts.dto';
+import { UserService } from 'src/user/user.service';
 
 interface Pagination {
   currentPage: number;
@@ -23,6 +29,9 @@ export class PostService {
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
     private readonly musicService: MusicService,
+    private readonly postLikeService: PostLikeService,
+    private readonly commentService: CommentService,
+    private readonly userService: UserService,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -2424,5 +2433,218 @@ export class PostService {
   ];
 
     return this.postModel.aggregate(pipeline).exec();
+  } 
+  
+  
+  /*======================== ADMIN-ONLY ENDPOINTS ========================*/
+
+  async getWeeklyPostCounts(): Promise<WeeklyPostsDto[]> {
+    const now = new Date();
+    // Calculate last Monday 00:00:00 local time
+    const todayDow = now.getDay();           
+    const daysSinceMonday = (todayDow + 6) % 7;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - daysSinceMonday);
+    monday.setHours(0, 0, 0, 0);
+
+    // Run aggregation with $dayOfWeek 
+    const raw = await this.postModel.aggregate([
+      { 
+        $match: {
+          createdAt: { 
+            $gte: monday, 
+            $lte: now 
+          } 
+        } 
+      },
+      {
+        $group: {
+          _id: { $dayOfWeek: '$createdAt' },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          dayOfWeek: '$_id',
+          count: 1,
+        },
+      },
+    ]);
+
+    // Prepare full week 
+    const labels: Record<number, WeeklyPostsDto['day']> = {
+      2: 'T2', 
+      3: 'T3', 
+      4: 'T4', 
+      5: 'T5', 
+      6: 'T6', 
+      7: 'T7', 
+      1: 'CN', 
+    };
+
+    // Initialize zero-filled array in correct order 
+    const dayOrder = [2, 3, 4, 5, 6, 7, 1]; // Monday to Sunday
+    const week: WeeklyPostsDto[] = dayOrder.map(dayNum => ({
+      day: labels[dayNum],
+      posts: 0
+    }));
+
+    // Fill in counts 
+    raw.forEach(({ dayOfWeek, count }) => {
+      const idx = dayOrder.indexOf(dayOfWeek);
+      if (idx !== -1) {
+        week[idx].posts = count;
+      }
+    });
+
+    return week;
+  }
+
+  async getLastTwoWeeks(): Promise<LastTwoWeeksDto[]> {
+    const now = new Date();
+
+    // find this week's Monday 00:00 local
+    const todayDow = now.getDay();                
+    const daysSinceMon = (todayDow + 6) % 7;      
+    const thisMonday = new Date(now);
+    thisMonday.setDate(now.getDate() - daysSinceMon);
+    thisMonday.setHours(0, 0, 0, 0);
+
+    // define the two full-week windows
+    const prevStart = new Date(thisMonday);
+    prevStart.setDate(thisMonday.getDate() - 7);
+    const beforePrevStart = new Date(thisMonday);
+    beforePrevStart.setDate(thisMonday.getDate() - 14);
+
+    // aggregate one week
+    const aggregateWeek = (start: Date, end: Date) =>
+      this.postModel.aggregate([
+        { $match: { createdAt: { $gte: start, $lt: end } } },
+        {
+          $group: {
+            _id: { $dayOfWeek: '$createdAt' }, 
+            count: { $sum: 1 },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            dayOfWeek: '$_id',
+            count: 1,
+          },
+        },
+      ]);
+
+    // run both aggregations in parallel
+    const [prevRaw, beforeRaw] = await Promise.all([
+      aggregateWeek(prevStart, thisMonday),
+      aggregateWeek(beforePrevStart, prevStart),
+    ]);
+
+    // turn each raw array into a map
+    const prevMap = new Map<number, number>();
+    prevRaw.forEach(r => prevMap.set(r.dayOfWeek, r.count));
+    const beforeMap = new Map<number, number>();
+    beforeRaw.forEach(r => beforeMap.set(r.dayOfWeek, r.count));
+
+    // define the labels and build the result array
+    const labels: Record<number, LastTwoWeeksDto['day']> = {
+      2: 'T2', 
+      3: 'T3', 
+      4: 'T4',
+      5: 'T5',
+      6: 'T6',
+      7: 'T7', 
+      1: 'CN', 
+    };
+
+    return Object.entries(labels).map(([dowStr, label]) => {
+      const dow = Number(dowStr);
+      return {
+        day: label,
+        previousWeek: prevMap.get(dow) ?? 0,
+        beforePrevious: beforeMap.get(dow) ?? 0,
+      };
+    });
   }  
+
+  async getTopLikedThisWeek(limit = 10): Promise<TopPostDto[]> {
+    // compute this week's Monday 00:00
+    const now = new Date();
+    const dow = now.getDay();          
+    const daysSinceMon = (dow + 6) % 7;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - daysSinceMon);
+    monday.setHours(0, 0, 0, 0);
+
+    // aggregation
+    const docs = await this.postModel.aggregate([
+      { $match: { createdAt: { $gte: monday } } },
+      // lookup media
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'medias',
+        },
+      },
+      // lookup likes
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likesArr',
+        },
+      },
+      // lookup comments
+      {
+        $lookup: {
+          from: 'comments',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'commentsArr',
+        },
+      },
+      // lookup author
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'authorArr',
+        },
+      },
+      { $unwind: '$authorArr' },
+      // shape fields
+      {
+        $project: {
+          id: '$_id',
+          thumbnail: {
+            // flatten all imageUrl/videoUrl from medias
+            $map: {
+              input: '$medias',
+              as: 'm',
+              in: { $ifNull: ['$$m.imageUrl', '$$m.videoUrl'] }
+            }
+          },
+          caption: 1,
+          author: '$authorArr.handleName',
+          likes: { $size: '$likesArr' },
+          comments: { $size: '$commentsArr' },
+          shares: { $ifNull: ['$shares', 0] },
+        },
+      },
+      { $sort: { likes: -1 } },
+      { $limit: limit },
+    ]);
+
+    // convert ObjectIds to strings
+    return docs.map(d => ({
+      ...d,
+      id: d.id.toString(),
+    })) as TopPostDto[];
+  }
 }

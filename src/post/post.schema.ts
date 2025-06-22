@@ -40,6 +40,9 @@ export class Post {
   @Prop({ default: 0 })
   viewCount?: number;
 
+  @Prop({ default: 0 })
+  share?: number;
+
   @Prop({
     type: [
       {
