@@ -22,7 +22,7 @@ export class Comment extends Document {
   isDeleted: boolean;
 
   @Prop({ type: [Types.ObjectId], default: [] })
-  likedBy: Types.ObjectId[];;
+  likedBy?: Types.ObjectId[];;
 }
 
 export const CommentSchema = SchemaFactory.createForClass(Comment);
