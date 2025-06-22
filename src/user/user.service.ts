@@ -391,157 +391,105 @@ export class UserService {
 
   // *************** ADMIN-ONLY APIS *******************
 
-async getTopFollowers(limit = 3): Promise<TopFollowerDto[]> {
-  console.log('=== Starting corrected getTopFollowers ===');
-  
-  const docs = await this.relationModel.aggregate([
-    // Match all relations that contain follow relationships
-    {
-      $match: {
-        $or: [
-          { relation: { $regex: /^FOLLOW_/ } }, // userOne follows someone
-          { relation: { $regex: /_FOLLOW$/ } }  // someone follows userOne
-        ]
-      }
-    },
+  async getTopFollowers(limit = 3): Promise<TopFollowerDto[]> {
+    console.log('=== Starting corrected getTopFollowers ===');
     
-    // We need to handle multiple cases and potentially create multiple records
-    // for mutual follows (FOLLOW_FOLLOW)
-    {
-      $facet: {
-        // Case 1: userOne follows userTwo (FOLLOW_* patterns)
-        userOneFollows: [
-          {
-            $match: {
-              relation: { $regex: /^FOLLOW_/ }
-            }
-          },
-          {
-            $project: {
-              followedUserId: '$userTwoID'
-            }
-          }
-        ],
-        
-        // Case 2: userTwo follows userOne (*_FOLLOW patterns) 
-        userTwoFollows: [
-          {
-            $match: {
-              relation: { $regex: /_FOLLOW$/ }
-            }
-          },
-          {
-            $project: {
-              followedUserId: '$userOneID'
-            }
-          }
-        ]
-      }
-    },
-    
-    // Combine both arrays
-    {
-      $project: {
-        allFollows: {
-          $concatArrays: ['$userOneFollows', '$userTwoFollows']
-        }
-      }
-    },
-    
-    // Unwind to get individual follow relationships
-    { $unwind: '$allFollows' },
-    
-    // Replace root with the follow data
-    { $replaceRoot: { newRoot: '$allFollows' } },
-    
-    // Group by followed user and count
-    {
-      $group: {
-        _id: '$followedUserId',
-        followerCount: { $sum: 1 }
-      }
-    },
-    
-    // Sort and limit
-    { $sort: { followerCount: -1 } },
-    { $limit: limit },
-    
-    // Lookup user details
-    {
-      $lookup: {
-        from: 'users',
-        localField: '_id',
-        foreignField: '_id',
-        as: 'userDetails'
-      }
-    },
-    { $unwind: '$userDetails' },
-    
-    // Shape final output
-    {
-      $project: {
-        _id: 0,
-        id: { $toString: '$_id' },
-        avatar: '$userDetails.profilePic',
-        handle: '$userDetails.handleName',
-        fullName: '$userDetails.username',
-        followers: '$followerCount'
-      }
-    }
-  ]);
-  
-  console.log('Corrected result:', JSON.stringify(docs, null, 2));
-  
-  return docs as TopFollowerDto[];
-}
-
-  async verifyFollowerCount(userId: string): Promise<any> {
-    console.log(`=== Verifying follower count for user: ${userId} ===`);
-    
-    const userObjectId = new Types.ObjectId(userId);
-    
-    // Method 1: Using your working MongoDB shell logic
-    const followerCount = await this.relationModel.countDocuments({
-      $or: [
-        { userTwoID: userObjectId, relation: { $regex: /^FOLLOW_/ } },
-        { userOneID: userObjectId, relation: { $regex: /_FOLLOW$/ } }
-      ]
-    });
-    
-    console.log(`Follower count using shell logic: ${followerCount}`);
-    
-    // Method 2: Get the actual follower details
-    const followers = await this.relationModel.aggregate([
+    const docs = await this.relationModel.aggregate([
+      // Match all relations that contain follow relationships
       {
         $match: {
           $or: [
-            { userTwoID: userObjectId, relation: { $regex: /^FOLLOW_/ } },
-            { userOneID: userObjectId, relation: { $regex: /_FOLLOW$/ } }
+            { relation: { $regex: /^FOLLOW_/ } },
+            { relation: { $regex: /_FOLLOW$/ } } 
           ]
         }
       },
+      
+      // for mutual follows (FOLLOW_FOLLOW)
+      {
+        $facet: {
+          // Case 1: userOne follows userTwo (FOLLOW_* patterns)
+          userOneFollows: [
+            {
+              $match: {
+                relation: { $regex: /^FOLLOW_/ }
+              }
+            },
+            {
+              $project: {
+                followedUserId: '$userTwoID'
+              }
+            }
+          ],
+          
+          // Case 2: userTwo follows userOne (*_FOLLOW patterns) 
+          userTwoFollows: [
+            {
+              $match: {
+                relation: { $regex: /_FOLLOW$/ }
+              }
+            },
+            {
+              $project: {
+                followedUserId: '$userOneID'
+              }
+            }
+          ]
+        }
+      },
+      
+      // Combine both arrays
       {
         $project: {
-          followerId: {
-            $cond: {
-              if: { $eq: ["$userTwoID", userObjectId] },
-              then: "$userOneID", 
-              else: "$userTwoID"
-            }
-          },
-          relation: 1
+          allFollows: {
+            $concatArrays: ['$userOneFollows', '$userTwoFollows']
+          }
+        }
+      },
+      
+      // Unwind to get individual follow relationships
+      { $unwind: '$allFollows' },
+      
+      // Replace root with the follow data
+      { $replaceRoot: { newRoot: '$allFollows' } },
+      
+      // Group by followed user and count
+      {
+        $group: {
+          _id: '$followedUserId',
+          followerCount: { $sum: 1 }
+        }
+      },
+      
+      { $sort: { followerCount: -1 } },
+      { $limit: limit },
+      
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'userDetails'
+        }
+      },
+      { $unwind: '$userDetails' },
+      
+      {
+        $project: {
+          _id: 0,
+          id: { $toString: '$_id' },
+          avatar: '$userDetails.profilePic',
+          handle: '$userDetails.handleName',
+          fullName: '$userDetails.username',
+          followers: '$followerCount'
         }
       }
     ]);
     
-    console.log(`Followers details:`, JSON.stringify(followers, null, 2));
+    console.log('Corrected result:', JSON.stringify(docs, null, 2));
     
-    return {
-      userId,
-      followerCount,
-      followers
-    };
-  }  
+    return docs as TopFollowerDto[];
+  }
 
   async getTodayStats(): Promise<{
     newUsers: string;
