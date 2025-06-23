@@ -9,3 +9,8 @@ export class SearchUserDto {
   @IsIn(['username', 'handleName'])
   mode: 'username' | 'handleName';
 }
+
+export interface InteractionPoint {
+  day: number;
+  count: number;
+}

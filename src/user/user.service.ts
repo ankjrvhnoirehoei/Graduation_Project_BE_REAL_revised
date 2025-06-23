@@ -20,6 +20,8 @@ import { JwtService } from '@nestjs/jwt';
 import { TopFollowerDto } from './dto/top-followers.dto';
 import { Relation, RelationDocument } from 'src/relation/relation.schema';
 import { Post, PostDocument } from 'src/post/post.schema';
+import { InteractionPoint } from './dto/search-user.dto'
+import { Story, StoryDocument } from 'src/story/schema/story.schema';
 
 @Injectable()
 export class UserService {
@@ -29,6 +31,7 @@ export class UserService {
     private readonly jwtService: JwtService,
     @InjectModel(Relation.name) private readonly relationModel: Model<RelationDocument>,
     @InjectModel(Post.name) private readonly postModel: Model<PostDocument>,
+    @InjectModel(Story.name) private storyModel: Model<StoryDocument>,
   ) {
     // configure your SMTP transport via environment variables
     this.mailer = nodemailer.createTransport({
@@ -389,7 +392,7 @@ export class UserService {
     }
   }
 
-  // *************** ADMIN-ONLY APIS *******************
+  /*======================== ADMIN-ONLY ========================*/
 
   async getTopFollowers(limit = 3): Promise<TopFollowerDto[]> {
     console.log('=== Starting corrected getTopFollowers ===');
@@ -511,6 +514,407 @@ export class UserService {
       newUsers: usersCount.toString(),
       newPosts: postsCount.toString(),
       newReports: '0', // TODO: build a reports collection and hookup here
+    };
+  }  
+
+  async getDailyNewAccounts(month: number): Promise<{
+    month: string;
+    data: { day: number; count: number }[];
+    comparison: {
+      previousMonth: string;
+      currentTotal: number;
+      previousTotal: number;
+      percentageChange: number;
+      trend: 'increase' | 'decrease' | 'no_change';
+    };
+  }> {
+    if (month < 1 || month > 12) {
+      throw new BadRequestException('Month must be between 1 and 12');
+    }
+
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const year = month <= currentMonth
+      ? now.getFullYear()
+      : now.getFullYear() - 1;
+
+    // Calculate previous month and year
+    let prevMonth: number;
+    let prevYear: number;
+    
+    if (month === 1) {
+      prevMonth = 12;
+      prevYear = year - 1;
+    } else {
+      prevMonth = month - 1;
+      prevYear = year;
+    }
+
+    // Current month date range
+    const start = new Date(year, month - 1, 1, 0, 0, 0);
+    const end = new Date(year, month, 1, 0, 0, 0);
+
+    // Previous month date range
+    const prevStart = new Date(prevYear, prevMonth - 1, 1, 0, 0, 0);
+    const prevEnd = new Date(prevYear, prevMonth, 1, 0, 0, 0);
+
+    // Get current month data
+    const raw = await this.userModel.aggregate<{ _id: number; count: number }>([
+      { $match: { createdAt: { $gte: start, $lt: end } } },
+      {
+        $group: {
+          _id: { $dayOfMonth: '$createdAt' },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { '_id': 1 } },
+    ]);
+
+    // Get previous month total
+    const prevMonthData = await this.userModel.aggregate<{ totalCount: number }>([
+      { $match: { createdAt: { $gte: prevStart, $lt: prevEnd } } },
+      {
+        $group: {
+          _id: null,
+          totalCount: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Calculate totals
+    const currentTotal = raw.reduce((sum, item) => sum + item.count, 0);
+    const previousTotal = prevMonthData[0]?.totalCount || 0;
+
+    // Calculate percentage change
+    let percentageChange = 0;
+    let trend: 'increase' | 'decrease' | 'no_change' = 'no_change';
+
+    if (previousTotal === 0) {
+      // If previous month had 0 accounts, any current accounts represent infinite growth
+      percentageChange = currentTotal > 0 ? 100 : 0;
+      trend = currentTotal > 0 ? 'increase' : 'no_change';
+    } else {
+      percentageChange = ((currentTotal - previousTotal) / previousTotal) * 100;
+      if (percentageChange > 0) {
+        trend = 'increase';
+      } else if (percentageChange < 0) {
+        trend = 'decrease';
+      } else {
+        trend = 'no_change';
+      }
+    }
+
+    // Build full array with zeros where missing
+    const lastDay = new Date(year, month, 0).getDate();
+    const data = Array.from({ length: lastDay }, (_, i) => {
+      const dayNum = i + 1;
+      const found = raw.find(r => r._id === dayNum);
+      return { day: dayNum, count: found?.count ?? 0 };
+    });
+
+    return {
+      month: `${year}-${String(month).padStart(2, '0')}`,
+      data,
+      comparison: {
+        previousMonth: `${prevYear}-${String(prevMonth).padStart(2, '0')}`,
+        currentTotal,
+        previousTotal,
+        percentageChange: Math.round(percentageChange * 100) / 100, 
+        trend,
+      },
+    };
+  }
+
+  async getInteractionChartForUser(userId: Types.ObjectId) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth(); 
+    const start = new Date(year, month, 1);
+    const end   = new Date(year, month + 1, 1);
+
+    // Calculate previous month
+    let prevMonth: number;
+    let prevYear: number;
+    
+    if (month === 0) { // January (month 0)
+      prevMonth = 11; // December
+      prevYear = year - 1;
+    } else {
+      prevMonth = month - 1;
+      prevYear = year;
+    }
+
+    const prevStart = new Date(prevYear, prevMonth, 1);
+    const prevEnd = new Date(prevYear, prevMonth + 1, 1);
+
+    // aggregate daily counts for a model 
+    const aggregateDaily = async (
+      model: Model<any>,
+      typeMatch?: Record<string, any>
+    ): Promise<InteractionPoint[]> => {
+      const match: any = {
+        createdAt: { $gte: start, $lt: end },
+        ...(typeMatch || {}),
+      };
+      const raw = await model
+        .aggregate<{ _id: number; count: number }>([
+          { $match: match },
+          {
+            $group: {
+              _id: { $dayOfMonth: '$createdAt' },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { '_id': 1 } },
+        ])
+        .exec();
+
+      return raw.map(r => ({ day: r._id, count: r.count }));
+    };
+
+    // aggregate total counts for previous month
+    const aggregateMonthTotal = async (
+      model: Model<any>,
+      typeMatch?: Record<string, any>
+    ): Promise<number> => {
+      const match: any = {
+        createdAt: { $gte: prevStart, $lt: prevEnd },
+        ...(typeMatch || {}),
+      };
+      const result = await model
+        .aggregate<{ totalCount: number }>([
+          { $match: match },
+          {
+            $group: {
+              _id: null,
+              totalCount: { $sum: 1 },
+            },
+          },
+        ])
+        .exec();
+
+      return result[0]?.totalCount || 0;
+    };
+
+    // get daily post counts (current month)
+    const rawPosts = await aggregateDaily(this.postModel, {
+      userID: userId,
+      type: { $in: ['post', 'reel'] },
+    });
+    
+    // get daily story counts (current month)
+    const rawStories = await aggregateDaily(this.storyModel, {
+      ownerId: userId,
+    });
+
+    // get previous month totals
+    const prevPostsTotal = await aggregateMonthTotal(this.postModel, {
+      userID: userId,
+      type: { $in: ['post', 'reel'] },
+    });
+    
+    const prevStoriesTotal = await aggregateMonthTotal(this.storyModel, {
+      ownerId: userId,
+    });
+
+    // calculate current month totals
+    const currentPostsTotal = rawPosts.reduce((sum, item) => sum + item.count, 0);
+    const currentStoriesTotal = rawStories.reduce((sum, item) => sum + item.count, 0);
+
+    // calculate percentage changes
+    const calculateChange = (current: number, previous: number) => {
+      if (previous === 0) {
+        return current > 0 ? 100 : 0;
+      }
+      return ((current - previous) / previous) * 100;
+    };
+
+    const postsPercentageChange = calculateChange(currentPostsTotal, prevPostsTotal);
+    const storiesPercentageChange = calculateChange(currentStoriesTotal, prevStoriesTotal);
+
+    // number of days in this month
+    const lastDay = new Date(year, month + 1, 0).getDate();
+
+    // bucket into 4 weeks
+    const weeks = Array.from({ length: 4 }, (_, i) => ({
+      week: `Week ${i+1}`,
+      post: 0,
+      story: 0,
+    }));
+
+    const accumulate = (raw: InteractionPoint[], field: 'post'|'story') =>
+      raw.forEach(({ day, count }) => {
+        const idx = Math.min(3, Math.floor((day - 1) / 7));
+        weeks[idx][field] += count;
+      });
+
+    accumulate(rawPosts,  'post');
+    accumulate(rawStories,'story');
+
+    return {
+      weeks,
+      comparison: {
+        currentMonth: `${year}-${String(month + 1).padStart(2, '0')}`,
+        previousMonth: `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}`,
+        posts: {
+          current: currentPostsTotal,
+          previous: prevPostsTotal,
+          percentageChange: Math.round(postsPercentageChange * 100) / 100,
+          trend: postsPercentageChange > 0 ? 'increase' : postsPercentageChange < 0 ? 'decrease' : 'no_change'
+        },
+        stories: {
+          current: currentStoriesTotal,
+          previous: prevStoriesTotal,
+          percentageChange: Math.round(storiesPercentageChange * 100) / 100,
+          trend: storiesPercentageChange > 0 ? 'increase' : storiesPercentageChange < 0 ? 'decrease' : 'no_change'
+        }
+      }
+    };
+  }
+
+  async getUserWithInteractions(handleName: string) {
+    const trimmed = handleName.trim();
+    if (!trimmed) {
+      throw new BadRequestException('handleName cannot be empty');
+    }
+
+    // case‐sensitive exact match
+    const user = await this.userModel
+      .findOne({ handleName: { $regex: `^${trimmed}$`, $options: 's' } })
+      .lean()
+      .exec();
+
+    if (!user) {
+      throw new NotFoundException(`User "${trimmed}" not found`);
+    }
+
+    // sanitize
+    const clean: any = {
+      _id:        user._id,
+      username:   user.username,
+      email:      user.email || '',
+      phoneNumber:user.phoneNumber || '',
+      handleName: user.handleName,
+      bio:        user.bio || '',
+      address:    user.address || '',
+      gender:     user.gender || '',
+      profilePic: user.profilePic || '',
+      isVip:      user.isVip,
+      deletedAt:  user.deletedAt || false,
+    };
+
+    // attach interaction chart + comparison
+    const interactionData = await this.getInteractionChartForUser(
+      user._id as Types.ObjectId
+    );
+    clean.interactionChartData = interactionData.weeks;
+    clean.monthlyComparison      = interactionData.comparison;
+
+    return clean;
+  }
+
+  async getRecommendedUsers(page = 1, limit = 20) {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfNext = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    // count total users for pagination
+    const totalCount = await this.userModel.countDocuments();
+
+    const totalPages = Math.ceil(totalCount / limit);
+    const skip = (page - 1) * limit;
+
+    const users = await this.userModel
+      .aggregate([
+        // lookup this month's posts count
+        {
+          $lookup: {
+            from: this.postModel.collection.name,
+            let: { uid: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$userID', '$$uid'] },
+                      { $in: ['$type', ['post', 'reel']] },
+                      { $gte: ['$createdAt', startOfMonth] },
+                      { $lt: ['$createdAt', startOfNext] },
+                    ],
+                  },
+                },
+              },
+              { $count: 'count' },
+            ],
+            as: 'postAgg',
+          },
+        },
+        // lookup this month's stories count
+        {
+          $lookup: {
+            from: this.storyModel.collection.name,
+            let: { uid: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$ownerId', '$$uid'] },
+                      { $gte: ['$createdAt', startOfMonth] },
+                      { $lt: ['$createdAt', startOfNext] },
+                    ],
+                  },
+                },
+              },
+              { $count: 'count' },
+            ],
+            as: 'storyAgg',
+          },
+        },
+        // compute contributions = (postAgg[0].count || 0) + (storyAgg[0].count || 0)
+        {
+          $addFields: {
+            contributions: {
+              $add: [
+                { $ifNull: [{ $arrayElemAt: ['$postAgg.count', 0] }, 0] },
+                { $ifNull: [{ $arrayElemAt: ['$storyAgg.count', 0] }, 0] },
+              ],
+            },
+          },
+        },
+        // sort: deletedAt false first, then contributions desc, then isVip desc
+        {
+          $sort: {
+            deletedAt: 1,
+            contributions: -1,
+            isVip: -1,
+          },
+        },
+        // project fields
+        {
+          $project: {
+            _id:       1,
+            username:  1,
+            handleName:1,
+            profilePic:1,
+          },
+        },
+        // paginate
+        { $skip: skip },
+        { $limit: limit },
+      ])
+      .exec();
+
+    return {
+      data: users,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
     };
   }  
 }
