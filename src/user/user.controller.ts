@@ -291,6 +291,8 @@ export class UserController {
     return { message: 'Email updated successfully' };
   }  
   
+  /*======================== ADMIN-ONLY ========================*/
+
   @Get('admin/top-followers')
   @UseGuards(JwtRefreshAuthGuard)
   async topFollowers(@CurrentUser('sub') userId: string): Promise<TopFollowerDto[]> {
@@ -316,4 +318,44 @@ export class UserController {
     }    
     return this.userService.getTodayStats();
   }
+
+  @Get('admin/stats/new-accounts')
+  @UseGuards(JwtRefreshAuthGuard)
+  async getDailyNewAccounts(
+    @CurrentUser('sub') userId: string,
+    @Query('month', ParseIntPipe) month: number,
+  ): Promise<{ month: string; data: { day: number; count: number }[] }> {
+    const user = await this.userService.findById(userId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    return this.userService.getDailyNewAccounts(month);
+  }  
+
+  @Get('admin/search')
+  @UseGuards(JwtRefreshAuthGuard)
+  async adminSearchUser(
+    @CurrentUser('sub') userId: string,
+    @Query('keyword') keyword: string,
+  ) {
+    const user = await this.userService.findById(userId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    return this.userService.getUserWithInteractions(keyword);
+  }
+
+  @Get('admin/recommended')
+  @UseGuards(JwtRefreshAuthGuard)
+  async getRecommended(
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ) {
+    const user = await this.userService.findById(userId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    return this.userService.getRecommendedUsers(page, limit);
+  }  
 }

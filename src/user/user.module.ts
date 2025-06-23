@@ -10,10 +10,12 @@ import { Relation, RelationSchema } from '../relation/relation.schema';
 import { RelationModule } from '../relation/relation.module'; 
 import { Post, PostSchema } from 'src/post/post.schema';
 import { PostModule } from 'src/post/post.module';
+import { Story, StorySchema } from 'src/story/schema/story.schema';
+import { StoryModule } from 'src/story/story.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }, { name: Relation.name, schema: RelationSchema }, { name: Post.name, schema: PostSchema },]),
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }, { name: Relation.name, schema: RelationSchema }, { name: Post.name, schema: PostSchema }, {name: Story.name, schema: StorySchema}]),
     forwardRef(() => AuthModule),
     JwtModule.register({
       secret: process.env.JWT_ACCESS_SECRET,
@@ -21,6 +23,7 @@ import { PostModule } from 'src/post/post.module';
     }),
     forwardRef(() => RelationModule),
     forwardRef(() => PostModule),
+    forwardRef(() => StoryModule),
   ],
   providers: [UserService],
   controllers: [UserController],
