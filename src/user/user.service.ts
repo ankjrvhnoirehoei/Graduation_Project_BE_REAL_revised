@@ -282,11 +282,27 @@ export class UserService {
   ): Promise<Partial<User>> {
     // build a clean update object
     const update: Partial<Record<keyof EditUserDto, any>> = {};
+    
     for (const [key, value] of Object.entries(dto)) {
-      if (value !== undefined && key !== 'password') {
-        // Add check to exclude password
+      if (value !== undefined && key !== 'password' && key !== 'handleName') {
         update[key] = value;
       }
+    }
+
+    // handleName uniqueness check if provided
+    if (dto.handleName) {
+      const existingUser = await this.userModel.findOne({
+        handleName: { $regex: new RegExp(`^${dto.handleName}$`, 's') },
+        _id: { $ne: userId }, // exclude current user
+      });
+      
+      if (existingUser) {
+        throw new BadRequestException(
+          'Handle name is already taken',
+        );
+      }
+      
+      update.handleName = dto.handleName;
     }
 
     // handle password change if provided
@@ -295,7 +311,6 @@ export class UserService {
       if (!user) {
         throw new NotFoundException('User not found');
       }
-
       // check if new password is same as current
       const isSame = await bcrypt.compare(dto.password, user.password);
       if (isSame) {
@@ -303,7 +318,6 @@ export class UserService {
           'New password must be different from the current password',
         );
       }
-
       // hash new password and add it to update object
       update.password = await bcrypt.hash(dto.password, 10);
     }
