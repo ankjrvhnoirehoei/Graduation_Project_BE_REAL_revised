@@ -55,6 +55,7 @@ export class PostService {
       musicId: string;
       timeStart: number;
       timeEnd: number;
+      songName: string;
     };
   }): Promise<{
     post: Post;
@@ -63,6 +64,7 @@ export class PostService {
       musicId: string;
       timeStart: number;
       timeEnd: number;
+      songName: string;
     };
   }> {
     const userId = postWithMediaDto.post.userID;
@@ -82,6 +84,7 @@ export class PostService {
           musicId: Types.ObjectId;
           timeStart: number;
           timeEnd: number;
+          songName: string;
         }
       | undefined = undefined;
 
@@ -92,10 +95,22 @@ export class PostService {
         throw new BadRequestException('Invalid musicID');
       }
 
+      // Fetch song name first
+      let songName = 'Unknown Song';
+      try {
+        const musicDetails = await this.musicService.findByID(musicId);
+        if (musicDetails) {
+          songName = musicDetails.song;
+        }
+      } catch (error) {
+        console.log('Failed to fetch music details:', error);
+      }
+
       musicObject = {
         musicId: new Types.ObjectId(musicId),
         timeStart,
         timeEnd,
+        songName,
       };
 
       postData.music = musicObject;
@@ -121,6 +136,7 @@ export class PostService {
             musicId: musicObject.musicId.toString(),
             timeStart: musicObject.timeStart,
             timeEnd: musicObject.timeEnd,
+            songName: musicObject.songName,
           }
         : undefined,
     };
