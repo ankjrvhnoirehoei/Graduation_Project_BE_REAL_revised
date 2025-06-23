@@ -42,24 +42,6 @@ export class Post {
 
   @Prop({ default: 0 })
   share?: number;
-
-  @Prop({
-    type: [
-      {
-        userId: { type: Types.ObjectId, ref: 'User', required: true },
-        handleName: { type: String, required: true },
-        positionX: { type: Number, required: true },
-        positionY: { type: Number, required: true },
-        _id: false,
-      },
-    ],
-  })
-  tags?: {
-    userId: Types.ObjectId;
-    handleName: string;
-    positionX: number;
-    positionY: number;
-  }[];
 }
 
 export const PostSchema = SchemaFactory.createForClass(Post);
