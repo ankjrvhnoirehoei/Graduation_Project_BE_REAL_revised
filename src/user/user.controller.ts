@@ -29,7 +29,11 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtService } from '@nestjs/jwt';
 import { RelationService } from 'src/relation/relation.service';
 import { SearchUserDto } from './dto/search-user.dto';
-import { ChangeEmailDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
+import {
+  ChangeEmailDto,
+  ConfirmEmailDto,
+  EditUserDto,
+} from './dto/update-user.dto';
 import { TopFollowerDto } from './dto/top-followers.dto';
 
 @Controller('users')
@@ -49,8 +53,8 @@ export class UserController {
 
   @Post('login')
   async login(@Body() loginDto: LoginDto) {
-    const { email, password } = loginDto;
-    const tokens = await this.authService.login(email, password);
+    const { email, password, fcmToken } = loginDto;
+    const tokens = await this.authService.login(email, password, fcmToken);
     return {
       message: 'Login successful',
       ...tokens,
@@ -108,7 +112,8 @@ export class UserController {
     @CurrentUser('sub') userId: string,
     @Req() req: any,
   ): Promise<{ accessToken: string }> {
-    const authHeader = req.headers['authorization'] || req.headers.authorization;
+    const authHeader =
+      req.headers['authorization'] || req.headers.authorization;
     const tokenFromClient = authHeader?.replace('Bearer ', '');
     if (!tokenFromClient) {
       throw new UnauthorizedException('No refresh token provided');
@@ -124,7 +129,7 @@ export class UserController {
     }
 
     // since it's valid, issue a brand‐new access token:
-    // read the payload from the validated refresh token; 
+    // read the payload from the validated refresh token;
     const payload = { sub: userId };
 
     const newAccessToken = await this.jwtService.signAsync(payload, {
@@ -178,7 +183,7 @@ export class UserController {
     return {
       ...baseProfile,
       userFollowing,
-      userBlocked
+      userBlocked,
     };
   }
 
@@ -261,15 +266,12 @@ export class UserController {
 
   @Patch('edit-me')
   @UseGuards(JwtRefreshAuthGuard)
-  async editMe(
-    @CurrentUser('sub') userId: string,
-    @Body() dto: EditUserDto,
-  ) {
+  async editMe(@CurrentUser('sub') userId: string, @Body() dto: EditUserDto) {
     const updated = await this.userService.updateProfile(userId, dto);
     return { message: 'Profile updated', user: updated };
   }
 
-  // email change: send code + return token 
+  // email change: send code + return token
   @Post('email/init-change')
   @UseGuards(JwtRefreshAuthGuard)
   async initiateEmailChange(
@@ -280,7 +282,7 @@ export class UserController {
     return { message: 'Confirmation code sent', token };
   }
 
-  // confirm email change using token + code 
+  // confirm email change using token + code
   @Post('email/confirm-new')
   @UseGuards(JwtRefreshAuthGuard)
   async confirmEmailChange(
@@ -289,20 +291,22 @@ export class UserController {
   ) {
     await this.userService.confirmEmailChange(userId, dto);
     return { message: 'Email updated successfully' };
-  }  
-  
+  }
+
   /*======================== ADMIN-ONLY ========================*/
 
   @Get('admin/top-followers')
   @UseGuards(JwtRefreshAuthGuard)
-  async topFollowers(@CurrentUser('sub') userId: string): Promise<TopFollowerDto[]> {
+  async topFollowers(
+    @CurrentUser('sub') userId: string,
+  ): Promise<TopFollowerDto[]> {
     const user = await this.userService.findById(userId);
     if (!user || typeof user.role !== 'string') {
       throw new BadRequestException('User role not found.');
     }
     if (user.role !== 'admin') {
       throw new BadRequestException('Access denied: Admins only.');
-    }    
+    }
     return this.userService.getTopFollowers(3);
   }
 
@@ -315,7 +319,7 @@ export class UserController {
     }
     if (user.role !== 'admin') {
       throw new BadRequestException('Access denied: Admins only.');
-    }    
+    }
     return this.userService.getTodayStats();
   }
 
@@ -330,7 +334,7 @@ export class UserController {
       throw new BadRequestException('Access denied: Admins only.');
     }
     return this.userService.getDailyNewAccounts(month);
-  }  
+  }
 
   @Get('admin/search')
   @UseGuards(JwtRefreshAuthGuard)
@@ -357,5 +361,5 @@ export class UserController {
       throw new BadRequestException('Access denied: Admins only.');
     }
     return this.userService.getRecommendedUsers(page, limit);
-  }  
+  }
 }
