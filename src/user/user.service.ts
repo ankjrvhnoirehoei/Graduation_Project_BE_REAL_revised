@@ -92,13 +92,13 @@ export class UserService {
   }
 
   async getUserById(userId: string): Promise<Partial<User>> {
-    console.log('[getUserById] Called with userId:', userId);
+    // console.log('[getUserById] Called with userId:', userId);
 
     const user = await this.userModel.findById(userId).lean();
-    console.log('[getUserById] Fetched user:', user);
+    // console.log('[getUserById] Fetched user:', user);
 
     if (!user) {
-      console.warn('[getUserById] User not found!');
+      // console.warn('[getUserById] User not found!');
       throw new NotFoundException('User not found');
     }
 
