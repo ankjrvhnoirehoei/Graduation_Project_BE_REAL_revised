@@ -2792,9 +2792,9 @@ export class PostService {
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth(); // 0-based; Jan = 0
 
-    // build the 6-month window: 6 full months before this one
+    // build the 6-month window
     const months: { date: Date; label: string; key: string }[] = [];
-    for (let offset = -6; offset <= -1; offset++) {
+    for (let offset = -5; offset <= 0; offset++) {
       const d = new Date(currentYear, currentMonth + offset, 1);
       const yyyy = d.getFullYear();
       const mm = d.getMonth() + 1;     
@@ -2804,7 +2804,7 @@ export class PostService {
     }
 
     const startDate = months[0].date;
-    const endDate   = new Date(currentYear, currentMonth, 1); // first day of this month
+    const endDate   = new Date(currentYear, currentMonth + 1, 1); // first day of next month
 
     // Aggregate post/reel counts
     const postRaw = await this.postModel.aggregate([
@@ -2907,12 +2907,12 @@ export class PostService {
     const month = now.getMonth(); // 0-based; Jan = 0
 
     // current window: 6 full months before this month
-    const currStart = new Date(year, month - 6, 1);
-    const currEnd   = new Date(year, month, 1);
+    const currStart = new Date(year, month - 5, 1);
+    const currEnd   = new Date(year, month + 1, 1);
 
     // previous window: the six months before that
-    const prevStart = new Date(year, month - 12, 1);
-    const prevEnd   = new Date(year, month - 6, 1);
+    const prevStart = new Date(year, month - 11, 1);
+    const prevEnd   = new Date(year, month - 5, 1);
 
     const countPostsAndReels = (from: Date, to: Date) =>
       this.postModel.countDocuments({
@@ -2986,10 +2986,10 @@ export class PostService {
     const year = now.getFullYear();
     const month = now.getMonth(); 
 
-    const currStart = new Date(year, month - 6, 1);
-    const currEnd   = new Date(year, month, 1);
-    const prevStart = new Date(year, month - 12, 1);
-    const prevEnd   = new Date(year, month - 6, 1);
+    const currStart = new Date(year, month - 5, 1);
+    const currEnd   = new Date(year, month + 1, 1);
+    const prevStart = new Date(year, month - 11, 1);
+    const prevEnd   = new Date(year, month - 5, 1);
 
     // Helper: count total posts+reels, reported, removed
     const countWindow = async (from: Date, to: Date) => {
