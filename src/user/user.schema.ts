@@ -42,6 +42,9 @@ export class User {
   refreshToken?: string;
 
   @Prop()
+  fcmToken?: string;
+
+  @Prop()
   role?: string;
 
   @Prop({ default: false })

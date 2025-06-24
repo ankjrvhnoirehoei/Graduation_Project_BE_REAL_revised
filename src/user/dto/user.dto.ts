@@ -49,6 +49,9 @@ export class UserDto {
   @IsString()
   refreshToken?: string;
 
+  @IsString()
+  fcmToken?: string;
+
   @IsOptional()
   @IsBoolean()
   deletedAt?: boolean;
