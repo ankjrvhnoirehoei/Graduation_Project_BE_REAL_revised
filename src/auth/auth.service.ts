@@ -20,7 +20,7 @@ export class AuthService {
     email: string,
     password: string,
     fcmToken?: string,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
+  ): Promise<{ accessToken: string; refreshToken: string; fcmToken?: string }> {
     const user: any = await this.userModel.findOne({ email });
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -49,6 +49,6 @@ export class AuthService {
     }
     await user.save();
 
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, fcmToken };
   }
 }
