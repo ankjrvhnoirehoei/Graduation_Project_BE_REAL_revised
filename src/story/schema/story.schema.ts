@@ -2,7 +2,10 @@ import { AbstractDocument } from "@app/common";
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { Types } from "mongoose";
 import { Music } from "src/music/music.schema";
+import { Document } from "mongoose";
 import { User } from "src/user/user.schema";
+
+export type StoryDocument = Story & Document;
 
 export enum StoryType {
   STORIES = 'stories',

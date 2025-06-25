@@ -10,18 +10,21 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
   Param,
-  NotFoundException,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { SearchDto } from './dto/search.dto';
+import { WeeklyPostsDto } from './dto/weekly-posts.dto';
+import { UserService } from 'src/user/user.service';
+import { LastTwoWeeksDto } from './dto/last-two-weeks.dto';
+import { TopPostDto } from './dto/top-posts.dto';
 
 @Controller('posts')
 @UseGuards(JwtRefreshAuthGuard)
 export class PostController {
-  constructor(private readonly postService: PostService) {}
+  constructor(private readonly postService: PostService, private readonly userService: UserService,) {}
 
   @Post('with-media')
   async createPostWithMedia(
@@ -224,4 +227,96 @@ export class PostController {
       data
     };
   }
+
+  /*======================== ADMIN-ONLY ========================*/
+
+  @Get('admin/weekly')
+  async getWeeklyStats(@CurrentUser('sub') userId: string): Promise<WeeklyPostsDto[]> {
+    const user = await this.userService.findById(userId);
+    if (!user || typeof user.role !== 'string') {
+      throw new BadRequestException('User role not found.');
+    }
+    if (user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    return this.postService.getWeeklyPostCounts();
+  }
+
+  @Get('admin/last-two-weeks')
+  async lastTwoWeeks(@CurrentUser('sub') userId: string): Promise<LastTwoWeeksDto[]> {
+    const user = await this.userService.findById(userId);
+    if (!user || typeof user.role !== 'string') {
+      throw new BadRequestException('User role not found.');
+    }
+    if (user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }    
+    return this.postService.getLastTwoWeeks();
+  }  
+
+  @Get('admin/top-liked')
+  async getTopLiked(@CurrentUser('sub') userId: string): Promise<TopPostDto[]> {
+    const user = await this.userService.findById(userId);
+    if (!user || typeof user.role !== 'string') {
+      throw new BadRequestException('User role not found.');
+    }
+    if (user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }    
+    return this.postService.getTopLikedThisWeek(10);
+  }  
+
+  @Get('admin/stats/content-distribution')
+  async getAllContents(
+    @CurrentUser('sub') userId: string,
+  ): Promise<{ type: string; value: number }[]> {
+    const user = await this.userService.findById(userId);
+    if (!user || typeof user.role !== 'string') {
+      throw new BadRequestException('User role not found.');
+    }
+    if (user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+
+    return this.postService.getContentDistribution();
+  }
+
+  @Get('admin/yearly-stats')
+  async getAdminStats(@CurrentUser('sub') userId: string,) {
+    const user = await this.userService.findById(userId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    return this.postService.getTwoYearStats();
+  }  
+
+  @Get('admin/last-six-months')
+  async getLastSixMonthsStats(@CurrentUser('sub') userId: string) {
+    const user = await this.userService.findById(userId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+
+    return this.postService.getLastSixMonthsStats();
+  }
+
+  @Get('admin/compare-last-6-months')
+  async compareLastSixMonths(
+    @CurrentUser('sub') userId: string,
+  ) {
+    const user = await this.userService.findById(userId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    return this.postService.compareLastSixMonthsPosts();
+  }  
+
+  @Get('admin/summary-posts')
+  async getPostsSummary(@CurrentUser('sub') userId: string) {
+    const user = await this.userService.findById(userId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    return this.postService.getSixMonthPostsSummary();
+  }  
 }

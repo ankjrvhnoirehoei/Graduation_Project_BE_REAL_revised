@@ -46,6 +46,14 @@ export class EditUserDto {
 
   @IsOptional()
   @IsString()
+  @IsNotEmpty({ message: 'handleName must not be empty' })
+  @Matches(/^\S+$/, {
+    message: 'handleName must not contain any whitespace',
+  })
+  handleName?: string;
+
+  @IsOptional()
+  @IsString()
   @Matches(/^[0-9]+$/, {
     message: 'phoneNumber must contain only digits',
   })

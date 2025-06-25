@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { StoryService } from './story.service';
 import { StoryController } from './story.controller';
 import { StoryRepository } from './story.repository';
@@ -14,7 +14,7 @@ import { MusicModule } from 'src/music/music.module';
       { name: Story.name, schema: StorySchema },
     ]),
     RelationModule,
-    UserModule,
+    forwardRef(() => UserModule),
     MusicModule,
   ],
   controllers: [StoryController],

@@ -118,4 +118,8 @@ export class CommentService {
 
     return result;
   }
+
+  async findByPostId(postID: string): Promise<Comment[]> {
+    return this.commentModel.find({ postID: postID }).exec();
+  }    
 }

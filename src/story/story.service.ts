@@ -18,7 +18,7 @@ export class StoryService {
     private readonly relationServ: RelationService,
     private readonly userService: UserService,
     private readonly musicService: MusicService,
-  ) {}
+  ) { }
 
   // STANDARDIZE FOR STORY & RESPONSE
   private LIMIT_HIGHLIGHTS = 50;
@@ -45,7 +45,10 @@ export class StoryService {
     viewerId?: string | Types.ObjectId,
   ) {
     const isSeen = viewerId
-      ? story.viewedByUsers?.some((id) => id.toString() === viewerId.toString())
+      ? story.viewedByUsers?.some((viewer) => 
+          typeof viewer === 'object' && viewer._id 
+            ? viewer._id.toString() === viewerId.toString()
+            : viewer.toString() === viewerId.toString())
       : false;
 
     return {
@@ -129,11 +132,43 @@ export class StoryService {
       return { message: 'Success', data: [] };
     }
     stories = (await this.getStoriesMusic(stories)) as any as Story[];
+    
+    const updatedStories = await Promise.all(
+      stories.map(async (story) => {
+        if (!story.viewedByUsers || story.viewedByUsers.length === 0) {
+          return story;
+        }
+        const detailedViewers = await Promise.all(
+          story.viewedByUsers.map(async (id) => {
+            try {
+              const userProfile = await this.userService.getUserById(id.toString());
+              return {
+                _id: id.toString(),
+                profilePic: userProfile.profilePic,
+                handleName: userProfile.handleName,
+                username: userProfile.username,
+              };
+            } catch (error) {
+              return { _id: id.toString() };
+            }
+          })
+        );
+        
+        return {
+          ...story,
+          viewedByUsers: detailedViewers,
+        };
+      }),
+    );
+    
     return {
       message: 'Success',
-      data: stories.map((story) =>
-        this.STORY_RESPONSE_WITH_VIEWER(story, viewerId),
-      ),
+      data: await Promise.all(updatedStories.map(async (story) => {
+        return this.STORY_RESPONSE_WITH_VIEWER (
+          story as any as Story, 
+          viewerId
+        );
+      })),
     };
   }
 
