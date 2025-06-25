@@ -45,10 +45,10 @@ export class StoryService {
     viewerId?: string | Types.ObjectId,
   ) {
     const isSeen = viewerId
-      ? story.viewedByUsers?.some((viewer) => 
-          typeof viewer === 'object' && viewer._id 
-            ? viewer._id.toString() === viewerId.toString()
-            : viewer.toString() === viewerId.toString())
+      ? story.viewedByUsers?.some((viewer) =>
+        typeof viewer === 'object' && viewer._id
+          ? viewer._id.toString() === viewerId.toString()
+          : viewer.toString() === viewerId.toString())
       : false;
 
     return {
@@ -132,7 +132,7 @@ export class StoryService {
       return { message: 'Success', data: [] };
     }
     stories = (await this.getStoriesMusic(stories)) as any as Story[];
-    
+
     const updatedStories = await Promise.all(
       stories.map(async (story) => {
         if (!story.viewedByUsers || story.viewedByUsers.length === 0) {
@@ -153,19 +153,19 @@ export class StoryService {
             }
           })
         );
-        
+
         return {
           ...story,
           viewedByUsers: detailedViewers,
         };
       }),
     );
-    
+
     return {
       message: 'Success',
       data: await Promise.all(updatedStories.map(async (story) => {
-        return this.STORY_RESPONSE_WITH_VIEWER (
-          story as any as Story, 
+        return this.STORY_RESPONSE_WITH_VIEWER(
+          story as any as Story,
           viewerId
         );
       })),
@@ -376,15 +376,22 @@ export class StoryService {
   }
 
   async deletedStory(uid: string, storyDto: UpdateStoryDto) {
-    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
     const uids = new Types.ObjectId(uid);
-    if (!existingStory.ownerId.equals(uids)) {
-      return new Error("You can't delete this story");
+    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
+    if (!existingStory) throw new Error("Story not found");
+    if (!existingStory.ownerId.equals(uids)) throw new Error("You can't delete this story");
+    
+    // Find all user's highlights and rm target out of storyId
+    const highlights = await this.storyRepo.findAllUserHighlights(uids);
+    for (const highlight of highlights) {
+      highlight.storyId = highlight.storyId.filter(item => {
+        return item && item.toString() !== storyDto._id.toString();
+      });
+      await this.storyRepo.updateStory(highlight._id, { storyId: highlight.storyId });
     }
-    const res = await this.storyRepo.deleteStory(existingStory._id);
-    return {
-      message: 'Success',
-      // data: this.STORY_RESPONSE(res),
-    };
+
+    await this.storyRepo.findOneAndDelete({ _id: storyDto._id });
+    return { message: "Success" };
   }
+
 }
