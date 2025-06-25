@@ -1,11 +1,12 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { StoryService } from './story.service';
 import { StoryController } from './story.controller';
 import { StoryRepository } from './story.repository';
-import { DatabaseModule, JwtAuthGuard, JwtRefreshGuard } from '@app/common';
+import { DatabaseModule } from '@app/common';
 import { Story, StorySchema } from './schema/story.schema';
 import { RelationModule } from 'src/relation/relation.module';
 import { UserModule } from 'src/user/user.module';
+import { MusicModule } from 'src/music/music.module';
 
 @Module({
   imports: [
@@ -13,7 +14,8 @@ import { UserModule } from 'src/user/user.module';
       { name: Story.name, schema: StorySchema },
     ]),
     RelationModule,
-    UserModule,
+    forwardRef(() => UserModule),
+    MusicModule,
   ],
   controllers: [StoryController],
   providers: [StoryService, StoryRepository],

@@ -16,10 +16,15 @@ import { GetFollowersDto } from './dto/get-followers.dto';
 import { GetFollowingDto } from './dto/get-following.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { GetBlockingDto } from './dto/get-blocking.dto';
+import { UserService } from '../user/user.service'
 
 @Controller('relations')
 export class RelationController {
-  constructor(private readonly relationService: RelationService) {}
+  constructor(
+    private readonly relationService: RelationService,
+    private readonly userService: UserService,
+  ) {}
 
   /**
    * PUT /relations/relation-action
@@ -80,13 +85,6 @@ export class RelationController {
     }));
   }
 
-  /**
-   * POST /relations/followers
-   * body: { userId: string }
-   *
-   * Returns an array of “who follows userId”.
-   * This is still a protected route (only an authenticated user can call).
-   */
   @UseGuards(JwtRefreshAuthGuard)
   @Post('followers')
   async getFollowers(@Body() dto: GetFollowersDto) {
@@ -98,43 +96,135 @@ export class RelationController {
       'followers',
     );
 
-    // map each record to the follower's ID
-    const followers = records.map(r => {
+    // map each record to the follower's ID 
+    const followerIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
-      // if userId is in userTwoID, follower is userOneID; otherwise follower is userTwoID
-      return u2 === userId ? u1 : u2;
+      
+      // Check which pattern matched and return the correct follower
+      if (u2 === userId && r.relation.startsWith('FOLLOW_')) {
+        return u1;
+      } else if (u1 === userId && r.relation.endsWith('_FOLLOW')) {
+        return u2;
+      }
+      throw new BadRequestException('Unexpected relation pattern in followers');
     });
+
+    // Remove duplicates
+    const uniqueFollowerIds = [...new Set(followerIds)];
+
+    // Fetch detailed user information
+    const followers = await Promise.all(
+      uniqueFollowerIds.map((id) => this.userService.getUserById(id)),
+    );
+
+    console.log('Request Body:', dto);
+    console.log('Followers count:', uniqueFollowerIds.length);
 
     return { userId, followers };
   }
 
-  /**
-   * POST /relations/following
-   * body: { userId: string }
-   *
-   * Returns an array of “who userId is following.”
-   * Also protected by JwtRefreshAuthGuard.
-   */
   @UseGuards(JwtRefreshAuthGuard)
   @Post('following')
   async getFollowing(@Body() dto: GetFollowingDto) {
     const { userId } = dto;
-
+    
     // fetch all relationship records where userId follows someone
     const records = await this.relationService.findByUserAndFilter(
       userId,
       'following',
     );
-
-    // map each record to the followed‐user’s ID
-    const following = records.map(r => {
+    
+    // map each record to the followed user's ID 
+    const followingIds = records.map(r => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
-      // if userId is in userTwoID, then userId follows userOneID; otherwise userId follows userTwoID
+      
+      // Check which pattern matched and return the correct following
+      if (u1 === userId && r.relation.startsWith('FOLLOW_')) {
+        return u2; 
+      } else if (u2 === userId && r.relation.endsWith('_FOLLOW')) {
+        return u1;
+      }
+      throw new BadRequestException('Unexpected relation pattern in following');
+    });
+
+    // Remove duplicates 
+    const uniqueFollowingIds = [...new Set(followingIds)];
+
+    // Fetch detailed user information
+    const following = await Promise.all(
+      uniqueFollowingIds.map((id) => this.userService.getUserById(id)),
+    );
+
+    console.log('Request Body:', dto);
+    console.log('Following count:', uniqueFollowingIds.length);
+
+    return { userId, following };
+  }
+
+  /**
+   * POST /relations/blocking
+   * body: { userId: string }
+   *
+   * Returns an array of "who userId is blocking."
+   * Also protected by JwtRefreshAuthGuard.
+   */
+  @UseGuards(JwtRefreshAuthGuard)
+  @Post('blocking')
+  async getBlocking(@Body() dto: GetBlockingDto) {
+    const { userId } = dto;
+
+    // fetch all relationship records where userId blocks someone
+    const records = await this.relationService.findByUserAndFilter(
+      userId,
+      'blocking',
+    );
+
+    // map each record to the blocked-user's ID
+    const blockingIds = records.map(r => {
+      const u1 = r.userOneID.toString();
+      const u2 = r.userTwoID.toString();
+      // if userId is in userTwoID, then userId blocks userOneID; otherwise userId blocks userTwoID
       return u2 === userId ? u1 : u2;
     });
 
-    return { userId, following };
+    // Fetch detailed user information
+    const blocking = await Promise.all(
+      blockingIds.map((id) => this.userService.getUserById(id)),
+    );
+
+    return { userId, blocking };
+  }  
+
+  /**
+   * GET /relations/recommendations?limit=10
+   * Protected. Returns up to `limit` users recommended to follow.
+   */
+  @UseGuards(JwtRefreshAuthGuard)
+  @Get('recommendations')
+  async recommendations(
+    @CurrentUser('sub') userId: string,
+    @Query('limit') limitQ?: string,
+  ) {
+    const limit = limitQ ? parseInt(limitQ, 10) : 10;
+    if (isNaN(limit) || limit <= 0) {
+      throw new BadRequestException('`limit` must be a positive integer');
+    }
+
+    const recIds = await this.relationService.getRecommendations(
+      userId,
+      Math.min(limit, 10),
+    );
+
+    if (recIds.length === 0) {
+      return { message: 'No recommendations available. Follow more users to get suggestions.' };
+    }
+
+    const recommendations = await Promise.all(
+      recIds.map(id => this.userService.getUserById(id)),
+    );
+
+    return { recommendations };
   }
 }

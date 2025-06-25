@@ -185,4 +185,8 @@ async getPostLikers(postId: string, currentUserId: string) {
       return 0;
     }).map(({ isCurrentUser, ...user }) => user); // Remove the isCurrentUser flag from final output
   }
+
+  async findByPostId(postID: string): Promise<PostLike[]> {
+    return this.postLikeModel.find({ postId: postID }).exec();
+  }  
 }

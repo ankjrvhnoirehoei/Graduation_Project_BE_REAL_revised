@@ -13,7 +13,10 @@ import {
   ParseIntPipe,
   BadRequestException,
   Patch,
+  Res,
+  NotFoundException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from 'src/auth/dto/login.dto';
@@ -26,7 +29,8 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtService } from '@nestjs/jwt';
 import { RelationService } from 'src/relation/relation.service';
 import { SearchUserDto } from './dto/search-user.dto';
-import { ChangeEmailDto, ChangePasswordDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
+import { ChangeEmailDto, ConfirmEmailDto, EditUserDto } from './dto/update-user.dto';
+import { TopFollowerDto } from './dto/top-followers.dto';
 
 @Controller('users')
 export class UserController {
@@ -149,6 +153,7 @@ export class UserController {
 
     // if the current user is asking about themselves, just default to false:
     let userFollowing = false;
+    let userBlocked = false;
     if (currentUserId !== targetUserId) {
       // call RelationService.getRelation(...) to see if there's a follow edge:
       const { relation, userOneIsActing } =
@@ -161,9 +166,11 @@ export class UserController {
         if (userOneIsActing) {
           // currentUserId is “userOne” in the lex order
           userFollowing = oneRel === 'FOLLOW';
+          userBlocked = oneRel === 'BLOCK';
         } else {
           // currentUserId is “userTwo” in the lex order
           userFollowing = twoRel === 'FOLLOW';
+          userBlocked = twoRel === 'BLOCK';
         }
       }
     }
@@ -171,6 +178,7 @@ export class UserController {
     return {
       ...baseProfile,
       userFollowing,
+      userBlocked
     };
   }
 
@@ -282,15 +290,72 @@ export class UserController {
     await this.userService.confirmEmailChange(userId, dto);
     return { message: 'Email updated successfully' };
   }  
+  
+  /*======================== ADMIN-ONLY ========================*/
 
-  // edit password
-  @Patch('password')
+  @Get('admin/top-followers')
   @UseGuards(JwtRefreshAuthGuard)
-  async changePassword(
+  async topFollowers(@CurrentUser('sub') userId: string): Promise<TopFollowerDto[]> {
+    const user = await this.userService.findById(userId);
+    if (!user || typeof user.role !== 'string') {
+      throw new BadRequestException('User role not found.');
+    }
+    if (user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }    
+    return this.userService.getTopFollowers(3);
+  }
+
+  @Get('admin/today-stats')
+  @UseGuards(JwtRefreshAuthGuard)
+  async todayStats(@CurrentUser('sub') userId: string) {
+    const user = await this.userService.findById(userId);
+    if (!user || typeof user.role !== 'string') {
+      throw new BadRequestException('User role not found.');
+    }
+    if (user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }    
+    return this.userService.getTodayStats();
+  }
+
+  @Get('admin/stats/new-accounts')
+  @UseGuards(JwtRefreshAuthGuard)
+  async getDailyNewAccounts(
     @CurrentUser('sub') userId: string,
-    @Body() dto: ChangePasswordDto,
+    @Query('month', ParseIntPipe) month: number,
+  ): Promise<{ month: string; data: { day: number; count: number }[] }> {
+    const user = await this.userService.findById(userId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    return this.userService.getDailyNewAccounts(month);
+  }  
+
+  @Get('admin/search')
+  @UseGuards(JwtRefreshAuthGuard)
+  async adminSearchUser(
+    @CurrentUser('sub') userId: string,
+    @Query('keyword') keyword: string,
   ) {
-    await this.userService.changePassword(userId, dto);
-    return { message: 'Password updated successfully' };
+    const user = await this.userService.findById(userId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    return this.userService.getUserWithInteractions(keyword);
+  }
+
+  @Get('admin/recommended')
+  @UseGuards(JwtRefreshAuthGuard)
+  async getRecommended(
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ) {
+    const user = await this.userService.findById(userId);
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
+    return this.userService.getRecommendedUsers(page, limit);
   }  
 }

@@ -22,10 +22,11 @@ export class CommentService {
     return comment.save();
   }
 
-  async getCommentsByPost(postID: string): Promise<any[]> {
+  async getCommentsByPost(postID: string, currentUserId: string): Promise<any[]> {
     const allComments = await this.commentModel.aggregate([
       { $match: { postID: new Types.ObjectId(postID) } },
 
+      // join user for root & replies
       {
         $lookup: {
           from: 'users',
@@ -89,22 +90,36 @@ export class CommentService {
         },
       },
     ]);
-
     const { rootComments, replies } = allComments[0];
 
     const result = rootComments.map((comment: any) => {
+      // build replies list
       const replyList = replies
-        .filter(
-          (reply: any) => reply.parentID.toString() === comment._id.toString(),
-        )
-        .slice(0, 4);
+        .filter((r: any) => r.parentID.toString() === comment._id.toString())
+        .slice(0, 4)
+        .map((r: any) => {
+          const { likedBy, ...restReply } = r;
+          return {
+            ...restReply,
+            totalLikes: likedBy.length,
+            isLiked: likedBy.some((id: Types.ObjectId) => id.toString() === currentUserId),
+          };
+        });
 
+      // strip out likedBy from root comment
+      const { likedBy, ...restComment } = comment;
       return {
-        ...comment,
+        ...restComment,
+        totalLikes: likedBy.length,
+        isLiked: likedBy.some((id: Types.ObjectId) => id.toString() === currentUserId),
         reply: replyList,
       };
     });
 
     return result;
   }
+
+  async findByPostId(postID: string): Promise<Comment[]> {
+    return this.commentModel.find({ postID: postID }).exec();
+  }    
 }

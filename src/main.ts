@@ -7,8 +7,13 @@ import { SwaggerConfig } from '@app/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors({
-    origin: ['http://localhost:3000', 'http://[::1]:4001'],
+    origin: [
+      'http://localhost:3000',
+      'http://[::1]:4001',
+      'http://localhost:5173',
+    ],
     credentials: true,
+    exposedHeaders: ['Content-Range'], 
   });
   app.use(cookieParser());
   SwaggerConfig(app);

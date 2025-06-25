@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type UserDocument = User & Document;
 
@@ -40,6 +40,9 @@ export class User {
 
   @Prop()
   refreshToken?: string;
+
+  @Prop()
+  role?: string;
 
   @Prop({ default: false })
   deletedAt?: boolean;

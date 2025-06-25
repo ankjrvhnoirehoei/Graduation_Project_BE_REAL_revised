@@ -9,8 +9,9 @@ export class CommentController {
   constructor(private readonly commentService: CommentService) {}
 
   @Get('post/:postID')
-  async getCommentsByPost(@Param('postID') postID: string) {
-    return this.commentService.getCommentsByPost(postID);
+  @UseGuards(JwtRefreshAuthGuard)
+  async getCommentsByPost(@Param('postID') postID: string, @CurrentUser('sub') userId: string,) {
+    return this.commentService.getCommentsByPost(postID, userId);
   }
 
   @Post('add')
