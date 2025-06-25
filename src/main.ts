@@ -15,7 +15,6 @@ async function bootstrap() {
     credentials: true,
     exposedHeaders: ['Content-Range'], 
   });
-  app.use(cookieParser());
   SwaggerConfig(app);
   const configService = app.get(ConfigService);
   const port = configService.get('PORT', 3000);
