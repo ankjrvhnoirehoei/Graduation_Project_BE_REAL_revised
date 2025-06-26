@@ -19,6 +19,7 @@ import { RoomModule } from './room/room.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { MessageModule } from './message/message.module';
 import { LikeCommentModule } from './like-comment/like-comment.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { LikeCommentModule } from './like-comment/like-comment.module';
     RoomModule,
     LikeCommentModule,
     MessageModule,
+    NotificationModule,
   ],
   // providers: [
   //   {

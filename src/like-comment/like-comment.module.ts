@@ -6,6 +6,7 @@ import { LikeCommentController } from './like-comment.controller';
 import { Comment, CommentSchema } from 'src/comment/comment.schema';
 import { User, UserSchema } from 'src/user/user.schema';
 import { RelationModule } from 'src/relation/relation.module';
+import { NotificationModule } from 'src/notification/notification.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { RelationModule } from 'src/relation/relation.module';
       { name: User.name, schema: UserSchema },
     ]),
     RelationModule,
+    NotificationModule,
   ],
   controllers: [LikeCommentController],
   providers: [LikeCommentService],

@@ -1,21 +1,14 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, PipelineStage } from 'mongoose';
 import { CreatePostDto } from './dto/post.dto';
 import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
-import { MusicService } from 'src/music/music.service';
-import { MusicPostDto } from 'src/music/dto/music.dto';
 import { WeeklyPostsDto } from './dto/weekly-posts.dto';
 import { LastTwoWeeksDto } from './dto/last-two-weeks.dto';
-import { PostLikeService } from 'src/like_post/like_post.service';
-import { CommentService } from 'src/comment/comment.service';
 import { TopPostDto } from './dto/top-posts.dto';
-import { UserService } from 'src/user/user.service';
 import { Story, StoryDocument } from '../story/schema/story.schema'
-import { PostLike, PostLikeDocument } from 'src/like_post/like_post.schema';
-import { Comment, CommentDocument } from 'src/comment/comment.schema'; 
 
 interface Pagination {
   currentPage: number;
@@ -31,13 +24,7 @@ export class PostService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
-    private readonly musicService: MusicService,
-    private readonly postLikeService: PostLikeService,
-    private readonly commentService: CommentService,
-    private readonly userService: UserService,
     @InjectModel(Story.name) private storyModel: Model<StoryDocument>,
-    @InjectModel(PostLike.name) private postLikeModel: Model<PostLikeDocument>,
-    @InjectModel(Story.name) private commentModel: Model<CommentDocument>,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -2440,32 +2427,354 @@ export class PostService {
 
     return this.postModel.aggregate(pipeline).exec();
   } 
-  
+
+  async findPostById(
+    postId: string,
+    userId: string
+  ): Promise<any> {
+    const currentUser = new Types.ObjectId(userId);
+    const postObjectId = new Types.ObjectId(postId);
+
+    const pipeline: PipelineStage[] = [
+      // Match the specific post
+      {
+        $match: {
+          _id: postObjectId
+        }
+      },
+      // Add relation lookup 
+      {
+        $lookup: {
+          from: 'relations',
+          let: {
+            pu: '$userID',       
+            cu: currentUser     
+          },
+          pipeline: [
+            {
+              $addFields: {
+                pair: {
+                  $cond: [
+                    { $lt: ['$$cu', '$$pu'] },
+                    { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
+                    { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
+                  ]
+                }
+              }
+            },
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userOneID', '$pair.u1'] },
+                    { $eq: ['$userTwoID', '$pair.u2'] }
+                  ]
+                }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                relation: 1,
+                userOneIsCurrent: '$pair.userOneIsCurrent'
+              }
+            }
+          ],
+          as: 'relationLookup'
+        }
+      },
+      // Process relation status
+      {
+        $addFields: {
+          isFollow: {
+            $let: {
+              vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
+              in: {
+                $cond: [
+                  { $eq: ['$$rel', null] },
+                  false,
+                  {
+                    $switch: {
+                      branches: [
+                        {
+                          case: { $eq: ['$$rel.userOneIsCurrent', true] },
+                          then: { $eq: [{ $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 0] }, 'FOLLOW'] }
+                        },
+                        {
+                          case: { $eq: ['$$rel.userOneIsCurrent', false] },
+                          then: { $eq: [{ $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 1] }, 'FOLLOW'] }
+                        }
+                      ],
+                      default: false
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          relationLookup: 0
+        }
+      },
+      {
+        $addFields: {
+          isFollow: {
+            $cond: [
+              { $eq: ['$userID', currentUser] },
+              '$$REMOVE',
+              '$isFollow'
+            ]
+          }
+        }
+      },
+      // Lookup media
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'media',
+        },
+      },
+      // Lookup user info
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      // Lookup likes
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likes',
+        },
+      },
+      // Lookup comments
+      {
+        $lookup: {
+          from: 'comments',
+          let: { postID: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postID'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'comments',
+        },
+      },
+      // Add counts
+      {
+        $addFields: {
+          commentCount: { $size: '$comments' },
+          likeCount: { $size: '$likes' },
+        },
+      },
+      // Lookup music info
+      {
+        $lookup: {
+          from: 'musics',
+          localField: 'music.musicId',
+          foreignField: '_id',
+          as: 'musicInfo',
+        },
+      },
+      {
+        $unwind: {
+          path: '$musicInfo',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      // Check if current user liked this post
+      {
+        $lookup: {
+          from: 'postlikes',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postId', '$$postId'] },
+                    { $eq: ['$userId', currentUser] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'userLikeEntry',
+        },
+      },
+      {
+        $addFields: {
+          isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
+        },
+      },
+      // Lookup bookmarks
+      {
+        $lookup: {
+          from: 'bookmarkplaylists',
+          let: { uid: currentUser },
+          pipeline: [
+            { 
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userID', '$$uid'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+              }
+            },
+            { $project: { _id: 1 } }
+          ],
+          as: 'myPlaylists'
+        }
+      },
+      {
+        $lookup: {
+          from: 'bookmarkitems',
+          let: { postId: '$_id', pls: '$myPlaylists._id' },
+          pipeline: [
+            { 
+              $match: {
+                $expr: {
+                  $and: [
+                    { $in: ['$playlistID', '$$pls'] },
+                    { $eq: ['$itemID', '$$postId'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+              }
+            },
+            { $limit: 1 }
+          ],
+          as: 'bookmarkEntry'
+        }
+      },
+      {
+        $addFields: {
+          isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] }
+        }
+      },
+      // Final projection 
+      {
+        $project: {
+          _id: 1,
+          userID: 1,
+          type: 1,
+          caption: 1,
+          isFlagged: 1,
+          nsfw: 1,
+          isEnable: 1,
+          location: 1,
+          isArchived: 1,
+          viewCount: 1,
+          share: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          media: 1,
+          isLike: 1,
+          likeCount: 1,
+          commentCount: 1,
+          music: 1,
+          'user._id': 1,
+          'user.handleName': 1,
+          'user.profilePic': 1,
+          'musicInfo.song': 1,
+          'musicInfo.link': 1,
+          'musicInfo.coverImg': 1,
+          'musicInfo.author': 1,
+          isFollow: 1,
+          isBookmarked: 1,
+        },
+      },
+    ];
+
+    const result = await this.postModel.aggregate(pipeline).exec();
+    
+    if (!result || result.length === 0) {
+      throw new NotFoundException('Post not found');
+    }
+
+    return result[0];
+  }  
   
   /*======================== ADMIN-ONLY ========================*/
-
+  
   async getWeeklyPostCounts(): Promise<WeeklyPostsDto[]> {
     const now = new Date();
-    // Calculate last Monday 00:00:00 local time
-    const todayDow = now.getDay();           
-    const daysSinceMonday = (todayDow + 6) % 7;
+    
+    // Calculate this week's Monday 00:00:00 local time
+    const todayDow = now.getDay(); 
+    let daysSinceMonday: number;
+    
+    if (todayDow === 0) {
+      daysSinceMonday = 6;
+    } else {
+      daysSinceMonday = todayDow - 1;
+    }
+    
     const monday = new Date(now);
     monday.setDate(now.getDate() - daysSinceMonday);
     monday.setHours(0, 0, 0, 0);
 
-    // Run aggregation with $dayOfWeek 
+    // Calculate next Monday 00:00:00 (end of current week)
+    const nextMonday = new Date(monday);
+    nextMonday.setDate(monday.getDate() + 7);
+
+    // Run aggregation with timezone-aware day calculation
     const raw = await this.postModel.aggregate([
       { 
         $match: {
           createdAt: { 
-            $gte: monday, 
-            $lte: now 
+            $gte: monday,
+            $lt: nextMonday
           } 
         } 
       },
       {
+        $addFields: {
+          vietnameseDate: {
+            $dateAdd: {
+              startDate: '$createdAt',
+              unit: 'hour',
+              amount: 7
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          // Get day of week in timezone
+          vietnameseDayOfWeek: { $dayOfWeek: '$vietnameseDate' },
+          adjustedDayOfWeek: {
+            $cond: {
+              if: { $eq: [{ $dayOfWeek: '$vietnameseDate' }, 1] }, // If Sunday
+              then: 7, // Make it day 7
+              else: { $subtract: [{ $dayOfWeek: '$vietnameseDate' }, 1] } 
+            }
+          }
+        }
+      },
+      {
         $group: {
-          _id: { $dayOfWeek: '$createdAt' },
+          _id: '$adjustedDayOfWeek',
           count: { $sum: 1 },
         },
       },
@@ -2478,19 +2787,18 @@ export class PostService {
       },
     ]);
 
-    // Prepare full week 
     const labels: Record<number, WeeklyPostsDto['day']> = {
-      2: 'T2', 
-      3: 'T3', 
-      4: 'T4', 
-      5: 'T5', 
-      6: 'T6', 
-      7: 'T7', 
-      1: 'CN', 
+      1: 'T2',
+      2: 'T3',
+      3: 'T4',
+      4: 'T5',
+      5: 'T6', 
+      6: 'T7', 
+      7: 'CN', 
     };
 
     // Initialize zero-filled array in correct order 
-    const dayOrder = [2, 3, 4, 5, 6, 7, 1]; // Monday to Sunday
+    const dayOrder = [1, 2, 3, 4, 5, 6, 7];
     const week: WeeklyPostsDto[] = dayOrder.map(dayNum => ({
       day: labels[dayNum],
       posts: 0
@@ -2510,26 +2818,56 @@ export class PostService {
   async getLastTwoWeeks(): Promise<LastTwoWeeksDto[]> {
     const now = new Date();
 
-    // find this week's Monday 00:00 local
-    const todayDow = now.getDay();                
-    const daysSinceMon = (todayDow + 6) % 7;      
+    // Calculate this week's Monday 00:00 local time
+    const todayDow = now.getDay(); 
+    let daysSinceMonday: number;
+    
+    if (todayDow === 0) {
+      daysSinceMonday = 6;
+    } else {
+      daysSinceMonday = todayDow - 1;
+    }
+    
     const thisMonday = new Date(now);
-    thisMonday.setDate(now.getDate() - daysSinceMon);
+    thisMonday.setDate(now.getDate() - daysSinceMonday);
     thisMonday.setHours(0, 0, 0, 0);
 
-    // define the two full-week windows
-    const prevStart = new Date(thisMonday);
-    prevStart.setDate(thisMonday.getDate() - 7);
-    const beforePrevStart = new Date(thisMonday);
-    beforePrevStart.setDate(thisMonday.getDate() - 14);
+    // Define the two previous full-week windows
+    const prevMonday = new Date(thisMonday);
+    prevMonday.setDate(thisMonday.getDate() - 7);
+    
+    const beforePrevMonday = new Date(thisMonday);
+    beforePrevMonday.setDate(thisMonday.getDate() - 14);
 
-    // aggregate one week
+    // Aggregate one week with timezone-aware day calculation
     const aggregateWeek = (start: Date, end: Date) =>
       this.postModel.aggregate([
         { $match: { createdAt: { $gte: start, $lt: end } } },
         {
+          $addFields: {
+            vietnameseDate: {
+              $dateAdd: {
+                startDate: '$createdAt',
+                unit: 'hour',
+                amount: 7
+              }
+            }
+          }
+        },
+        {
+          $addFields: {
+            adjustedDayOfWeek: {
+              $cond: {
+                if: { $eq: [{ $dayOfWeek: '$vietnameseDate' }, 1] }, // If Sunday
+                then: 7, // Make it day 7
+                else: { $subtract: [{ $dayOfWeek: '$vietnameseDate' }, 1] } 
+              }
+            }
+          }
+        },
+        {
           $group: {
-            _id: { $dayOfWeek: '$createdAt' }, 
+            _id: '$adjustedDayOfWeek',
             count: { $sum: 1 },
           },
         },
@@ -2542,51 +2880,44 @@ export class PostService {
         },
       ]);
 
-    // run both aggregations in parallel
+    // Run both aggregations in parallel
     const [prevRaw, beforeRaw] = await Promise.all([
-      aggregateWeek(prevStart, thisMonday),
-      aggregateWeek(beforePrevStart, prevStart),
+      aggregateWeek(prevMonday, thisMonday), // Previous week: last Monday to this Monday
+      aggregateWeek(beforePrevMonday, prevMonday), // Week before: two Mondays ago to last Monday
     ]);
 
-    // turn each raw array into a map
+    // Turn each raw array into a map
     const prevMap = new Map<number, number>();
     prevRaw.forEach(r => prevMap.set(r.dayOfWeek, r.count));
     const beforeMap = new Map<number, number>();
     beforeRaw.forEach(r => beforeMap.set(r.dayOfWeek, r.count));
 
-    // define the labels and build the result array
     const labels: Record<number, LastTwoWeeksDto['day']> = {
-      2: 'T2', 
-      3: 'T3', 
-      4: 'T4',
-      5: 'T5',
-      6: 'T6',
-      7: 'T7', 
-      1: 'CN', 
+      1: 'T2', 
+      2: 'T3', 
+      3: 'T4', 
+      4: 'T5', 
+      5: 'T6', 
+      6: 'T7', 
+      7: 'CN', 
     };
 
-    return Object.entries(labels).map(([dowStr, label]) => {
-      const dow = Number(dowStr);
-      return {
-        day: label,
-        previousWeek: prevMap.get(dow) ?? 0,
-        beforePrevious: beforeMap.get(dow) ?? 0,
-      };
-    });
-  }  
+    return [1, 2, 3, 4, 5, 6, 7].map(dayNum => ({
+      day: labels[dayNum],
+      previousWeek: prevMap.get(dayNum) ?? 0,
+      beforePrevious: beforeMap.get(dayNum) ?? 0,
+    }));
+  }
 
-  async getTopLikedThisWeek(limit = 10): Promise<TopPostDto[]> {
-    // compute this week's Monday 00:00
+  async getTopLikedThisMonth(limit = 10): Promise<TopPostDto[]> {
+    // compute this month's first day 00:00
     const now = new Date();
-    const dow = now.getDay();          
-    const daysSinceMon = (dow + 6) % 7;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - daysSinceMon);
-    monday.setHours(0, 0, 0, 0);
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    firstDayOfMonth.setHours(0, 0, 0, 0);
 
     // aggregation
     const docs = await this.postModel.aggregate([
-      { $match: { createdAt: { $gte: monday } } },
+      { $match: { createdAt: { $gte: firstDayOfMonth } } },
       // lookup media
       {
         $lookup: {
@@ -2629,7 +2960,6 @@ export class PostService {
         $project: {
           id: '$_id',
           thumbnail: {
-            // flatten all imageUrl/videoUrl from medias
             $map: {
               input: '$medias',
               as: 'm',
@@ -2647,7 +2977,6 @@ export class PostService {
       { $limit: limit },
     ]);
 
-    // convert ObjectIds to strings
     return docs.map(d => ({
       ...d,
       id: d.id.toString(),

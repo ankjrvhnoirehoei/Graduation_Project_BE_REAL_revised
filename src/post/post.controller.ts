@@ -20,6 +20,7 @@ import { WeeklyPostsDto } from './dto/weekly-posts.dto';
 import { UserService } from 'src/user/user.service';
 import { LastTwoWeeksDto } from './dto/last-two-weeks.dto';
 import { TopPostDto } from './dto/top-posts.dto';
+import { Types } from 'mongoose';
 
 @Controller('posts')
 @UseGuards(JwtRefreshAuthGuard)
@@ -263,7 +264,7 @@ export class PostController {
     if (user.role !== 'admin') {
       throw new BadRequestException('Access denied: Admins only.');
     }    
-    return this.postService.getTopLikedThisWeek(10);
+    return this.postService.getTopLikedThisMonth(10);
   }  
 
   @Get('admin/stats/content-distribution')
@@ -319,4 +320,17 @@ export class PostController {
     }
     return this.postService.getSixMonthPostsSummary();
   }  
+
+  @Get(':id')
+  async getPostById(
+    @CurrentUser('sub') userId: string,
+    @Param('id') postId: string,
+  ): Promise<any> {
+    // Validate ObjectId format
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new BadRequestException('Invalid post ID format');
+    }
+
+    return this.postService.findPostById(postId, userId);
+  }
 }

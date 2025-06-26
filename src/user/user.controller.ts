@@ -277,6 +277,13 @@ export class UserController {
     return this.userService.changePassword(userId, body);
   }
 
+  @Post('fcm-token')
+  async updateFcmToken(@Body() body: { userId: string; fcmToken: string }) {
+    const { userId, fcmToken } = body;
+    await this.userService.findByIdAndUpdate(userId, { fcmToken });
+    return { message: 'FCM token saved' };
+  }
+
   // email change: send code + return token
   @Post('email/init-change')
   @UseGuards(JwtRefreshAuthGuard)
