@@ -283,9 +283,33 @@ export class StoryService {
       ownerId: new Types.ObjectId(uid),
       type: StoryType.STORIES,
     });
+
+    // Enrich tags với username + handleName
+    const enrichedTags = await Promise.all(
+      (story.tags || []).map(async (tag) => {
+        try {
+          const user = await this.userService.getUserById(tag.user.toString());
+          return {
+            ...tag,
+            username: user.username || '',
+            handleName: user.handleName || '',
+          };
+        } catch (err) {
+          return {
+            ...tag,
+            username: '',
+            handleName: '',
+          };
+        }
+      }),
+    );
+
     return {
       message: 'Success',
-      data: this.STORY_RESPONSE(story),
+      data: {
+        ...this.STORY_RESPONSE(story),
+        tags: enrichedTags,
+      },
     };
   }
 
