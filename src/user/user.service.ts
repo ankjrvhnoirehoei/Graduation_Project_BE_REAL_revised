@@ -96,6 +96,21 @@ export class UserService {
     return newUser.save();
   }
 
+  async findByIdAndUpdate(userId: string, update: Partial<User>) {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID');
+    }
+    const user = await this.userModel.findByIdAndUpdate(
+      userId,
+      { $set: update },
+      { new: true }
+    );
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user;
+  }
+
   async getUserById(userId: string): Promise<Partial<User>> {
     // console.log('[getUserById] Called with userId:', userId);
 

@@ -46,6 +46,9 @@ export class User {
 
   @Prop({ default: false })
   deletedAt?: boolean;
+
+  @Prop()
+  fcmToken?: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

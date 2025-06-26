@@ -5,7 +5,11 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { User } from '../user/user.schema'; 
 import { Server, Socket } from 'socket.io';
+import { admin } from 'src/firebase';
 
 @WebSocketGateway({
   namespace: '/notification',
@@ -16,6 +20,7 @@ import { Server, Socket } from 'socket.io';
   },
   transports: ['websocket'],
 })
+
 export class NotificationGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
@@ -24,6 +29,10 @@ export class NotificationGateway
 
   //lưu userId - socketId
   private onlineUsers = new Map<string, Set<string>>();
+
+  constructor(
+    @InjectModel(User.name) private readonly userModel: Model<User>,
+  ) {}
 
   //khởi taoh gateway
   afterInit(server: Server) {
@@ -59,17 +68,39 @@ export class NotificationGateway
   }
 
   //gửi thông báo đến người dùng cụ thể
-  sendNotification(receiverId: string, eventName: string, payload: any) {
+  async sendNotification(receiverId: string, eventName: string, payload: any) {
     const socketSet = this.onlineUsers.get(receiverId);
     if (socketSet && socketSet.size > 0) {
       for (const socketId of socketSet) {
         this.server.to(socketId).emit(eventName, payload);
       }
-      console.log(
-        `📨 Sent "${eventName}" to user ${receiverId} (${socketSet.size} socket(s))`,
-      );
+      console.log(`📨 Sent "${eventName}" via socket to ${receiverId}`);
     } else {
-      console.log(`⚠️ User ${receiverId} is offline`);
+      console.log(`⚠️ User ${receiverId} offline. Gửi FCM...`);
+
+      const user = await this.userModel.findById(receiverId);
+      if (user?.fcmToken) {
+        await this.sendFCM(user.fcmToken, payload.caption || 'Bạn có thông báo mới');
+      } else {
+        console.log(`🚫 No FCM token for user ${receiverId}`);
+      }
+    }
+  }
+
+  private async sendFCM(token: string, body: string) {
+    const message = {
+      notification: {
+        title: 'Thông báo mới',
+        body,
+      },
+      token,
+    };
+
+    try {
+      const response = await admin.messaging().send(message);
+      console.log('✅ FCM sent:', response);
+    } catch (err) {
+      console.error('❌ Gửi FCM lỗi:', err.message);
     }
   }
 }
