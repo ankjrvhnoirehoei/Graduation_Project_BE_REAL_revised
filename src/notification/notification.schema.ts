@@ -17,7 +17,7 @@ export class Notification {
   @Prop({ type: [{ type: String }] })
   subjects?: string[];
 
-  @Prop({ type: String, required: true, enum: ['new_post', 'post_like', 'comment'] })
+  @Prop({ type: String, required: true, enum: ['new_post', 'post_like', 'comment', 'reply', 'comment_like', 'new_story', 'story_like', 'follow_request', 'follow'] })
   type: string;
   
   @Prop({ type: String })

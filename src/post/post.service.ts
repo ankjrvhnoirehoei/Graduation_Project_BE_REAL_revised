@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types, PipelineStage } from 'mongoose';
 import { CreatePostDto } from './dto/post.dto';
@@ -2427,7 +2427,293 @@ export class PostService {
 
     return this.postModel.aggregate(pipeline).exec();
   } 
-  
+
+  async findPostById(
+    postId: string,
+    userId: string
+  ): Promise<any> {
+    const currentUser = new Types.ObjectId(userId);
+    const postObjectId = new Types.ObjectId(postId);
+
+    const pipeline: PipelineStage[] = [
+      // Match the specific post
+      {
+        $match: {
+          _id: postObjectId
+        }
+      },
+      // Add relation lookup 
+      {
+        $lookup: {
+          from: 'relations',
+          let: {
+            pu: '$userID',       
+            cu: currentUser     
+          },
+          pipeline: [
+            {
+              $addFields: {
+                pair: {
+                  $cond: [
+                    { $lt: ['$$cu', '$$pu'] },
+                    { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
+                    { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
+                  ]
+                }
+              }
+            },
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userOneID', '$pair.u1'] },
+                    { $eq: ['$userTwoID', '$pair.u2'] }
+                  ]
+                }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                relation: 1,
+                userOneIsCurrent: '$pair.userOneIsCurrent'
+              }
+            }
+          ],
+          as: 'relationLookup'
+        }
+      },
+      // Process relation status
+      {
+        $addFields: {
+          isFollow: {
+            $let: {
+              vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
+              in: {
+                $cond: [
+                  { $eq: ['$$rel', null] },
+                  false,
+                  {
+                    $switch: {
+                      branches: [
+                        {
+                          case: { $eq: ['$$rel.userOneIsCurrent', true] },
+                          then: { $eq: [{ $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 0] }, 'FOLLOW'] }
+                        },
+                        {
+                          case: { $eq: ['$$rel.userOneIsCurrent', false] },
+                          then: { $eq: [{ $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 1] }, 'FOLLOW'] }
+                        }
+                      ],
+                      default: false
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          relationLookup: 0
+        }
+      },
+      {
+        $addFields: {
+          isFollow: {
+            $cond: [
+              { $eq: ['$userID', currentUser] },
+              '$$REMOVE',
+              '$isFollow'
+            ]
+          }
+        }
+      },
+      // Lookup media
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'media',
+        },
+      },
+      // Lookup user info
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      // Lookup likes
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likes',
+        },
+      },
+      // Lookup comments
+      {
+        $lookup: {
+          from: 'comments',
+          let: { postID: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postID'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'comments',
+        },
+      },
+      // Add counts
+      {
+        $addFields: {
+          commentCount: { $size: '$comments' },
+          likeCount: { $size: '$likes' },
+        },
+      },
+      // Lookup music info
+      {
+        $lookup: {
+          from: 'musics',
+          localField: 'music.musicId',
+          foreignField: '_id',
+          as: 'musicInfo',
+        },
+      },
+      {
+        $unwind: {
+          path: '$musicInfo',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      // Check if current user liked this post
+      {
+        $lookup: {
+          from: 'postlikes',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postId', '$$postId'] },
+                    { $eq: ['$userId', currentUser] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'userLikeEntry',
+        },
+      },
+      {
+        $addFields: {
+          isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
+        },
+      },
+      // Lookup bookmarks
+      {
+        $lookup: {
+          from: 'bookmarkplaylists',
+          let: { uid: currentUser },
+          pipeline: [
+            { 
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userID', '$$uid'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+              }
+            },
+            { $project: { _id: 1 } }
+          ],
+          as: 'myPlaylists'
+        }
+      },
+      {
+        $lookup: {
+          from: 'bookmarkitems',
+          let: { postId: '$_id', pls: '$myPlaylists._id' },
+          pipeline: [
+            { 
+              $match: {
+                $expr: {
+                  $and: [
+                    { $in: ['$playlistID', '$$pls'] },
+                    { $eq: ['$itemID', '$$postId'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+              }
+            },
+            { $limit: 1 }
+          ],
+          as: 'bookmarkEntry'
+        }
+      },
+      {
+        $addFields: {
+          isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] }
+        }
+      },
+      // Final projection 
+      {
+        $project: {
+          _id: 1,
+          userID: 1,
+          type: 1,
+          caption: 1,
+          isFlagged: 1,
+          nsfw: 1,
+          isEnable: 1,
+          location: 1,
+          isArchived: 1,
+          viewCount: 1,
+          share: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          media: 1,
+          isLike: 1,
+          likeCount: 1,
+          commentCount: 1,
+          music: 1,
+          'user._id': 1,
+          'user.handleName': 1,
+          'user.profilePic': 1,
+          'musicInfo.song': 1,
+          'musicInfo.link': 1,
+          'musicInfo.coverImg': 1,
+          'musicInfo.author': 1,
+          isFollow: 1,
+          isBookmarked: 1,
+        },
+      },
+    ];
+
+    const result = await this.postModel.aggregate(pipeline).exec();
+    
+    if (!result || result.length === 0) {
+      throw new NotFoundException('Post not found');
+    }
+
+    return result[0];
+  }  
   
   /*======================== ADMIN-ONLY ========================*/
 

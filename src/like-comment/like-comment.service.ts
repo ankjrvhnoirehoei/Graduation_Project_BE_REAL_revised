@@ -5,6 +5,7 @@ import { CommentLike, CommentLikeDocument } from './like-comment.schema';
 import { Comment, CommentDocument } from 'src/comment/comment.schema';
 import { User, UserDocument } from 'src/user/user.schema';
 import { RelationService } from 'src/relation/relation.service';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class LikeCommentService {
@@ -16,26 +17,72 @@ export class LikeCommentService {
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
     private readonly relationService: RelationService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // Toggle like/unlike for a comment.
   async toggleLike(commentId: string, userId: string): Promise<{ liked: boolean }> {
+    // Ensure comment exists
     const comment = await this.commentModel.findById(commentId);
     if (!comment) {
       throw new NotFoundException('Comment not found');
     }
 
+    // Determine whether we're unliking or liking
     const hasLiked = comment.likedBy.some(id => id.toString() === userId);
 
     if (hasLiked) {
+      // unlike 
       comment.likedBy = comment.likedBy.filter(id => id.toString() !== userId);
       await comment.save();
       await this.commentLikeModel.deleteOne({ commentId, userId });
-      return { liked: false };
+      // No notifications on unlike
+      const parent = await this.commentModel
+        .findById(commentId)
+        .select('userID postID')
+        .lean();
+      if (parent) {
+        const commentOwnerId = parent.userID.toString();
+        const postId         = parent.postID.toString();
+
+      await this.notificationService.retractCommentLike(
+        userId,
+        commentOwnerId,
+        postId,
+        commentId,
+      );
+    }
+
+  return { liked: false };
+
     } else {
+      // like  
       comment.likedBy.push(new Types.ObjectId(userId));
       await comment.save();
       await this.commentLikeModel.create({ commentId, userId });
+
+      // Fire notification, but only once ever and not for self-likes
+      const parent = await this.commentModel
+        .findById(commentId)
+        .select('userID postID')
+        .lean();
+      if (!parent) {
+        throw new NotFoundException('Comment not found');
+      }
+
+      const commentOwnerId = parent.userID.toString();
+      const postId         = parent.postID.toString();
+
+      // Skip notifying if you liked your own comment
+      if (commentOwnerId !== userId) {
+        await this.notificationService.notifyCommentLike(
+          userId,
+          commentOwnerId,
+          postId,
+          commentId,
+        );
+      }
+
       return { liked: true };
     }
   }

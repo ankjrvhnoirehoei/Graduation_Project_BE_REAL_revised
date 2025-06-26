@@ -22,22 +22,23 @@ export class PostLikeService {
 
   async like(postId: string, userId: string): Promise<void> {
     const existing = await this.postLikeModel.findOne({ postId, userId });
-    if (existing) {
-      throw new ConflictException('User has already liked this post');
-    }
-    
+    if (existing) throw new ConflictException('User has already liked this post');
+
     await this.postLikeModel.create({ postId, userId });
-    
-    const post = await this.postModel.findById(postId);
-    if (!post) {
-      throw new NotFoundException('Post not found');
-    }
-    
-    const postOwner = post.userID;
+
+    // fetch post to get owner
+    const post = await this.postModel.findById(postId).select('userID').lean();
+    if (!post) throw new NotFoundException('Post not found');
+
+    const postOwner = post.userID.toString();
+
+    // don't notify if liking your own post
+    if (postOwner === userId) return;
+
     await this.notificationService.notifyLike(
-      userId,         
-      postOwner.toString(), 
-      postId
+      userId,
+      postOwner,
+      postId,
     );
   }
       
