@@ -1,9 +1,9 @@
-import { AbstractDocument } from "@app/common";
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Types } from "mongoose";
-import { Music } from "src/music/music.schema";
-import { Document } from "mongoose";
-import { User } from "src/user/user.schema";
+import { AbstractDocument } from '@app/common';
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Types } from 'mongoose';
+import { Music } from 'src/music/music.schema';
+import { Document } from 'mongoose';
+import { User } from 'src/user/user.schema';
 
 export type StoryDocument = Story & Document;
 
@@ -69,6 +69,26 @@ export class Story extends AbstractDocument {
     x: number;
     y: number;
   };
+
+  @Prop({
+    type: [
+      {
+        user: { type: Types.ObjectId, ref: User.name, required: true },
+        position: {
+          x: { type: Number, required: true },
+          y: { type: Number, required: true },
+        },
+      },
+    ],
+    default: [],
+  })
+  tags: {
+    user: Types.ObjectId;
+    position: {
+      x: number;
+      y: number;
+    };
+  }[];
 
   @Prop({ default: Date.now() })
   createdAt: Date;
