@@ -11,10 +11,10 @@ class MusicDto {
   @IsMongoId({ message: 'musicId must be a valid Mongo ID' })
   _id: string;
 
-  @IsNumber()
+  @IsNumber({}, { message: 'time_start should be number' })
   time_start: number;
 
-  @IsNumber()
+  @IsNumber({}, { message: 'time_end should be number' })
   time_end: number;
 }
 
@@ -22,18 +22,18 @@ class ContentDto {
   @IsString()
   text: string;
 
-  @IsNumber()
+  @IsNumber({}, { message: 'x should be number' })
   x: number;
 
-  @IsNumber()
+  @IsNumber({}, { message: 'y should be number' })
   y: number;
 }
 
 class TagPosition {
-  @IsNumber()
+  @IsNumber({}, { message: 'x should be number' })
   x: number;
 
-  @IsNumber()
+  @IsNumber({}, { message: 'y should be number' })
   y: number;
 }
 
