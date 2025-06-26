@@ -88,16 +88,49 @@ export class StoryService {
   async findStoriesByCurUser(userId: string) {
     const uid = new Types.ObjectId(userId);
     let stories = await this.storyRepo.findUserStories(uid);
+
     if (!stories || stories.length === 0) {
       return {
         message: 'Success',
         data: [],
       };
     }
+
     stories = (await this.getStoriesMusic(stories)) as any as Story[];
+
+    const enrichedStories = await Promise.all(
+      stories.map(async (story) => {
+        const enrichedTags = await Promise.all(
+          (story.tags || []).map(async (tag) => {
+            try {
+              const user = await this.userService.getUserById(
+                tag.user.toString(),
+              );
+              return {
+                ...tag,
+                username: user.username || '',
+                handleName: user.handleName || '',
+              };
+            } catch (err) {
+              return {
+                ...tag,
+                username: '',
+                handleName: '',
+              };
+            }
+          }),
+        );
+
+        return {
+          ...story,
+          tags: enrichedTags,
+        };
+      }),
+    );
+
     return {
       message: 'Success',
-      data: stories.map(this.STORY_RESPONSE),
+      data: enrichedStories.map(this.STORY_RESPONSE),
     };
   }
 
