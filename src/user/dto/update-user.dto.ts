@@ -108,3 +108,12 @@ export class ConfirmEmailDto {
   @Length(6, 6, { message: 'Confirmation code must be 6 characters' })
   code: string;
 }
+
+export class ChangePassword {
+  @IsString({ message: 'recentPassword must be string'})
+  @IsNotEmpty({ message: 'recentPassword cannot be missed '})
+  recentPassword: string;
+  @IsString({ message: 'newPassword must be string' })
+  @IsNotEmpty({ message: 'newPassword cannot be missed' })
+  newPassword: string;
+}
