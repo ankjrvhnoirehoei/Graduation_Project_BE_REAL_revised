@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { RegisterDto } from './dto/register.dto';
 import {
   ChangeEmailDto,
+  ChangePassword,
   ConfirmEmailDto,
   EditUserDto,
 } from './dto/update-user.dto';
@@ -22,10 +23,14 @@ import { Relation, RelationDocument } from 'src/relation/relation.schema';
 import { Post, PostDocument } from 'src/post/post.schema';
 import { InteractionPoint } from './dto/search-user.dto'
 import { Story, StoryDocument } from 'src/story/schema/story.schema';
+import { Logger } from '@nestjs/common';
+import { HttpException, HttpStatus } from '@nestjs/common';
+import { error } from 'console';
 
 @Injectable()
 export class UserService {
   private mailer: nodemailer.Transporter;
+  private readonly logger: Logger = new Logger();
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly jwtService: JwtService,
@@ -930,5 +935,48 @@ export class UserService {
         hasPrevPage: page > 1,
       },
     };
-  }  
+  }
+
+  async changePassword(userId: string, body: ChangePassword) {
+    const currentUser = await this.userModel.findById(userId).exec();
+    if (!currentUser) {
+      throw new HttpException(
+        { 
+          statusCode: HttpStatus.NOT_FOUND,
+          message: 'failed',
+          error: 'User not found'
+        },
+        HttpStatus.NOT_FOUND
+      );
+    }
+
+    const isCurrentPasswordCorrect = bcrypt.compareSync(
+      body.recentPassword,
+      currentUser.password
+    );
+    if (!isCurrentPasswordCorrect) {
+      throw new HttpException(
+        { 
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: 'failed',
+          error: 'Incorrect current password'
+        },
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    await this.userModel.findByIdAndUpdate(
+      userId,
+      { password: bcrypt.hashSync(body.newPassword, 10) }
+    ).exec();
+
+    const { password, ...cleanResponse } = currentUser.toObject();
+    
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'success',
+      data: cleanResponse
+    };
+  }
+
 }
