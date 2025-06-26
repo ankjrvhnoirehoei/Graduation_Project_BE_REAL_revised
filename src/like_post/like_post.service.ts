@@ -1,6 +1,6 @@
 import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, PipelineStage, Types } from 'mongoose';
 import { PostLike, PostLikeDocument } from './like_post.schema';
 import { Post, PostDocument } from 'src/post/post.schema';
 import { User, UserDocument } from 'src/user/user.schema'; 
@@ -58,76 +58,363 @@ export class PostLikeService {
     page: number = 1, 
     limit: number = 20
   ): Promise<{ posts: any[], totalCount: number, totalPages: number, currentPage: number }> {
-    // calculate skip value for pagination
+    const currentUser = new Types.ObjectId(userId);
     const skip = (page - 1) * limit;
 
-    // get all post IDs liked by the user (ordered by creation time, newest first)
-    const likedPostRecords = await this.postLikeModel
-      .find({ userId })
-      .select('postId')
-      .sort({ createdAt: -1 })
-      .lean();
+    // Build the aggregation pipeline for liked posts
+    const basePipeline: PipelineStage[] = [
+      // Start from postlikes collection to maintain chronological order of likes
+      {
+        $match: {
+          userId: currentUser
+        }
+      },
+      // Sort by when the post was liked (newest likes first)
+      {
+        $sort: { createdAt: -1 }
+      },
+      // Join with posts collection
+      {
+        $lookup: {
+          from: 'posts',
+          localField: 'postId',
+          foreignField: '_id',
+          as: 'post'
+        }
+      },
+      {
+        $unwind: '$post'
+      },
+      // Filter out disabled, NSFW, or non-post/reel content
+      {
+        $match: {
+          'post.isEnable': true,
+          'post.nsfw': false,
+          'post.type': { $in: ['post', 'reel'] }
+        }
+      },
+      // Replace root with post document but keep like timestamp for sorting
+      {
+        $replaceRoot: {
+          newRoot: {
+            $mergeObjects: [
+              '$post',
+              { likedAt: '$createdAt' } // Keep track of when it was liked
+            ]
+          }
+        }
+      },
+      // Add relation lookup (same as main feed)
+      {
+        $lookup: {
+          from: 'relations',
+          let: {
+            pu: '$userID',       
+            cu: currentUser     
+          },
+          pipeline: [
+            {
+              $addFields: {
+                pair: {
+                  $cond: [
+                    { $lt: ['$$cu', '$$pu'] },
+                    { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
+                    { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false }
+                  ]
+                }
+              }
+            },
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userOneID', '$pair.u1'] },
+                    { $eq: ['$userTwoID', '$pair.u2'] }
+                  ]
+                }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                relation: 1,
+                userOneIsCurrent: '$pair.userOneIsCurrent'
+              }
+            }
+          ],
+          as: 'relationLookup'
+        }
+      },
+      // Process relation status
+      {
+        $addFields: {
+          isFollow: {
+            $let: {
+              vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
+              in: {
+                $cond: [
+                  { $eq: ['$$rel', null] },
+                  false,
+                  {
+                    $switch: {
+                      branches: [
+                        {
+                          case: { $eq: ['$$rel.userOneIsCurrent', true] },
+                          then: { $eq: [{ $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 0] }, 'FOLLOW'] }
+                        },
+                        {
+                          case: { $eq: ['$$rel.userOneIsCurrent', false] },
+                          then: { $eq: [{ $arrayElemAt: [{ $split: ['$$rel.relation', '_'] }, 1] }, 'FOLLOW'] }
+                        }
+                      ],
+                      default: false
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          relationLookup: 0
+        }
+      },
+      {
+        $addFields: {
+          isFollow: {
+            $cond: [
+              { $eq: ['$userID', currentUser] },
+              '$$REMOVE',
+              '$isFollow'
+            ]
+          }
+        }
+      },
+      // Check for hidden posts
+      {
+        $lookup: {
+          from: 'hiddenposts',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'hidden',
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $not: {
+              $in: [currentUser, '$hidden.userId'],
+            },
+          }
+        },
+      },
+      // Lookup media
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'media',
+        },
+      },
+      // Lookup user info
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      // Lookup likes
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likes',
+        },
+      },
+      // Lookup comments
+      {
+        $lookup: {
+          from: 'comments',
+          let: { postID: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postID'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'comments',
+        },
+      },
+      // Add counts
+      {
+        $addFields: {
+          commentCount: { $size: '$comments' },
+          likeCount: { $size: '$likes' },
+        },
+      },
+      // Lookup music info
+      {
+        $lookup: {
+          from: 'musics',
+          localField: 'music.musicId',
+          foreignField: '_id',
+          as: 'musicInfo',
+        },
+      },
+      {
+        $unwind: {
+          path: '$musicInfo',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      // Check if current user liked (should always be true for this endpoint)
+      {
+        $lookup: {
+          from: 'postlikes',
+          let: { postId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postId', '$$postId'] },
+                    { $eq: ['$userId', currentUser] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'userLikeEntry',
+        },
+      },
+      {
+        $addFields: {
+          isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
+        },
+      },
+      // Lookup bookmarks
+      {
+        $lookup: {
+          from: 'bookmarkplaylists',
+          let: { uid: currentUser },
+          pipeline: [
+            { 
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userID', '$$uid'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+              }
+            },
+            { $project: { _id: 1 } }
+          ],
+          as: 'myPlaylists'
+        }
+      },
+      {
+        $lookup: {
+          from: 'bookmarkitems',
+          let: { postId: '$_id', pls: '$myPlaylists._id' },
+          pipeline: [
+            { 
+              $match: {
+                $expr: {
+                  $and: [
+                    { $in: ['$playlistID', '$$pls'] },
+                    { $eq: ['$itemID', '$$postId'] },
+                    { $eq: ['$isDeleted', false] }
+                  ]
+                }
+              }
+            },
+            { $limit: 1 }
+          ],
+          as: 'bookmarkEntry'
+        }
+      },
+      {
+        $addFields: {
+          isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] }
+        }
+      },
+      // Final projection to match main feed format
+      {
+        $project: {
+          _id: 1,
+          userID: 1,
+          type: 1,
+          caption: 1,
+          isFlagged: 1,
+          nsfw: 1,
+          isEnable: 1,
+          location: 1,
+          isArchived: 1,
+          viewCount: 1,
+          share: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          media: 1,
+          isLike: 1,
+          likeCount: 1,
+          commentCount: 1,
+          music: 1,
+          'user._id': 1,
+          'user.handleName': 1,
+          'user.profilePic': 1,
+          'musicInfo.song': 1,
+          'musicInfo.link': 1,
+          'musicInfo.coverImg': 1,
+          'musicInfo.author': 1,
+          isFollow: 1,
+          isBookmarked: 1,
+          likedAt: 1, // Include when it was liked for potential future use
+        },
+      },
+    ];
 
-    const likedPostIds = likedPostRecords.map(record => record.postId);
+    // Get total count
+    const countResult = await this.postLikeModel
+      .aggregate([
+        ...basePipeline,
+        { $count: 'count' }
+      ])
+      .exec();
 
-    if (likedPostIds.length === 0) {
-      return {
-        posts: [],
-        totalCount: 0,
-        totalPages: 0,
-        currentPage: page
-      };
-    }
+    const totalCount = countResult[0]?.count ?? 0;
+    const totalPages = Math.ceil(totalCount / limit) || 1;
 
-    // get total count of enabled posts that user has liked
-    const totalEnabledPosts = await this.postModel.countDocuments({
-      _id: { $in: likedPostIds },
-      isEnable: { $ne: false }
-    });
-
-    // fetch the actual posts with pagination and only enabled posts
-    const posts = await this.postModel
-      .find({ 
-        _id: { $in: likedPostIds },
-        isEnable: { $ne: false }
-      })
-      .select({
-        userID: 1,
-        musicID: 1,
-        type: 1,
-        caption: 1,
-        isFlagged: 1,
-        nsfw: 1,
-        isEnable: 1,
-        location: 1,
-        isArchived: 1,
-        viewCount: 1
-      })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const transformedPosts = posts.map(post => ({
-      _id: post._id,
-      userID: post.userID,
-      musicID: post.music?.musicId || null,
-      type: post.type,
-      caption: post.caption || null,
-      isFlagged: post.isFlagged || false,
-      nsfw: post.nsfw || false,
-      isEnable: post.isEnable !== false, 
-      location: post.location || null,
-      isArchived: post.isArchived || false,
-      viewCount: post.viewCount || 0
-    }));
+    // Get paginated results (maintain like chronological order)
+    const posts = await this.postLikeModel
+      .aggregate([
+        ...basePipeline,
+        { $sort: { likedAt: -1 } }, // Sort by when liked
+        { $skip: skip },
+        { $limit: limit },
+      ])
+      .exec();
 
     return {
-      posts: transformedPosts,
-      totalCount: totalEnabledPosts,
-      totalPages: Math.ceil(totalEnabledPosts / limit),
+      posts,
+      totalCount,
+      totalPages,
       currentPage: page
     };
-  }  
+  }
   
 async getPostLikers(postId: string, currentUserId: string) {
   const likes = await this.postLikeModel

@@ -136,15 +136,15 @@ export class NotificationService {
         const [first, ...rest] = likers;
         const count = rest.length;
         const postCaption = n.postId?.caption?.trim();
+
         // Build caption
         let humanText = `${first.handleName}`;
         if (count > 0) {
-          humanText += ` and ${count} other${count > 1 ? 's' : ''}`;
-          humanText += ` have liked your `;
+          humanText += ` và ${count} người khác đã thích `;
         } else {
-          humanText += ` has liked your `;
+          humanText += ` đã thích `;
         }
-        humanText += postCaption ? `"${postCaption}".` : `post.`;
+        humanText += postCaption ? `bài viết "${postCaption}" của bạn.` : `bài viết của bạn.`;
 
         return {
           id: n._id.toString(),
