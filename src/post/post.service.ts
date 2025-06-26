@@ -5,17 +5,10 @@ import { CreatePostDto } from './dto/post.dto';
 import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
-import { MusicService } from 'src/music/music.service';
-import { MusicPostDto } from 'src/music/dto/music.dto';
 import { WeeklyPostsDto } from './dto/weekly-posts.dto';
 import { LastTwoWeeksDto } from './dto/last-two-weeks.dto';
-import { PostLikeService } from 'src/like_post/like_post.service';
-import { CommentService } from 'src/comment/comment.service';
 import { TopPostDto } from './dto/top-posts.dto';
-import { UserService } from 'src/user/user.service';
 import { Story, StoryDocument } from '../story/schema/story.schema'
-import { PostLike, PostLikeDocument } from 'src/like_post/like_post.schema';
-import { Comment, CommentDocument } from 'src/comment/comment.schema'; 
 
 interface Pagination {
   currentPage: number;
@@ -31,13 +24,7 @@ export class PostService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
-    private readonly musicService: MusicService,
-    private readonly postLikeService: PostLikeService,
-    private readonly commentService: CommentService,
-    private readonly userService: UserService,
     @InjectModel(Story.name) private storyModel: Model<StoryDocument>,
-    @InjectModel(PostLike.name) private postLikeModel: Model<PostLikeDocument>,
-    @InjectModel(Story.name) private commentModel: Model<CommentDocument>,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {

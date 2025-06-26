@@ -1,10 +1,11 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { PostLike, PostLikeDocument } from './like_post.schema';
 import { Post, PostDocument } from 'src/post/post.schema';
 import { User, UserDocument } from 'src/user/user.schema'; 
 import { RelationService } from 'src/relation/relation.service';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class PostLikeService {
@@ -16,6 +17,7 @@ export class PostLikeService {
     @InjectModel(User.name)  
     private userModel: Model<UserDocument>, 
     private readonly relationService: RelationService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async like(postId: string, userId: string): Promise<void> {
@@ -23,11 +25,32 @@ export class PostLikeService {
     if (existing) {
       throw new ConflictException('User has already liked this post');
     }
+    
     await this.postLikeModel.create({ postId, userId });
+    
+    const post = await this.postModel.findById(postId);
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+    
+    const postOwner = post.userID;
+    await this.notificationService.notifyLike(
+      userId,         
+      postOwner.toString(), 
+      postId
+    );
   }
-
+      
   async unlike(postId: string, userId: string): Promise<void> {
     await this.postLikeModel.deleteOne({ postId, userId });
+
+    const post = await this.postModel.findById(postId);
+    if (!post) throw new NotFoundException('Post not found');
+
+    const postOwner = post.userID.toString();
+    if (postOwner === userId) return;
+
+    await this.notificationService.retractLike(userId, postOwner, postId);
   }
   
   async getLikedPosts(
