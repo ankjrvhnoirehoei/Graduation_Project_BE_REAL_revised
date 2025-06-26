@@ -264,7 +264,7 @@ export class PostController {
     if (user.role !== 'admin') {
       throw new BadRequestException('Access denied: Admins only.');
     }    
-    return this.postService.getTopLikedThisWeek(10);
+    return this.postService.getTopLikedThisMonth(10);
   }  
 
   @Get('admin/stats/content-distribution')

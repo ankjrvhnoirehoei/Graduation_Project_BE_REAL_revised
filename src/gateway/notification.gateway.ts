@@ -9,7 +9,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from '../user/user.schema'; 
 import { Server, Socket } from 'socket.io';
-import { admin } from 'src/firebase';
+// import { admin } from 'src/firebase';
 
 @WebSocketGateway({
   namespace: '/notification',
@@ -79,28 +79,28 @@ export class NotificationGateway
       console.log(`⚠️ User ${receiverId} offline. Gửi FCM...`);
 
       const user = await this.userModel.findById(receiverId);
-      if (user?.fcmToken) {
-        await this.sendFCM(user.fcmToken, payload.caption || 'Bạn có thông báo mới');
-      } else {
-        console.log(`🚫 No FCM token for user ${receiverId}`);
-      }
+      // if (user?.fcmToken) {
+      //   await this.sendFCM(user.fcmToken, payload.caption || 'Bạn có thông báo mới');
+      // } else {
+      //   console.log(`🚫 No FCM token for user ${receiverId}`);
+      // }
     }
   }
 
-  private async sendFCM(token: string, body: string) {
-    const message = {
-      notification: {
-        title: 'Thông báo mới',
-        body,
-      },
-      token,
-    };
+  // private async sendFCM(token: string, body: string) {
+  //   const message = {
+  //     notification: {
+  //       title: 'Thông báo mới',
+  //       body,
+  //     },
+  //     token,
+  //   };
 
-    try {
-      const response = await admin.messaging().send(message);
-      console.log('✅ FCM sent:', response);
-    } catch (err) {
-      console.error('❌ Gửi FCM lỗi:', err.message);
-    }
-  }
+  //   try {
+  //     const response = await admin.messaging().send(message);
+  //     console.log('✅ FCM sent:', response);
+  //   } catch (err) {
+  //     console.error('❌ Gửi FCM lỗi:', err.message);
+  //   }
+  // }
 }

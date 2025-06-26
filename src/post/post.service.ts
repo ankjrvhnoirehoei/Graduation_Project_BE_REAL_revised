@@ -2716,29 +2716,65 @@ export class PostService {
   }  
   
   /*======================== ADMIN-ONLY ========================*/
-
+  
   async getWeeklyPostCounts(): Promise<WeeklyPostsDto[]> {
     const now = new Date();
-    // Calculate last Monday 00:00:00 local time
-    const todayDow = now.getDay();           
-    const daysSinceMonday = (todayDow + 6) % 7;
+    
+    // Calculate this week's Monday 00:00:00 local time
+    const todayDow = now.getDay(); 
+    let daysSinceMonday: number;
+    
+    if (todayDow === 0) {
+      daysSinceMonday = 6;
+    } else {
+      daysSinceMonday = todayDow - 1;
+    }
+    
     const monday = new Date(now);
     monday.setDate(now.getDate() - daysSinceMonday);
     monday.setHours(0, 0, 0, 0);
 
-    // Run aggregation with $dayOfWeek 
+    // Calculate next Monday 00:00:00 (end of current week)
+    const nextMonday = new Date(monday);
+    nextMonday.setDate(monday.getDate() + 7);
+
+    // Run aggregation with timezone-aware day calculation
     const raw = await this.postModel.aggregate([
       { 
         $match: {
           createdAt: { 
-            $gte: monday, 
-            $lte: now 
+            $gte: monday,
+            $lt: nextMonday
           } 
         } 
       },
       {
+        $addFields: {
+          vietnameseDate: {
+            $dateAdd: {
+              startDate: '$createdAt',
+              unit: 'hour',
+              amount: 7
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          // Get day of week in timezone
+          vietnameseDayOfWeek: { $dayOfWeek: '$vietnameseDate' },
+          adjustedDayOfWeek: {
+            $cond: {
+              if: { $eq: [{ $dayOfWeek: '$vietnameseDate' }, 1] }, // If Sunday
+              then: 7, // Make it day 7
+              else: { $subtract: [{ $dayOfWeek: '$vietnameseDate' }, 1] } 
+            }
+          }
+        }
+      },
+      {
         $group: {
-          _id: { $dayOfWeek: '$createdAt' },
+          _id: '$adjustedDayOfWeek',
           count: { $sum: 1 },
         },
       },
@@ -2751,19 +2787,18 @@ export class PostService {
       },
     ]);
 
-    // Prepare full week 
     const labels: Record<number, WeeklyPostsDto['day']> = {
-      2: 'T2', 
-      3: 'T3', 
-      4: 'T4', 
-      5: 'T5', 
-      6: 'T6', 
-      7: 'T7', 
-      1: 'CN', 
+      1: 'T2',
+      2: 'T3',
+      3: 'T4',
+      4: 'T5',
+      5: 'T6', 
+      6: 'T7', 
+      7: 'CN', 
     };
 
     // Initialize zero-filled array in correct order 
-    const dayOrder = [2, 3, 4, 5, 6, 7, 1]; // Monday to Sunday
+    const dayOrder = [1, 2, 3, 4, 5, 6, 7];
     const week: WeeklyPostsDto[] = dayOrder.map(dayNum => ({
       day: labels[dayNum],
       posts: 0
@@ -2783,26 +2818,56 @@ export class PostService {
   async getLastTwoWeeks(): Promise<LastTwoWeeksDto[]> {
     const now = new Date();
 
-    // find this week's Monday 00:00 local
-    const todayDow = now.getDay();                
-    const daysSinceMon = (todayDow + 6) % 7;      
+    // Calculate this week's Monday 00:00 local time
+    const todayDow = now.getDay(); 
+    let daysSinceMonday: number;
+    
+    if (todayDow === 0) {
+      daysSinceMonday = 6;
+    } else {
+      daysSinceMonday = todayDow - 1;
+    }
+    
     const thisMonday = new Date(now);
-    thisMonday.setDate(now.getDate() - daysSinceMon);
+    thisMonday.setDate(now.getDate() - daysSinceMonday);
     thisMonday.setHours(0, 0, 0, 0);
 
-    // define the two full-week windows
-    const prevStart = new Date(thisMonday);
-    prevStart.setDate(thisMonday.getDate() - 7);
-    const beforePrevStart = new Date(thisMonday);
-    beforePrevStart.setDate(thisMonday.getDate() - 14);
+    // Define the two previous full-week windows
+    const prevMonday = new Date(thisMonday);
+    prevMonday.setDate(thisMonday.getDate() - 7);
+    
+    const beforePrevMonday = new Date(thisMonday);
+    beforePrevMonday.setDate(thisMonday.getDate() - 14);
 
-    // aggregate one week
+    // Aggregate one week with timezone-aware day calculation
     const aggregateWeek = (start: Date, end: Date) =>
       this.postModel.aggregate([
         { $match: { createdAt: { $gte: start, $lt: end } } },
         {
+          $addFields: {
+            vietnameseDate: {
+              $dateAdd: {
+                startDate: '$createdAt',
+                unit: 'hour',
+                amount: 7
+              }
+            }
+          }
+        },
+        {
+          $addFields: {
+            adjustedDayOfWeek: {
+              $cond: {
+                if: { $eq: [{ $dayOfWeek: '$vietnameseDate' }, 1] }, // If Sunday
+                then: 7, // Make it day 7
+                else: { $subtract: [{ $dayOfWeek: '$vietnameseDate' }, 1] } 
+              }
+            }
+          }
+        },
+        {
           $group: {
-            _id: { $dayOfWeek: '$createdAt' }, 
+            _id: '$adjustedDayOfWeek',
             count: { $sum: 1 },
           },
         },
@@ -2815,51 +2880,44 @@ export class PostService {
         },
       ]);
 
-    // run both aggregations in parallel
+    // Run both aggregations in parallel
     const [prevRaw, beforeRaw] = await Promise.all([
-      aggregateWeek(prevStart, thisMonday),
-      aggregateWeek(beforePrevStart, prevStart),
+      aggregateWeek(prevMonday, thisMonday), // Previous week: last Monday to this Monday
+      aggregateWeek(beforePrevMonday, prevMonday), // Week before: two Mondays ago to last Monday
     ]);
 
-    // turn each raw array into a map
+    // Turn each raw array into a map
     const prevMap = new Map<number, number>();
     prevRaw.forEach(r => prevMap.set(r.dayOfWeek, r.count));
     const beforeMap = new Map<number, number>();
     beforeRaw.forEach(r => beforeMap.set(r.dayOfWeek, r.count));
 
-    // define the labels and build the result array
     const labels: Record<number, LastTwoWeeksDto['day']> = {
-      2: 'T2', 
-      3: 'T3', 
-      4: 'T4',
-      5: 'T5',
-      6: 'T6',
-      7: 'T7', 
-      1: 'CN', 
+      1: 'T2', 
+      2: 'T3', 
+      3: 'T4', 
+      4: 'T5', 
+      5: 'T6', 
+      6: 'T7', 
+      7: 'CN', 
     };
 
-    return Object.entries(labels).map(([dowStr, label]) => {
-      const dow = Number(dowStr);
-      return {
-        day: label,
-        previousWeek: prevMap.get(dow) ?? 0,
-        beforePrevious: beforeMap.get(dow) ?? 0,
-      };
-    });
-  }  
+    return [1, 2, 3, 4, 5, 6, 7].map(dayNum => ({
+      day: labels[dayNum],
+      previousWeek: prevMap.get(dayNum) ?? 0,
+      beforePrevious: beforeMap.get(dayNum) ?? 0,
+    }));
+  }
 
-  async getTopLikedThisWeek(limit = 10): Promise<TopPostDto[]> {
-    // compute this week's Monday 00:00
+  async getTopLikedThisMonth(limit = 10): Promise<TopPostDto[]> {
+    // compute this month's first day 00:00
     const now = new Date();
-    const dow = now.getDay();          
-    const daysSinceMon = (dow + 6) % 7;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - daysSinceMon);
-    monday.setHours(0, 0, 0, 0);
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    firstDayOfMonth.setHours(0, 0, 0, 0);
 
     // aggregation
     const docs = await this.postModel.aggregate([
-      { $match: { createdAt: { $gte: monday } } },
+      { $match: { createdAt: { $gte: firstDayOfMonth } } },
       // lookup media
       {
         $lookup: {
@@ -2902,7 +2960,6 @@ export class PostService {
         $project: {
           id: '$_id',
           thumbnail: {
-            // flatten all imageUrl/videoUrl from medias
             $map: {
               input: '$medias',
               as: 'm',
@@ -2920,7 +2977,6 @@ export class PostService {
       { $limit: limit },
     ]);
 
-    // convert ObjectIds to strings
     return docs.map(d => ({
       ...d,
       id: d.id.toString(),
