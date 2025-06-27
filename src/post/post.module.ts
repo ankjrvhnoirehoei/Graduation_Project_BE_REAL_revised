@@ -12,6 +12,8 @@ import { Story, StorySchema } from 'src/story/schema/story.schema';
 import { StoryModule } from 'src/story/story.module';
 import { PostLike, PostLikeSchema } from 'src/like_post/like_post.schema';
 import { Comment, CommentSchema } from 'src/comment/comment.schema';
+import { NotificationModule } from 'src/notification/notification.module';
+import { RelationModule } from 'src/relation/relation.module';
 @Module({
   imports: [
     DatabaseModule.forFeature([{ name: Post.name, schema: PostSchema }, {name: Story.name, schema: StorySchema}, {name: PostLike.name, schema: PostLikeSchema}, {name: Comment.name, schema: CommentSchema}]),
@@ -21,6 +23,9 @@ import { Comment, CommentSchema } from 'src/comment/comment.schema';
     PostLikeModule,
     CommentModule,
     StoryModule,
+    NotificationModule,
+    UserModule,
+    RelationModule,
   ],
   controllers: [PostController],
   providers: [PostService],
