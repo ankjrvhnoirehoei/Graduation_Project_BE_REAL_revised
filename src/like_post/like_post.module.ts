@@ -16,7 +16,7 @@ import { NotificationModule } from 'src/notification/notification.module';
       { name: 'User', schema: UserSchema },
     ]),
     RelationModule,
-    NotificationModule,
+    forwardRef(() => NotificationModule),
   ],
   controllers: [PostLikeController],
   providers: [PostLikeService],

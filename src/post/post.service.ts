@@ -9,6 +9,9 @@ import { WeeklyPostsDto } from './dto/weekly-posts.dto';
 import { LastTwoWeeksDto } from './dto/last-two-weeks.dto';
 import { TopPostDto } from './dto/top-posts.dto';
 import { Story, StoryDocument } from '../story/schema/story.schema'
+import { RelationService } from 'src/relation/relation.service';
+import { NotificationService } from 'src/notification/notification.service';
+import { UserService } from 'src/user/user.service';
 
 interface Pagination {
   currentPage: number;
@@ -24,6 +27,9 @@ export class PostService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
+    private readonly relationService: RelationService,
+    private readonly notificationService: NotificationService,
+    private readonly userService: UserService,
     @InjectModel(Story.name) private storyModel: Model<StoryDocument>,
   ) {}
 
@@ -38,25 +44,18 @@ export class PostService {
   async createPostWithMediaAndMusic(postWithMediaDto: {
     post: CreatePostDto;
     media: CreateMediaDto[];
-    music?: {
-      musicId: string;
-      timeStart: number;
-      timeEnd: number;
-    };
+    music?: { musicId: string; timeStart: number; timeEnd: number };
   }): Promise<{
     post: Post;
     media: any[];
-    music?: {
-      musicId: string;
-      timeStart: number;
-      timeEnd: number;
-    };
+    music?: { musicId: string; timeStart: number; timeEnd: number };
   }> {
     const userId = postWithMediaDto.post.userID;
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid userID from token');
     }
 
+    // Assemble and save the Post 
     const postData: any = {
       ...postWithMediaDto.post,
       userID: new Types.ObjectId(userId),
@@ -64,50 +63,84 @@ export class PostService {
       isEnable: postWithMediaDto.post.isEnable ?? true,
     };
 
-    let musicObject:
-      | {
-          musicId: Types.ObjectId;
-          timeStart: number;
-          timeEnd: number;
-        }
-      | undefined = undefined;
-
+    // Optional music
     if (postWithMediaDto.music) {
       const { musicId, timeStart, timeEnd } = postWithMediaDto.music;
-
       if (!Types.ObjectId.isValid(musicId)) {
         throw new BadRequestException('Invalid musicID');
       }
-
-      musicObject = {
+      postData.music = {
         musicId: new Types.ObjectId(musicId),
         timeStart,
         timeEnd,
       };
-
-      postData.music = musicObject;
     }
 
     const createdPost = await this.create(postData);
-    const postId = (createdPost as any)._id;
+    const postIdStr = (createdPost as any)._id.toString();
 
+    // Save media 
     const mediaCreated = await Promise.all(
-      postWithMediaDto.media.map(async (media) => {
-        return this.mediaService.create({
-          ...media,
-          postID: postId,
-        });
-      }),
+      postWithMediaDto.media.map(m =>
+        this.mediaService.create({ ...m, postID: postIdStr }),
+      ),
     );
 
+    const firstMedia = mediaCreated[0] as any; 
+    const mediaLink =
+      firstMedia?.imageUrl
+        ? firstMedia.imageUrl
+        : firstMedia?.videoUrl
+        ? firstMedia.videoUrl
+        : null;
+
+    // Fetch all current followers of this user 
+    const relRecords = await this.relationService.findByUserAndFilter(
+      userId,
+      'followers',
+    );
+    const followerIds = [
+      ...new Set(
+        relRecords
+          .map(r => {
+            const u1 = r.userOneID.toString();
+            const u2 = r.userTwoID.toString();
+            if (u2 === userId && r.relation.startsWith('FOLLOW_')) return u1;
+            if (u1 === userId && r.relation.endsWith('_FOLLOW')) return u2;
+            return null;
+          })
+          .filter((id): id is string => !!id),
+      ),
+    ];
+
+    // Build a caption string 
+    const me = await this.userService.getUserById(userId);
+    const handleName = me.handleName || me.username;
+    const base = `${handleName} đã đăng bài mới`;
+    const caption = postWithMediaDto.post.caption
+      ? `${base}: ${postWithMediaDto.post.caption}`
+      : `${base}.`;
+
+    // Fire the “new_post” notification to all followers 
+    await this.notificationService.notify({
+      actor: userId,
+      recipients: followerIds,
+      postId: postIdStr,
+      type: 'new_post',
+      caption,
+      image: mediaLink,
+      subjects: [],
+    });
+
+    // Return the created post payload 
     return {
       post: createdPost,
       media: mediaCreated,
-      music: musicObject
+      music: postWithMediaDto.music
         ? {
-            musicId: musicObject.musicId.toString(),
-            timeStart: musicObject.timeStart,
-            timeEnd: musicObject.timeEnd,
+            musicId: postWithMediaDto.music.musicId,
+            timeStart: postWithMediaDto.music.timeStart,
+            timeEnd: postWithMediaDto.music.timeEnd,
           }
         : undefined,
     };

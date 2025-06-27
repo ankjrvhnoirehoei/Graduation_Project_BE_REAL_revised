@@ -9,6 +9,7 @@ import { UserService } from 'src/user/user.service';
 import { UpdateHighlightDto } from './dto/update-highlight.dto';
 import { Story, StoryType } from './schema/story.schema';
 import { MusicService } from 'src/music/music.service';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class StoryService {
@@ -18,6 +19,7 @@ export class StoryService {
     private readonly relationServ: RelationService,
     private readonly userService: UserService,
     private readonly musicService: MusicService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // STANDARDIZE FOR STORY & RESPONSE
@@ -317,7 +319,7 @@ export class StoryService {
       type: StoryType.STORIES,
     });
 
-    // Enrich tags với username + handleName
+    // enrich tags
     const enrichedTags = await Promise.all(
       (story.tags || []).map(async (tag) => {
         try {
@@ -327,15 +329,47 @@ export class StoryService {
             username: user.username || '',
             handleName: user.handleName || '',
           };
-        } catch (err) {
-          return {
-            ...tag,
-            username: '',
-            handleName: '',
-          };
+        } catch {
+          return { ...tag, username: '', handleName: '' };
         }
       }),
     );
+
+    // fetch all followers
+    const relRecords = await this.relationServ.findByUserAndFilter(
+      uid,
+      'followers',
+    );
+
+    const followerIds = [
+      ...new Set(
+        relRecords
+          .map(r => {
+            const u1 = r.userOneID.toString();
+            const u2 = r.userTwoID.toString();
+            if (u2 === uid && r.relation.startsWith('FOLLOW_')) return u1;
+            if (u1 === uid && r.relation.endsWith('_FOLLOW')) return u2;
+            return null;
+          })
+          .filter((id): id is string => !!id),
+      ),
+    ];
+
+    // build caption 
+    const me = await this.userService.getUserById(uid);
+    const handleName = me.handleName || me.username;
+    const caption = `${handleName} đã đăng một story mới.`;
+
+    // fire notification (image = mediaUrl)
+    await this.notificationService.notify({
+      actor: uid,
+      recipients: followerIds,
+      postId: story._id.toString(),
+      type: 'new_story',
+      caption,
+      image: story.mediaUrl || null,
+      subjects: [],
+    });
 
     return {
       message: 'Success',
