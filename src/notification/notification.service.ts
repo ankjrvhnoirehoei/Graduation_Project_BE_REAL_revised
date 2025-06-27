@@ -512,4 +512,205 @@ export class NotificationService {
       });
     }
   }
+
+  async notifyStoryLike(
+    likerId: string,
+    ownerId: string,
+    storyId: string,
+    mediaUrl: string | null,
+  ) {
+    // 1. load liker handleName
+    const liker = await this.userModel
+      .findById(likerId)
+      .select('handleName username')
+      .lean();
+    if (!liker) throw new NotFoundException('Liker not found');
+    const actorName = liker.handleName || liker.username;
+
+    // 2. find an existing unread story_like
+    const existing = await this.notificationModel.findOne({
+      recipients: ownerId,
+      type: 'story_like',
+      postId: storyId,
+      readBy: { $ne: ownerId },
+    });
+
+    if (existing) {
+      // 3a. update actors array
+      await existing.updateOne({ $addToSet: { actors: likerId } });
+      await existing.populate<{ actors: User[] }>('actors', 'handleName');
+      const actors = existing.actors as any as User[];
+
+      // 3b. rebuild caption
+      const [first, ...rest] = actors;
+      const count = rest.length;
+      let caption = `${first.handleName}`;
+      if (count > 0) {
+        caption += ` và ${count} người khác đã thích story của bạn.`;
+      } else {
+        caption += ` đã thích story của bạn.`;
+      }
+
+      // 3c. persist caption
+      await existing.updateOne({ caption });
+
+      // 3d. emit updated notification
+      this.gateway.sendNotification(ownerId, 'new_story_like', {
+        id: existing._id.toString(),
+        recipients: [ownerId],
+        actors: actors.map(u => (u as User & { _id: Types.ObjectId })._id.toString()),
+        type: 'story_like',
+        postId: storyId,
+        caption,
+        image: existing.image,
+        isRead: false,
+        createdAt: existing.createdAt,
+      });
+
+    } else {
+      // 4a. create a new notification record
+      const initialCaption = `${actorName} đã thích story của bạn.`;
+      const notif = await this.notificationModel.create({
+        recipients: [ownerId],
+        actors: [likerId],
+        type: 'story_like',
+        postId: storyId,
+        caption: initialCaption,
+        image: mediaUrl,           // ← set to the story’s mediaUrl
+      });
+
+      // 4b. emit it
+      this.gateway.sendNotification(ownerId, 'new_story_like', {
+        id: notif._id.toString(),
+        recipients: [ownerId],
+        actors: [likerId],
+        type: 'story_like',
+        postId: storyId,
+        caption: initialCaption,
+        image: notif.image,
+        isRead: false,
+        createdAt: notif.createdAt,
+      });
+    }
+  }
+
+  /**
+   * Remove a like from an existing notification, deleting it if no actors remain.
+   */
+  async retractStoryLike(
+    likerId: string,
+    ownerId: string,
+    storyId: string,
+  ) {
+    const notif = await this.notificationModel.findOne({
+      recipients: ownerId,
+      type: 'story_like',
+      postId: storyId,
+    });
+    if (!notif) return;
+
+    // remove the actor
+    await notif.updateOne({ $pull: { actors: likerId } });
+    const updated = await this.notificationModel
+      .findById(notif._id)
+      .populate<{ actors: User[] }>('actors', 'handleName')
+      .lean();
+
+    if (!updated) return;
+    const actors = updated.actors as User[];
+
+    if (actors.length === 0) {
+      // no one left — delete the notification entirely
+      await this.notificationModel.deleteOne({ _id: notif._id });
+    } else {
+      // rebuild caption and persist
+      const [first, ...rest] = actors;
+      const count = rest.length;
+      let caption = `${first.handleName}`;
+      if (count > 0) {
+        caption += ` và ${count} người khác đã thích story của bạn.`;
+      } else {
+        caption += ` đã thích story của bạn.`;
+      }
+      await this.notificationModel.updateOne(
+        { _id: notif._id },
+        { caption },
+      );
+    }
+  }
+
+  async notifyFollow(senderId: string, recipientId: string) {
+    const sender = await this.userModel.findById(senderId).select('handleName username').lean();
+    if (!sender) throw new NotFoundException('Sender not found');
+    const actorName = sender.handleName || sender.username;
+
+    // Find existing unread follow notification
+    let existing = await this.notificationModel.findOne({
+      recipients: recipientId,
+      type: 'follow',
+      readBy: { $ne: recipientId },
+    });
+
+    if (existing) {
+      // add actor if not already present
+      await existing.updateOne({ $addToSet: { actors: senderId } });
+      await existing.populate<{ actors: User[] }>('actors', 'handleName');
+      const likers = existing.actors as any as User[];
+      const [first, ...others] = likers;
+      const count = others.length;
+      let caption = `${first.handleName}`;
+      caption += count > 0 ? ` và ${count} người khác đã theo dõi bạn.` : ` đã theo dõi bạn.`;
+      await existing.updateOne({ caption });
+
+      this.gateway.sendNotification(recipientId, 'new_follow', {
+        id: existing._id.toString(),
+        recipients: [recipientId],
+        actors: likers.map(u => (u as User & { _id: Types.ObjectId })._id.toString()),
+        type: 'follow',
+        caption,
+        isRead: false,
+        createdAt: existing.createdAt,
+      });
+
+    } else {
+      // create first follow notification
+      const notif = await this.notificationModel.create({
+        recipients: [recipientId],
+        actors: [senderId],
+        type: 'follow',
+        caption: `${actorName} đã theo dõi bạn.`,
+      });
+
+      this.gateway.sendNotification(recipientId, 'new_follow', {
+        id: notif._id.toString(),
+        recipients: [recipientId],
+        actors: [senderId],
+        type: 'follow',
+        caption: notif.caption,
+        isRead: false,
+        createdAt: notif.createdAt,
+      });
+    }
+  }
+
+  // Retract a follow notification when a user unfollows.
+  async retractFollow(senderId: string, recipientId: string) {
+    const existing = await this.notificationModel.findOne({
+      recipients: recipientId,
+      type: 'follow',
+    });
+    if (!existing) return;
+    await existing.updateOne({ $pull: { actors: senderId } });
+    const updated = await this.notificationModel.findById(existing._id).populate('actors', 'handleName');
+    if (!updated || updated.actors.length === 0) {
+      await this.notificationModel.deleteOne({ _id: existing._id });
+    } else {
+      const likers = updated.actors as any as User[];
+      const [first, ...others] = likers;
+      const count = others.length;
+      let caption = `${first.handleName}`;
+      caption += count > 0 ? ` và ${count} người khác đã theo dõi bạn.` : ` đã theo dõi bạn.`;
+      await updated.updateOne({ caption });
+    }
+  }  
 }

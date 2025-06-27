@@ -461,21 +461,44 @@ export class StoryService {
   }
 
   async likedStory(uid: string, storyDto: UpdateStoryDto) {
-    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
-
+    const existingStory = await this.storyRepo.findOne({
+      _id: storyDto._id,
+    });
     if (!existingStory) {
       return new Error('Story not found');
     }
 
-    const uids = new Types.ObjectId(uid);
-    const hasLiked = existingStory.likedByUsers.some((id) => id.equals(uids));
-    const updateData: any = {
-      likedByUsers: hasLiked
-        ? existingStory.likedByUsers.filter((id) => !id.equals(uids))
-        : [...existingStory.likedByUsers, uids],
-    };
+    const userOid = new Types.ObjectId(uid);
+    const hasLiked = existingStory.likedByUsers.some(id =>
+      id.equals(userOid),
+    );
+    const updatedLikes = hasLiked
+      ? existingStory.likedByUsers.filter(id => !id.equals(userOid))
+      : [...existingStory.likedByUsers, userOid];
 
-    const res = await this.storyRepo.updateStory(existingStory._id, updateData);
+    const res = await this.storyRepo.updateStory(
+      existingStory._id,
+      { likedByUsers: updatedLikes },
+    );
+
+    // new like 
+    if (!hasLiked) {
+      await this.notificationService.notifyStoryLike(
+        uid,
+        existingStory.ownerId.toString(),
+        existingStory._id.toString(),
+        existingStory.mediaUrl || null,
+      );
+    }
+    // unlike 
+    else {
+      await this.notificationService.retractStoryLike(
+        uid,
+        existingStory.ownerId.toString(),
+        existingStory._id.toString(),
+      );
+    }
+
     return {
       message: 'Success',
       data: this.STORY_RESPONSE(res),
