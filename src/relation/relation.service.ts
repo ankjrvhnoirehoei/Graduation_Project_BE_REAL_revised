@@ -2,11 +2,13 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Relation, RelationDocument, RelationType } from './relation.schema';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class RelationService {
   constructor(
     @InjectModel(Relation.name) private relationModel: Model<RelationDocument>,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // create, update or delete the relation from A->B 
@@ -15,50 +17,67 @@ export class RelationService {
     targetUserId: string,
     action: 'follow' | 'unfollow' | 'block' | 'unblock',
   ): Promise<Relation | null> {
-    // Input validation
     if (actingUserId === targetUserId) {
       throw new BadRequestException('Cannot perform action on yourself');
     }
-
-    // Validate ObjectIds
     if (!Types.ObjectId.isValid(actingUserId) || !Types.ObjectId.isValid(targetUserId)) {
       throw new BadRequestException('Invalid user ID format');
     }
 
     const actingUser = new Types.ObjectId(actingUserId);
     const targetUser = new Types.ObjectId(targetUserId);
+    const [userOneId, userTwoId] =
+      actingUserId < targetUserId
+        ? [actingUser, targetUser]
+        : [targetUser, actingUser];
+    const actingIsOne = actingUserId < targetUserId;
 
-    // Determine consistent ordering (lexicographically by string representation)
-    const actingUserIdStr = actingUser.toString();
-    const targetUserIdStr = targetUser.toString();
-    
-    const userOneId = actingUserIdStr < targetUserIdStr ? actingUser : targetUser;
-    const userTwoId = actingUserIdStr < targetUserIdStr ? targetUser : actingUser;
-    
-    // Determine if acting user is userOne or userTwo in the consistent ordering
-    const actingUserIsUserOne = actingUserIdStr < targetUserIdStr;
+    // Fetch existing state
+    const existing = await this.relationModel.findOne({ userOneID: userOneId, userTwoID: userTwoId });
+    const oldRel = existing ? existing.relation : 'NULL_NULL';
 
-    // Use retry logic for race condition handling
+    // Retry loop
     const maxRetries = 3;
+    let result: Relation | null = null;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        return await this.performRelationUpdate(
-          userOneId,
-          userTwoId,
-          actingUserIsUserOne,
-          action
-        );
-      } catch (error) {
-        // Handle duplicate key errors (race conditions)
-        if (error.code === 11000 && attempt < maxRetries - 1) {
-          // Wait a bit and retry
+        result = await this.performRelationUpdate(userOneId, userTwoId, actingIsOne, action);
+        break;
+      } catch (err: any) {
+        if (err.code === 11000 && attempt < maxRetries - 1) {
           await new Promise(resolve => setTimeout(resolve, Math.random() * 100));
           continue;
         }
-        throw error;
+        throw err;
       }
     }
-    return null; // Return null if all retries fail
+    if (!result) return null;
+
+    // Determine new relation string
+    const newRel = result.relation;
+
+    // Handle follow notification
+    if (action === 'follow') {
+      const becameFollow = actingIsOne
+        ? !oldRel.startsWith('FOLLOW_') && newRel.startsWith('FOLLOW_')
+        : !oldRel.endsWith('_FOLLOW')   && newRel.endsWith('_FOLLOW');
+      if (becameFollow) {
+        await this.notificationService.notifyFollow(actingUserId, targetUserId);
+      }
+    }
+
+    // Handle unfollow: retract notification
+    if (action === 'unfollow') {
+      const wasFollow = actingIsOne
+        ? oldRel.startsWith('FOLLOW_') && !newRel.startsWith('FOLLOW_')
+        : oldRel.endsWith('_FOLLOW')   && !newRel.endsWith('_FOLLOW');
+      if (wasFollow) {
+        await this.notificationService.retractFollow(actingUserId, targetUserId);
+      }
+    }
+
+
+    return result;
   }
 
   private async performRelationUpdate(

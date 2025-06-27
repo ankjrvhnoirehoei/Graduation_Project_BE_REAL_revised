@@ -21,8 +21,8 @@ export class NotificationController {
   }
 
   @Patch('read/:id')
-  markRead(@Param('id') id: string) {
-    return this.svc.markAsRead(id);
+  markRead(@Param('id') id: string, @CurrentUser('sub') userId: string) {
+    return this.svc.markAsRead(id, userId);
   }
 
   @Patch('read-all')

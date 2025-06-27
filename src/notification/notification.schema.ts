@@ -5,8 +5,8 @@ export type NotificationDocument = Notification & Document;
 
 @Schema({ timestamps: true })
 export class Notification {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  recipient: Types.ObjectId;
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], required: true })
+  recipients: Types.ObjectId[];
 
   @Prop({ type: Types.ObjectId, ref: 'Post', required: false })
   postId?: Types.ObjectId;
@@ -26,8 +26,8 @@ export class Notification {
   @Prop({ type: String })
   image: string;
 
-  @Prop({ default: false })
-  isRead: boolean;
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
+  readBy: Types.ObjectId[];
 
   @Prop()
   createdAt?: Date;

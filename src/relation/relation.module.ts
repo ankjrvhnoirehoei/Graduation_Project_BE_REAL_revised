@@ -6,6 +6,7 @@ import { RelationController } from './relation.controller';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserModule } from '../user/user.module';
+import { NotificationModule } from 'src/notification/notification.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { UserModule } from '../user/user.module';
         signOptions: { expiresIn: '15m' },
       }),
     }),
+    NotificationModule,
   ],
   providers: [RelationService],
   controllers: [RelationController],

@@ -9,6 +9,7 @@ import { UserService } from 'src/user/user.service';
 import { UpdateHighlightDto } from './dto/update-highlight.dto';
 import { Story, StoryType } from './schema/story.schema';
 import { MusicService } from 'src/music/music.service';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class StoryService {
@@ -18,6 +19,7 @@ export class StoryService {
     private readonly relationServ: RelationService,
     private readonly userService: UserService,
     private readonly musicService: MusicService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // STANDARDIZE FOR STORY & RESPONSE
@@ -317,7 +319,7 @@ export class StoryService {
       type: StoryType.STORIES,
     });
 
-    // Enrich tags với username + handleName
+    // enrich tags
     const enrichedTags = await Promise.all(
       (story.tags || []).map(async (tag) => {
         try {
@@ -327,15 +329,47 @@ export class StoryService {
             username: user.username || '',
             handleName: user.handleName || '',
           };
-        } catch (err) {
-          return {
-            ...tag,
-            username: '',
-            handleName: '',
-          };
+        } catch {
+          return { ...tag, username: '', handleName: '' };
         }
       }),
     );
+
+    // fetch all followers
+    const relRecords = await this.relationServ.findByUserAndFilter(
+      uid,
+      'followers',
+    );
+
+    const followerIds = [
+      ...new Set(
+        relRecords
+          .map((r) => {
+            const u1 = r.userOneID.toString();
+            const u2 = r.userTwoID.toString();
+            if (u2 === uid && r.relation.startsWith('FOLLOW_')) return u1;
+            if (u1 === uid && r.relation.endsWith('_FOLLOW')) return u2;
+            return null;
+          })
+          .filter((id): id is string => !!id),
+      ),
+    ];
+
+    // build caption
+    const me = await this.userService.getUserById(uid);
+    const handleName = me.handleName || me.username;
+    const caption = `${handleName} đã đăng một story mới.`;
+
+    // fire notification (image = mediaUrl)
+    await this.notificationService.notify({
+      actor: uid,
+      recipients: followerIds,
+      postId: story._id.toString(),
+      type: 'new_story',
+      caption,
+      image: story.mediaUrl || null,
+      subjects: [],
+    });
 
     return {
       message: 'Success',
@@ -427,27 +461,48 @@ export class StoryService {
   }
 
   async likedStory(uid: string, storyDto: UpdateStoryDto) {
-    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
-
+    const existingStory = await this.storyRepo.findOne({
+      _id: storyDto._id,
+    });
     if (!existingStory) {
       return new Error('Story not found');
     }
 
-    const uids = new Types.ObjectId(uid);
-    const hasLiked = existingStory.likedByUsers.some((id) => id.equals(uids));
-    const updateData: any = {
-      likedByUsers: hasLiked
-        ? existingStory.likedByUsers.filter((id) => !id.equals(uids))
-        : [...existingStory.likedByUsers, uids],
-    };
+    const userOid = new Types.ObjectId(uid);
+    const hasLiked = existingStory.likedByUsers.some((id) =>
+      id.equals(userOid),
+    );
+    const updatedLikes = hasLiked
+      ? existingStory.likedByUsers.filter((id) => !id.equals(userOid))
+      : [...existingStory.likedByUsers, userOid];
 
-    const res = await this.storyRepo.updateStory(existingStory._id, updateData);
+    const res = await this.storyRepo.updateStory(existingStory._id, {
+      likedByUsers: updatedLikes,
+    });
+
+    // new like
+    if (!hasLiked) {
+      await this.notificationService.notifyStoryLike(
+        uid,
+        existingStory.ownerId.toString(),
+        existingStory._id.toString(),
+        existingStory.mediaUrl || null,
+      );
+    }
+    // unlike
+    else {
+      await this.notificationService.retractStoryLike(
+        uid,
+        existingStory.ownerId.toString(),
+        existingStory._id.toString(),
+      );
+    }
+
     return {
       message: 'Success',
       data: this.STORY_RESPONSE(res),
     };
   }
-
   async deletedStory(uid: string, storyDto: UpdateStoryDto) {
     const uids = new Types.ObjectId(uid);
     const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
@@ -455,18 +510,27 @@ export class StoryService {
     if (!existingStory.ownerId.equals(uids))
       throw new Error("You can't delete this story");
 
-    // Find all user's highlights and rm target out of storyId
+    // Find all user's highlights and remove target out of storyId
     const highlights = await this.storyRepo.findAllUserHighlights(uids);
     for (const highlight of highlights) {
       highlight.storyId = highlight.storyId.filter((item) => {
         return item && item.toString() !== storyDto._id.toString();
       });
-      await this.storyRepo.updateStory(highlight._id, {
-        storyId: highlight.storyId,
-      });
+
+      if (highlight.storyId.length === 0) {
+        // Nếu mảng storyId trống sau khi lọc => xoá luôn highlight
+        await this.storyRepo.findOneAndDelete({ _id: highlight._id });
+      } else {
+        // Nếu vẫn còn story thì cập nhật lại
+        await this.storyRepo.updateStory(highlight._id, {
+          storyId: highlight.storyId,
+        });
+      }
     }
 
+    // Cuối cùng xoá story chính
     await this.storyRepo.findOneAndDelete({ _id: storyDto._id });
+
     return { message: 'Success' };
   }
 }

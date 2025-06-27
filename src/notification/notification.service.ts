@@ -18,10 +18,10 @@ export class NotificationService {
     private readonly gateway: NotificationGateway,
   ) {}
 
-  // 🔹 Notify a single user
+  // 🔹 Unified notify method (replaces both notify and notifyMany)
   async notify({
     actor,
-    recipient,
+    recipients, // Now always an array
     postId,
     type,
     caption,
@@ -29,7 +29,7 @@ export class NotificationService {
     subjects,
   }: {
     actor: string;
-    recipient: string;
+    recipients: string[]; // Changed to array
     postId?: string;
     type: 'new_post' | 'post_like' | 'comment' | 'comment_like' | 'new_story' | 'story_like' | 'follow_request' | 'follow' | 'reply';
     caption?: string;
@@ -37,7 +37,7 @@ export class NotificationService {
     subjects?: string[];
   }) {
     const notification = await this.notificationModel.create({
-      recipient,
+      recipients, // Now an array
       actors: [actor],
       type,
       caption,
@@ -46,75 +46,34 @@ export class NotificationService {
       postId,
     });
 
-    this.gateway.sendNotification(recipient, `new_${type}`, {
-      id: notification._id.toString(),
-      recipient,
-      actors: [actor],
-      type,
-      caption,
-      image,
-      subjects,
-      isRead: notification.isRead,
-      createdAt: notification.createdAt,
+    // Send notification to all recipients
+    recipients.forEach(recipient => {
+      this.gateway.sendNotification(recipient, `new_${type}`, {
+        id: notification._id.toString(),
+        recipients,
+        actors: [actor],
+        type,
+        caption,
+        image,
+        subjects,
+        isRead: false, // Individual read status will be handled differently
+        createdAt: notification.createdAt,
+      });
     });
   }
 
-  // 🔹 Notify many users
-  async notifyMany({
-    actor,
-    recipients,
-    postId,
-    type,
-    caption,
-    image,
-    subjects,
-  }: {
-    actor: string;
-    recipients: string[];
-    postId?: string;
-    type: 'new_post' | 'post_like' | 'comment' | 'comment_like' | 'new_story' | 'story_like' | 'follow_request' | 'follow' | 'reply';
-    caption?: string;
-    image?: string;
-    subjects?: string[];
-  }) {
-    const notifications = await this.notificationModel.insertMany(
-      recipients.map((recipient) => ({
-        recipient,
-        postId,
-        actors: [actor],
-        type,
-        caption,
-        image,
-        subjects,
-      })),
-    );
-
-    for (let i = 0; i < recipients.length; i++) {
-      const recipient = recipients[i];
-      const notification = notifications[i];
-
-      this.gateway.sendNotification(recipient, `new_${type}`, {
-        id: notification._id.toString(),
-        recipient,
-        postId,
-        actors: [actor],
-        type,
-        caption,
-        image,
-        subjects,
-        isRead: notification.isRead,
-        createdAt: notification.createdAt,
-      });
-    }
-  }
-
-  // 🔹 Get notifications for a user
+  // 🔹 Get notifications for a user (updated query)
   async getNotificationsByUser(
     userId: string,
     opts?: { unreadOnly?: boolean; limit?: number },
   ) {
-    const query: any = { recipient: userId };
-    if (opts?.unreadOnly) query.isRead = false;
+    const query: any = { recipients: userId }; // Changed from recipient to recipients
+    
+    // For unread notifications, check if user is NOT in readBy array
+    if (opts?.unreadOnly) {
+      query.readBy = { $ne: userId };
+    }
+    
     const lim = opts?.limit ?? 100;
 
     const raw = await this.notificationModel
@@ -129,10 +88,14 @@ export class NotificationService {
       const actorsArr = n.actors as unknown as Array<{ handleName: string; profilePic?: string; }>;
       const recent = actorsArr.slice(-2).reverse();
       const extraCount = actorsArr.length > recent.length ? actorsArr.length - recent.length : 0;
+      
+      // Check if current user has read this notification
+      const isRead = (n.readBy as Types.ObjectId[]).some(id => id.toString() === userId);
+      
       const base = {
         id: n._id.toString(),
         type: n.type,
-        isRead: n.isRead,
+        isRead, // Now calculated per user
         createdAt: n.createdAt,
         actors: recent,
         caption: text,
@@ -144,22 +107,27 @@ export class NotificationService {
     });
   }
 
-  // 🔹 Mark as read
-  async markAsRead(notificationId: string) {
-    return this.notificationModel.findByIdAndUpdate(notificationId, {
-      isRead: true,
-    });
-  }
-
-  // 🔹 Mark all as read
-  async markAllAsRead(userId: string) {
-    return this.notificationModel.updateMany(
-      { recipient: userId, isRead: false },
-      { $set: { isRead: true } },
+  // 🔹 Mark as read (updated for specific user)
+  async markAsRead(notificationId: string, userId: string) {
+    return this.notificationModel.findByIdAndUpdate(
+      notificationId,
+      { $addToSet: { readBy: userId } }, // Add user to readBy array
+      { new: true }
     );
   }
 
-  // 🔹 Delete notification
+  // 🔹 Mark all as read (updated for specific user)
+  async markAllAsRead(userId: string) {
+    return this.notificationModel.updateMany(
+      { 
+        recipients: userId, 
+        readBy: { $ne: userId } // Only update notifications not already read by this user
+      },
+      { $addToSet: { readBy: userId } }
+    );
+  }
+
+  // 🔹 Delete notification (unchanged)
   async deleteNotification(notificationId: string) {
     return this.notificationModel.findByIdAndDelete(notificationId);
   }
@@ -167,10 +135,9 @@ export class NotificationService {
   // 🔹 Handle liked-post notifications with captions persisted
   async notifyLike(
     senderId: string,
-    recipientId: string,
+    recipientId: string, // Still single recipient for like notifications
     postId: string,
   ) {
-    // fetch sender data
     const sender = await this.userModel
       .findById(senderId)
       .select('handleName username')
@@ -178,16 +145,15 @@ export class NotificationService {
     if (!sender) throw new NotFoundException('Sender not found');
     const actorName = sender.handleName || sender.username;
 
-    // check for existing unread notification
+    // Check for existing unread notification for this specific recipient
     const existing = await this.notificationModel.findOne({
-      recipient: recipientId,
+      recipients: recipientId, // Updated field name
       type: 'post_like',
       postId,
-      isRead: false,
+      readBy: { $ne: recipientId }, // Not read by this recipient
     });
 
     if (existing) {
-      // update actors list
       await existing.updateOne({ $addToSet: { actors: senderId } });
       await existing.populate<{ actors: User[] }>('actors', 'handleName');
 
@@ -203,28 +169,27 @@ export class NotificationService {
 
       await existing.updateOne({ caption: newCaption });
 
-      // emit updated grouped notification
       this.gateway.sendNotification(
         recipientId,
         'new_post_like',
         {
           id: existing._id.toString(),
-          recipient: recipientId,
+          recipients: existing.recipients.map(r => r.toString()),
           actors: (likers as Array<User & { _id: Types.ObjectId }>).map((u) => u._id.toString()),
           type: 'post_like',
           postId: existing.postId?.toString(),
           caption: newCaption,
-          isRead: existing.isRead,
+          isRead: false, // Will be calculated in frontend
           createdAt: existing.createdAt,
         },
       );
       return;
     }
 
-    // first like — build caption
+    // First like — create new notification
     const initialCaption = `${actorName} đã thích bài viết của bạn.`;
     const notif = await this.notificationModel.create({
-      recipient: recipientId,
+      recipients: [recipientId], // Now an array with single recipient
       actors: [senderId],
       type: 'post_like',
       postId,
@@ -236,25 +201,25 @@ export class NotificationService {
       'new_post_like',
       {
         id: notif._id.toString(),
-        recipient: recipientId,
+        recipients: [recipientId],
         actors: [senderId],
         type: 'post_like',
         postId: notif.postId?.toString(),
         caption: initialCaption,
-        isRead: notif.isRead,
+        isRead: false,
         createdAt: notif.createdAt,
       },
     );
   }
 
-  // 🔹 Handle unlikes without emitting notifications
+  // 🔹 Handle unlikes (updated for array recipients)
   async retractLike(
     senderId: string,
     recipientId: string,
     postId: string,
   ) {
     const notif = await this.notificationModel.findOne({
-      recipient: recipientId,
+      recipients: recipientId, // Updated field name
       type: 'post_like',
       postId,
     });
@@ -267,7 +232,6 @@ export class NotificationService {
     if ((updated.actors || []).length === 0) {
       await updated.deleteOne();
     } else {
-      // update caption but do not emit a new notification to owner
       await updated.populate<{ actors: User[] }>('actors', 'handleName');
       const likers = (updated.actors as any) as User[];
       const [first, ...others] = likers;
@@ -302,18 +266,18 @@ export class NotificationService {
 
     // check existing unread notification for this post
     const existing = await this.notificationModel.findOne({
-      recipient: postOwnerId,
+      recipients: postOwnerId, // Updated field name
       type: 'comment',
       postId,
-      isRead: false,
+      readBy: { $ne: postOwnerId }, // Updated to use readBy instead of isRead
     });
 
     if (existing) {
       // update actors
       await existing.updateOne({ $addToSet: { actors: commenterId } });
       await existing.populate<{ actors: User[] }>('actors', 'handleName profilePic');
-      const likers = existing.actors as unknown as User[];
-      const [first, ...others] = likers;
+      const commenters = existing.actors as unknown as User[];
+      const [first, ...others] = commenters;
       const count = others.length;
       const cap = `${first.handleName}${count > 0 ? ` và ${count} người khác đã bình luận về bài viết của bạn.` : ' đã bình luận về bài viết của bạn.'}`;
       await existing.updateOne({ caption: cap });
@@ -323,12 +287,12 @@ export class NotificationService {
         'new_comment',
         {
           id: existing._id.toString(),
-          recipient: postOwnerId,
-          actors: likers.slice(-2).map(u => (u as User & { _id: Types.ObjectId })._id.toString()),
+          recipients: existing.recipients.map(r => r.toString()), // Updated field name
+          actors: commenters.slice(-2).map(u => (u as User & { _id: Types.ObjectId })._id.toString()),
           type: 'comment',
           caption: cap,
           image: mediaUrl,
-          isRead: existing.isRead,
+          isRead: false, // Will be calculated in frontend
           createdAt: existing.createdAt,
         }
       );
@@ -338,7 +302,7 @@ export class NotificationService {
     // first comment
     const caption = `${actorName} đã bình luận về bài viết của bạn.`;
     const notif = await this.notificationModel.create({
-      recipient: postOwnerId,
+      recipients: [postOwnerId], // Updated to array
       actors: [commenterId],
       type: 'comment',
       postId,
@@ -351,18 +315,18 @@ export class NotificationService {
       'new_comment',
       {
         id: notif._id.toString(),
-        recipient: postOwnerId,
+        recipients: [postOwnerId], // Updated to array
         actors: [commenterId],
         type: 'comment',
         caption,
         image: mediaUrl,
-        isRead: notif.isRead,
+        isRead: false,
         createdAt: notif.createdAt,
       }
     );
   }
 
-  // 🔹 Handle reply to comment notifications
+  // 🔹 Handle reply to comment notifications (updated for array recipients)
   async notifyReply(
     replierId: string,
     parentCommenterId: string,
@@ -377,10 +341,10 @@ export class NotificationService {
 
     // existing batch
     const existing = await this.notificationModel.findOne({
-      recipient: parentCommenterId,
+      recipients: parentCommenterId, // Updated field name
       type: 'reply',
       postId,
-      isRead: false,
+      readBy: { $ne: parentCommenterId }, // Updated to use readBy instead of isRead
     });
     
     if (existing) {
@@ -397,11 +361,11 @@ export class NotificationService {
         'new_reply',
         {
           id: existing._id.toString(),
-          recipient: parentCommenterId,
+          recipients: existing.recipients.map(r => r.toString()), // Updated field name
           actors: actors.slice(-2).map(u => (u as User & { _id: Types.ObjectId })._id.toString()),
           type: 'reply',
           caption: cap,
-          isRead: existing.isRead,
+          isRead: false, // Will be calculated in frontend
           createdAt: existing.createdAt,
         }
       );
@@ -410,7 +374,7 @@ export class NotificationService {
 
     const initialCap = `${actorName} đã trả lời bình luận của bạn về bài viết "${postCaption}".`;
     const notif = await this.notificationModel.create({
-      recipient: parentCommenterId,
+      recipients: [parentCommenterId], // Updated to array
       actors: [replierId],
       type: 'reply',
       postId,
@@ -422,15 +386,15 @@ export class NotificationService {
       'new_reply',
       {
         id: notif._id.toString(),
-        recipient: parentCommenterId,
+        recipients: [parentCommenterId], // Updated to array
         actors: [replierId],
         type: 'reply',
         caption: initialCap,
-        isRead: notif.isRead,
+        isRead: false,
         createdAt: notif.createdAt,
       }
     );
-  }  
+  }
 
   // 🔹 Notify like on comment
   async notifyCommentLike(
@@ -446,7 +410,7 @@ export class NotificationService {
 
     // find existing notification irrespective of read status
     const existing = await this.notificationModel.findOne({
-      recipient: commentOwnerId,
+      recipients: commentOwnerId, // Changed from recipient to recipients
       type: 'comment_like',
       postId,
       subjects: commentId,
@@ -460,16 +424,19 @@ export class NotificationService {
       const [first, ...others] = actors;
       const count = actors.length - 1;
       const caption = `${first.handleName}${count > 0 ? ` và ${count} người khác đã thích bình luận của bạn.` : ' đã thích bình luận của bạn.'}`;
-      await existing.updateOne({ caption });
+      await existing.updateOne({ 
+        caption,
+        $pull: { readBy: commentOwnerId } // Remove from readBy to mark as unread again
+      });
 
       // re-emit grouped update
       this.gateway.sendNotification(commentOwnerId, 'new_comment_like', {
         id: existing._id.toString(),
-        recipient: commentOwnerId,
+        recipients: [commentOwnerId], // Changed from recipient to recipients array
         actors: (actors.slice(-2) as Array<User & { _id: Types.ObjectId }>).map(u => u._id.toString()),
         type: 'comment_like',
         caption,
-        isRead: existing.isRead,
+        isRead: false, // Mark as unread since there's new activity
         createdAt: existing.createdAt,
       });
       return;
@@ -478,21 +445,22 @@ export class NotificationService {
     // first like
     const caption = `${name} đã thích bình luận của bạn.`;
     const notif = await this.notificationModel.create({
-      recipient: commentOwnerId,
+      recipients: [commentOwnerId], // Changed from recipient to recipients array
       actors: [likerId],
       type: 'comment_like',
       postId,
       subjects: [commentId],
       caption,
+      readBy: [], // Initialize as empty array (unread)
     });
 
     this.gateway.sendNotification(commentOwnerId, 'new_comment_like', {
       id: notif._id.toString(),
-      recipient: commentOwnerId,
+      recipients: [commentOwnerId], // Changed from recipient to recipients array
       actors: [likerId],
       type: 'comment_like',
       caption,
-      isRead: notif.isRead,
+      isRead: false, // New notification is unread
       createdAt: notif.createdAt,
     });
   }
@@ -505,7 +473,7 @@ export class NotificationService {
     commentId: string,
   ) {
     const existing = await this.notificationModel.findOne({
-      recipient: commentOwnerId,
+      recipients: commentOwnerId, // Changed from recipient to recipients
       type: 'comment_like',
       postId,
       subjects: commentId,
@@ -522,21 +490,227 @@ export class NotificationService {
       await updated.deleteOne();
     } else {
       // update caption and re-save
-      const actors = updated.actors as unknown  as User[];
+      const actors = updated.actors as unknown as User[];
       const [first, ...others] = actors;
       const count = others.length;
       const caption = `${first.handleName}${count > 0 ? ` và ${count} người khác đã thích bình luận của bạn.` : ' đã thích bình luận của bạn.'}`;
+      
+      // Check if the notification owner has read this notification
+      const isRead = (updated.readBy as Types.ObjectId[]).some(id => id.toString() === commentOwnerId);
+      
       await updated.updateOne({ caption });
+      
       // emit updated grouping
       this.gateway.sendNotification(commentOwnerId, 'new_comment_like', {
         id: updated._id.toString(),
-        recipient: commentOwnerId,
+        recipients: [commentOwnerId], // Changed from recipient to recipients array
         actors: actors.slice(-2).map(u => (u as User & { _id: Types.ObjectId })._id.toString()),
         type: 'comment_like',
         caption,
-        isRead: updated.isRead,
+        isRead, // Use calculated read status
         createdAt: updated.createdAt,
       });
     }
   }
+
+  async notifyStoryLike(
+    likerId: string,
+    ownerId: string,
+    storyId: string,
+    mediaUrl: string | null,
+  ) {
+    // 1. load liker handleName
+    const liker = await this.userModel
+      .findById(likerId)
+      .select('handleName username')
+      .lean();
+    if (!liker) throw new NotFoundException('Liker not found');
+    const actorName = liker.handleName || liker.username;
+
+    // 2. find an existing unread story_like
+    const existing = await this.notificationModel.findOne({
+      recipients: ownerId,
+      type: 'story_like',
+      postId: storyId,
+      readBy: { $ne: ownerId },
+    });
+
+    if (existing) {
+      // 3a. update actors array
+      await existing.updateOne({ $addToSet: { actors: likerId } });
+      await existing.populate<{ actors: User[] }>('actors', 'handleName');
+      const actors = existing.actors as any as User[];
+
+      // 3b. rebuild caption
+      const [first, ...rest] = actors;
+      const count = rest.length;
+      let caption = `${first.handleName}`;
+      if (count > 0) {
+        caption += ` và ${count} người khác đã thích story của bạn.`;
+      } else {
+        caption += ` đã thích story của bạn.`;
+      }
+
+      // 3c. persist caption
+      await existing.updateOne({ caption });
+
+      // 3d. emit updated notification
+      this.gateway.sendNotification(ownerId, 'new_story_like', {
+        id: existing._id.toString(),
+        recipients: [ownerId],
+        actors: actors.map(u => (u as User & { _id: Types.ObjectId })._id.toString()),
+        type: 'story_like',
+        postId: storyId,
+        caption,
+        image: existing.image,
+        isRead: false,
+        createdAt: existing.createdAt,
+      });
+
+    } else {
+      // 4a. create a new notification record
+      const initialCaption = `${actorName} đã thích story của bạn.`;
+      const notif = await this.notificationModel.create({
+        recipients: [ownerId],
+        actors: [likerId],
+        type: 'story_like',
+        postId: storyId,
+        caption: initialCaption,
+        image: mediaUrl,           // ← set to the story’s mediaUrl
+      });
+
+      // 4b. emit it
+      this.gateway.sendNotification(ownerId, 'new_story_like', {
+        id: notif._id.toString(),
+        recipients: [ownerId],
+        actors: [likerId],
+        type: 'story_like',
+        postId: storyId,
+        caption: initialCaption,
+        image: notif.image,
+        isRead: false,
+        createdAt: notif.createdAt,
+      });
+    }
+  }
+
+  /**
+   * Remove a like from an existing notification, deleting it if no actors remain.
+   */
+  async retractStoryLike(
+    likerId: string,
+    ownerId: string,
+    storyId: string,
+  ) {
+    const notif = await this.notificationModel.findOne({
+      recipients: ownerId,
+      type: 'story_like',
+      postId: storyId,
+    });
+    if (!notif) return;
+
+    // remove the actor
+    await notif.updateOne({ $pull: { actors: likerId } });
+    const updated = await this.notificationModel
+      .findById(notif._id)
+      .populate<{ actors: User[] }>('actors', 'handleName')
+      .lean();
+
+    if (!updated) return;
+    const actors = updated.actors as User[];
+
+    if (actors.length === 0) {
+      // no one left — delete the notification entirely
+      await this.notificationModel.deleteOne({ _id: notif._id });
+    } else {
+      // rebuild caption and persist
+      const [first, ...rest] = actors;
+      const count = rest.length;
+      let caption = `${first.handleName}`;
+      if (count > 0) {
+        caption += ` và ${count} người khác đã thích story của bạn.`;
+      } else {
+        caption += ` đã thích story của bạn.`;
+      }
+      await this.notificationModel.updateOne(
+        { _id: notif._id },
+        { caption },
+      );
+    }
+  }
+
+  async notifyFollow(senderId: string, recipientId: string) {
+    const sender = await this.userModel.findById(senderId).select('handleName username').lean();
+    if (!sender) throw new NotFoundException('Sender not found');
+    const actorName = sender.handleName || sender.username;
+
+    // Find existing unread follow notification
+    let existing = await this.notificationModel.findOne({
+      recipients: recipientId,
+      type: 'follow',
+      readBy: { $ne: recipientId },
+    });
+
+    if (existing) {
+      // add actor if not already present
+      await existing.updateOne({ $addToSet: { actors: senderId } });
+      await existing.populate<{ actors: User[] }>('actors', 'handleName');
+      const likers = existing.actors as any as User[];
+      const [first, ...others] = likers;
+      const count = others.length;
+      let caption = `${first.handleName}`;
+      caption += count > 0 ? ` và ${count} người khác đã theo dõi bạn.` : ` đã theo dõi bạn.`;
+      await existing.updateOne({ caption });
+
+      this.gateway.sendNotification(recipientId, 'new_follow', {
+        id: existing._id.toString(),
+        recipients: [recipientId],
+        actors: likers.map(u => (u as User & { _id: Types.ObjectId })._id.toString()),
+        type: 'follow',
+        caption,
+        isRead: false,
+        createdAt: existing.createdAt,
+      });
+
+    } else {
+      // create first follow notification
+      const notif = await this.notificationModel.create({
+        recipients: [recipientId],
+        actors: [senderId],
+        type: 'follow',
+        caption: `${actorName} đã theo dõi bạn.`,
+      });
+
+      this.gateway.sendNotification(recipientId, 'new_follow', {
+        id: notif._id.toString(),
+        recipients: [recipientId],
+        actors: [senderId],
+        type: 'follow',
+        caption: notif.caption,
+        isRead: false,
+        createdAt: notif.createdAt,
+      });
+    }
+  }
+
+  // Retract a follow notification when a user unfollows.
+  async retractFollow(senderId: string, recipientId: string) {
+    const existing = await this.notificationModel.findOne({
+      recipients: recipientId,
+      type: 'follow',
+    });
+    if (!existing) return;
+    await existing.updateOne({ $pull: { actors: senderId } });
+    const updated = await this.notificationModel.findById(existing._id).populate('actors', 'handleName');
+    if (!updated || updated.actors.length === 0) {
+      await this.notificationModel.deleteOne({ _id: existing._id });
+    } else {
+      const likers = updated.actors as any as User[];
+      const [first, ...others] = likers;
+      const count = others.length;
+      let caption = `${first.handleName}`;
+      caption += count > 0 ? ` và ${count} người khác đã theo dõi bạn.` : ` đã theo dõi bạn.`;
+      await updated.updateOne({ caption });
+    }
+  }  
 }
