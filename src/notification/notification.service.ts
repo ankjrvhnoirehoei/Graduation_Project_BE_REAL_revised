@@ -49,7 +49,7 @@ export class NotificationService {
       }
 
       await this.notificationModel.create({
-        receiver: objectIds,
+        receiver: objectIds.map((id) => ({ userId: id, isRead: false })),
         senderId: new Types.ObjectId(senderId),
         title,
         body,
@@ -60,6 +60,32 @@ export class NotificationService {
     } catch (error) {
       console.error('❌ Error sending or saving notification:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  // Lấy danh sách thông báo cho 1 user
+  async getNotificationsForUser(userId: string) {
+    try {
+      const notifications = await this.notificationModel
+        .find({ 'receiver.userId': new Types.ObjectId(userId) })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      // Lấy isRead riêng của user đó
+      const result = notifications.map((notification) => {
+        const receiverData = notification.receiver.find((r) =>
+          r.userId.equals(userId),
+        );
+        return {
+          ...notification,
+          isRead: receiverData?.isRead ?? false,
+        };
+      });
+
+      return result;
+    } catch (error) {
+      console.error('❌ Error getting notifications:', error);
+      throw error;
     }
   }
 }
