@@ -20,6 +20,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { MessageModule } from './message/message.module';
 import { LikeCommentModule } from './like-comment/like-comment.module';
 import { NotificationModule } from './notification/notification.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { NotificationModule } from './notification/notification.module';
     LikeCommentModule,
     MessageModule,
     NotificationModule,
+    AdminModule,
   ],
   // providers: [
   //   {
