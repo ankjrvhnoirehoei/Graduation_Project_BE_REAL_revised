@@ -58,6 +58,7 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
   async findUserStories(userId: Types.ObjectId) {
     return this.find({
       ownerId: userId,
+      isArchived: false,
       type: StoryType.STORIES,
     });
   }
