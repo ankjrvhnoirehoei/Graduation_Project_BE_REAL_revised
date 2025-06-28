@@ -47,6 +47,7 @@ export class Story extends AbstractDocument {
       time_start: { type: Number, min: 0 },
       time_end: { type: Number, min: 0 },
     },
+    _id: false,
     default: {},
   })
   music: {
@@ -80,6 +81,7 @@ export class Story extends AbstractDocument {
         },
       },
     ],
+    _id: false,
     default: [],
   })
   tags: {
