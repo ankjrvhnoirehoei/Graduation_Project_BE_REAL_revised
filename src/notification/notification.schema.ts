@@ -3,10 +3,25 @@ import { Document, Types } from 'mongoose';
 
 export type NotificationDocument = Notification & Document;
 
+@Schema({ _id: false })
+class ReceiverInfo {
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  userId: Types.ObjectId;
+
+  @Prop({ type: Boolean, default: false })
+  isRead: boolean;
+}
+
+const ReceiverInfoSchema = SchemaFactory.createForClass(ReceiverInfo);
+
 @Schema({ timestamps: true })
 export class Notification {
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], required: true })
-  receiver: Types.ObjectId[];
+  @Prop({
+    type: [ReceiverInfoSchema],
+    required: true,
+    default: [],
+  })
+  receiver: ReceiverInfo[];
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   senderId: Types.ObjectId;
@@ -19,9 +34,6 @@ export class Notification {
 
   @Prop({ type: Object, default: {} })
   data: Record<string, any>;
-
-  @Prop({ default: false })
-  isRead: boolean;
 }
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
