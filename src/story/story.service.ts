@@ -20,6 +20,81 @@ export class StoryService {
     private readonly musicService: MusicService,
   ) { }
 
+  // Utilities functional
+  private async getCommonUserData(uid: string) {
+    const user = await this.userService.getUserById(uid);
+    return {
+      _id: uid,
+      profilePic: user?.profilePic,
+      handleName: user?.handleName,
+      username: user?.username,
+    };
+  }
+  private async enrichTagged(tag: (typeof Story.prototype.tags)[number]) {
+    const user = await this.getCommonUserData(tag.user.toString());
+    return {
+      ...tag,
+      handleName: user?.handleName,
+      username: user?.username,
+    }
+  }
+   private async enrichStoryMusic(stories: Story[]) {
+    if (!stories || stories.length === 0) {
+      return stories;
+    }
+    return await Promise.all(
+      stories.map(async (sto) => {
+        if (!sto.music) {
+          return sto;
+        }
+        this.logger.log(">>>>>>>>>>>>>>>>>>", sto.music._id)
+        const res = await this.musicService.findByID(sto.music._id.toString());
+        return {
+          ...sto,
+          music: {
+            _id: sto.music._id,
+            link: res.link,
+            time_start: sto.music.time_start,
+            time_end: sto.music.time_end,
+          },
+        };
+      }),
+    );
+  }
+  private async enrichStoryViewers(stories: Story[]) {
+    return await Promise.all(
+      stories.map(async (story) => {
+        if (!story.viewedByUsers || story.viewedByUsers.length === 0) {
+          return story;
+        }
+        const updatedVied = await Promise.all(
+          story.viewedByUsers.map(id => this.getCommonUserData(id.toString()))
+        )
+        return {
+          ...story,
+          viewedByUsers: updatedVied,
+        };
+      })
+    );
+  }
+  private async enrichStoryTags(stories: Story[]) {
+    return Promise.all(
+      stories.map(async (story) => {
+        const { tags, ...rest } = story;
+        if (!tags || tags.length === 0) {
+          return {
+            ...rest,
+            tags: []
+          };
+        }
+        return {
+          ...rest,
+          tags: await Promise.all(tags.map(tag => this.enrichTagged(tag)))
+        };
+      })
+    );
+  }
+
   // STANDARDIZE FOR STORY & RESPONSE
   private LIMIT_HIGHLIGHTS = 50;
   private LIMIT_PAGINATION = 20;
@@ -40,45 +115,20 @@ export class StoryService {
       }),
     };
   }
-  private STORY_RESPONSE_WITH_VIEWER(
-    story: Story,
-    viewerId?: string | Types.ObjectId,
-  ) {
-    const isSeen = viewerId
-      ? story.viewedByUsers?.some((viewer) => 
-          typeof viewer === 'object' && viewer._id 
-            ? viewer._id.toString() === viewerId.toString()
-            : viewer.toString() === viewerId.toString())
-      : false;
-
+  private STORY_RESPONSE_WITH_VIEWER(story: Story, viewerId: string) {
+    if (!story.viewedByUsers || story.viewedByUsers.length === 0) {
+      return {
+        ...this.STORY_RESPONSE(story),
+        isSeen: false,
+      };
+    }
+    const isSeen = story.viewedByUsers.some(viewer =>
+      viewer._id.toString() === viewerId
+    )
     return {
       ...this.STORY_RESPONSE(story),
       isSeen,
     };
-  }
-
-  private async getMusicLink(_id: string) {
-    return await this.musicService.findByID(_id.toString());
-  }
-  private async getStoriesMusic(stories: Story[]) {
-    if (!stories || stories.length === 0) {
-      return stories;
-    }
-    return await Promise.all(stories.map(async (sto) => {
-      if (!sto.music) {
-        return sto;
-      }
-      const res = await this.getMusicLink(sto.music._id.toString());
-      return {
-        ...sto,
-        music: {
-          _id: res._id,
-          link: res.link,
-          time_start: sto.music.time_start,
-          time_end: sto.music.time_end,
-        },
-      };
-    }));
   }
 
   async findStoriesByCurUser(userId: string) {
@@ -90,23 +140,43 @@ export class StoryService {
         data: [],
       };
     }
-    stories = (await this.getStoriesMusic(stories)) as any as Story[];
+    const [storiesWithMusic, storiesWithTags, storiesWithViewers] = await Promise.all([
+      this.enrichStoryMusic(stories),
+      this.enrichStoryTags(stories),
+      this.enrichStoryViewers(stories)
+    ]);
+
+    stories = stories.map((story, index) => ({
+      ...story,
+      ...storiesWithMusic[index],
+      tags: storiesWithTags[index].tags,
+      viewedByUsers: storiesWithViewers[index].viewedByUsers
+    })) as any as Story[];
     return {
-      message: 'Success',
-      data: stories.map(this.STORY_RESPONSE),
+      message: 'success',
+      data: stories.map(story => this.STORY_RESPONSE_WITH_VIEWER(story, userId)),
     };
   }
 
   async findWorkingStoriesByUser(userId: string) {
     const uid = new Types.ObjectId(userId);
-    let stories = (await this.storyRepo.findUserWorkingStories(uid)) as any as Story[];
+    let stories = await this.storyRepo.findUserWorkingStories(uid);
     if (!stories || stories.length === 0) {
       return {
         message: 'Success',
         data: [],
       };
     }
-    stories = (await this.getStoriesMusic(stories)) as any as Story[];
+    const [storiesWithMusic, storiesWithTags] = await Promise.all([
+      this.enrichStoryMusic(stories),
+      this.enrichStoryTags(stories),
+    ]);
+    stories = stories.map((story, index) => ({
+      ...story,
+      ...storiesWithMusic[index],
+      tags: storiesWithTags[index].tags,
+    })) as any as Story[];
+
     return {
       message: 'Success',
       data: stories.map(this.STORY_RESPONSE),
@@ -122,7 +192,7 @@ export class StoryService {
     };
   }
 
-  async findStoryById(ids: string[], viewerId?: string) {
+  async findStoryById(ids: string[], viewerId: string) {
     if (!ids || ids.length === 0) {
       return { message: 'Success', data: [] };
     }
@@ -131,44 +201,21 @@ export class StoryService {
     if (!stories || stories.length === 0) {
       return { message: 'Success', data: [] };
     }
-    stories = (await this.getStoriesMusic(stories)) as any as Story[];
-    
-    const updatedStories = await Promise.all(
-      stories.map(async (story) => {
-        if (!story.viewedByUsers || story.viewedByUsers.length === 0) {
-          return story;
-        }
-        const detailedViewers = await Promise.all(
-          story.viewedByUsers.map(async (id) => {
-            try {
-              const userProfile = await this.userService.getUserById(id.toString());
-              return {
-                _id: id.toString(),
-                profilePic: userProfile.profilePic,
-                handleName: userProfile.handleName,
-                username: userProfile.username,
-              };
-            } catch (error) {
-              return { _id: id.toString() };
-            }
-          })
-        );
-        
-        return {
-          ...story,
-          viewedByUsers: detailedViewers,
-        };
-      }),
-    );
-    
+    const [storiesWithMusic, storiesWithTags, storiesWithViewers] = await Promise.all([
+      this.enrichStoryMusic(stories),
+      this.enrichStoryTags(stories),
+      this.enrichStoryViewers(stories)
+    ]);
+    stories = stories.map((story, index) => ({
+      ...story,
+      ...storiesWithMusic[index],
+      tags: storiesWithTags[index].tags,
+      viewedByUsers: storiesWithViewers[index].viewedByUsers
+    })) as any as Story[];
+
     return {
-      message: 'Success',
-      data: await Promise.all(updatedStories.map(async (story) => {
-        return this.STORY_RESPONSE_WITH_VIEWER (
-          story as any as Story, 
-          viewerId
-        );
-      })),
+      message: 'success',
+      data: stories.map(story => this.STORY_RESPONSE_WITH_VIEWER(story, viewerId)),
     };
   }
 
@@ -254,7 +301,6 @@ export class StoryService {
       stories: storiesByUserId[id] || [],
     }));
 
-    // ✅ Luôn trả về chính chủ ở đầu (kể cả khi không follow ai)
     return {
       message: 'Success',
       data: [...defaultUserList, ...followingStories],
@@ -287,7 +333,7 @@ export class StoryService {
 
     if (hasViewed) {
       return {
-        message: 'Seen Success',
+        message: 'Success',
         data: this.STORY_RESPONSE(existingStory),
       };
     }
@@ -299,8 +345,8 @@ export class StoryService {
       viewedByUsers: existingStory.viewedByUsers,
     });
     return {
-      message: 'Seen Success',
-      data: this.STORY_RESPONSE_WITH_VIEWER(updated, viewerId),
+      message: 'Success',
+      data: this.STORY_RESPONSE_WITH_VIEWER(updated, (viewerId).toString()),
     };
   }
 
@@ -311,7 +357,7 @@ export class StoryService {
       type: StoryType.HIGHLIGHTS,
     });
     return {
-      message: 'Created Success',
+      message: 'Success',
       data: {
         ...this.STORY_RESPONSE(res),
       },
@@ -331,25 +377,6 @@ export class StoryService {
     return {
       message: 'Success',
       data: this.STORY_RESPONSE(updated),
-    };
-  }
-
-  async archiveStory(uid: string, storyDto: UpdateStoryDto) {
-    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
-    const uids = new Types.ObjectId(uid);
-    if (!existingStory.ownerId.equals(uids)) {
-      return new Error("You can't archive this story");
-    }
-
-    const res = await this.storyRepo.updateStory(existingStory._id, {
-      isArchived: true,
-    });
-    return {
-      message: 'Success',
-      data: {
-        ...this.STORY_RESPONSE(res),
-        isArchived: res.isArchived,
-      },
     };
   }
 
@@ -376,15 +403,33 @@ export class StoryService {
   }
 
   async deletedStory(uid: string, storyDto: UpdateStoryDto) {
-    const existingStory = await this.storyRepo.findOne({ _id: storyDto._id });
+    const [existingStory, highlight] = await Promise.all([
+      this.storyRepo.findOne({ _id: storyDto._id }),
+      this.storyRepo.findAllUserHighlights(new Types.ObjectId(uid))
+    ]);
     const uids = new Types.ObjectId(uid);
     if (!existingStory.ownerId.equals(uids)) {
       return new Error("You can't delete this story");
     }
-    const res = await this.storyRepo.deleteStory(existingStory._id);
+    if (!highlight) {
+      await this.storyRepo.findOneAndDelete({ _id: storyDto._id });
+      return {
+        message: 'Success',
+      };
+    }
+    await Promise.all([
+      highlight.map(story => {
+        const hasStory = story.storyId.filter(id =>
+          id.toString() !== storyDto._id
+        );
+        hasStory.length === 0
+          ? this.storyRepo.findOneAndDelete(story._id)
+          : this.storyRepo.updateStory(story._id, { storyId: hasStory })
+      }),
+      this.storyRepo.findOneAndDelete({ _id: storyDto._id })
+    ])
     return {
       message: 'Success',
-      // data: this.STORY_RESPONSE(res),
     };
   }
 }

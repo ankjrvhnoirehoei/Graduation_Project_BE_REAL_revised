@@ -100,15 +100,6 @@ export class StoryController {
     return this.storyService.seenStory(userId, storyDto);
   }
 
-  @Patch('archive')
-  @ApiOperation({ summary: `Archive story by currentUser` })
-  async archiveStory(
-    @CurrentUser('sub') userId: string,
-    @Body(new ValidationPipe()) storyDto: UpdateStoryDto,
-  ) {
-    return this.storyService.archiveStory(userId, storyDto);
-  }
-
   @Patch('like')
   @ApiOperation({ summary: `Like story by currentUser` })
   async likedStory(

@@ -5,10 +5,11 @@ export class UpdateHighlightDto {
   @IsNotEmpty()
   _id: string;
   
-  @IsNotEmpty()
+  @IsOptional()
   @IsArray()
-  storyId: string[];
-
+  storyId?: string[];
   @IsOptional()
   collectionName?: string;
+  @IsOptional()
+  thumbnail?: string
 }
