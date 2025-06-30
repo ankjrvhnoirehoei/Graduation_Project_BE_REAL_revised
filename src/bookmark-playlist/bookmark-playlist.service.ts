@@ -45,8 +45,8 @@ export class BookmarkPlaylistService {
     // 2) if none exist, insert defaults and reload
     if (playlists.length === 0) {
       const defaults = [
-        { userID: uid, playlistName: 'All posts' },
-        { userID: uid, playlistName: 'Music' },
+        { userID: uid, playlistName: 'Tất cả' },
+        { userID: uid, playlistName: 'Âm nhạc' },
       ];
       await this.playlistModel.insertMany(defaults);
       playlists = await this.playlistModel
@@ -261,7 +261,7 @@ export class BookmarkPlaylistService {
     const pid = new Types.ObjectId(userId);
     const pl = await this.playlistModel.findOne({
       userID: pid,
-      playlistName: 'Music',
+      playlistName: { $in: ['Âm nhạc', 'Music'] },
       isDeleted: false,
     });
     if (!pl) {
@@ -273,7 +273,7 @@ export class BookmarkPlaylistService {
   // add music to playlist
   async addMusicToPlaylist(userId: string, musicId: string) {
     const playlist = await this.findMusicPlaylist(userId);
-    if (playlist.playlistName != 'Music') {
+    if (playlist.playlistName !== 'Music' && playlist.playlistName !== 'Âm nhạc') {
       throw new BadRequestException(`Can't add music to non-music playlists.`)
     }
     const bookmark = await this.bookmarkItemService.createMusic(
@@ -308,7 +308,7 @@ export class BookmarkPlaylistService {
 
     const playlist = await this.playlistModel.findOne({
       userID: uid,
-      playlistName: 'All posts',
+      playlistName: { $in: ['All posts', 'Tất cả'] },
       isDeleted: false,
     }).exec();
 
@@ -353,7 +353,7 @@ export class BookmarkPlaylistService {
     // Ensure target playlist exists & belongs to user
     const target = await this.findByIdAndUser(newPlaylistId, userId);
 
-    if (target.playlistName === 'Music') {
+    if (target.playlistName === 'Music' || target.playlistName === 'Âm nhạc') {
       throw new BadRequestException(`Incompatible playlist item type and playlist type.`);
     }
 
