@@ -230,11 +230,12 @@ export class RelationController {
     return { recommendations };
   }
 
+  @UseGuards(JwtRefreshAuthGuard)
   @Post('followers/send-notification')
   async notifyFollowersPost(
     @CurrentUser('sub') userId: string,
     @Body() input: { title: string; body: string; data?: any },
-  ): Promise<{ success: boolean; followers?: string[]; error?: string }> {
+  ): Promise<{ success: boolean; followers?: any; error?: string }> {
     try {
       const followers = await this.relationService.getFollowers(userId);
       if (!followers.length) return { success: true, followers: [] };

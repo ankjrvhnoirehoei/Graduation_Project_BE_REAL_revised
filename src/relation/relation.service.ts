@@ -337,14 +337,11 @@ export class RelationService {
 
   async getFollowers(userId: string): Promise<string[]> {
     const objectId = new Types.ObjectId(userId);
-    
+
     const followers = await this.relationModel
       .find({
         $or: [
-          // userId is userTwo, and relation starts with 'FOLLOW_' -> follower is userOne
           { userTwoID: objectId, relation: { $regex: '^FOLLOW_' } },
-          
-          // userId is userOne, and relation ends with '_FOLLOW' -> follower is userTwo
           { userOneID: objectId, relation: { $regex: '_FOLLOW$' } },
         ],
       })
@@ -357,15 +354,13 @@ export class RelationService {
 
       if (u2 === userId && record.relation.startsWith('FOLLOW_')) {
         return u1;
-      }
-      else if (u1 === userId && record.relation.endsWith('_FOLLOW')) {
+      } else if (u1 === userId && record.relation.endsWith('_FOLLOW')) {
         return u2;
       }
-      
+
       throw new BadRequestException('Unexpected relation pattern in followers');
     });
 
-    // remove duplicates and return
     return [...new Set(followerIds)];
   }
 }
