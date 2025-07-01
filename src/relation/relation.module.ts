@@ -6,13 +6,14 @@ import { RelationController } from './relation.controller';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserModule } from '../user/user.module';
+import { NotificationModule } from 'src/notification/notification.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Relation.name, schema: RelationSchema },
     ]),
-    forwardRef(() => UserModule), 
+    forwardRef(() => UserModule),
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
@@ -20,6 +21,7 @@ import { UserModule } from '../user/user.module';
         signOptions: { expiresIn: '15m' },
       }),
     }),
+    NotificationModule,
   ],
   providers: [RelationService],
   controllers: [RelationController],
