@@ -11,19 +11,21 @@ import {
 import { RelationService } from './relation.service';
 import { RelationType } from './relation.schema';
 import { UpsertRelationDto } from './dto/upsert-relation.dto';
-import { ListRelationDto }   from './dto/list-relation.dto';
+import { ListRelationDto } from './dto/list-relation.dto';
 import { GetFollowersDto } from './dto/get-followers.dto';
 import { GetFollowingDto } from './dto/get-following.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { GetBlockingDto } from './dto/get-blocking.dto';
-import { UserService } from '../user/user.service'
+import { UserService } from '../user/user.service';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Controller('relations')
 export class RelationController {
   constructor(
     private readonly relationService: RelationService,
     private readonly userService: UserService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   /**
@@ -35,16 +37,13 @@ export class RelationController {
    */
   @UseGuards(JwtRefreshAuthGuard)
   @Put('relation-action')
-  async upsert(
-    @CurrentUser('sub') me: string,
-    @Body() dto: UpsertRelationDto,
-  ) {
+  async upsert(@CurrentUser('sub') me: string, @Body() dto: UpsertRelationDto) {
     const { targetId, action } = dto;
 
     if (me === targetId) {
       throw new BadRequestException('Cannot follow/block yourself');
     }
-    if (!['follow','unfollow','block','unblock'].includes(action)) {
+    if (!['follow', 'unfollow', 'block', 'unblock'].includes(action)) {
       throw new BadRequestException('Invalid action');
     }
 
@@ -76,7 +75,7 @@ export class RelationController {
       filter,
     );
 
-    return records.map(r => ({
+    return records.map((r) => ({
       userOneID: r.userOneID,
       userTwoID: r.userTwoID,
       relation: r.relation,
@@ -96,11 +95,11 @@ export class RelationController {
       'followers',
     );
 
-    // map each record to the follower's ID 
-    const followerIds = records.map(r => {
+    // map each record to the follower's ID
+    const followerIds = records.map((r) => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
-      
+
       // Check which pattern matched and return the correct follower
       if (u2 === userId && r.relation.startsWith('FOLLOW_')) {
         return u1;
@@ -128,28 +127,28 @@ export class RelationController {
   @Post('following')
   async getFollowing(@Body() dto: GetFollowingDto) {
     const { userId } = dto;
-    
+
     // fetch all relationship records where userId follows someone
     const records = await this.relationService.findByUserAndFilter(
       userId,
       'following',
     );
-    
-    // map each record to the followed user's ID 
-    const followingIds = records.map(r => {
+
+    // map each record to the followed user's ID
+    const followingIds = records.map((r) => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
-      
+
       // Check which pattern matched and return the correct following
       if (u1 === userId && r.relation.startsWith('FOLLOW_')) {
-        return u2; 
+        return u2;
       } else if (u2 === userId && r.relation.endsWith('_FOLLOW')) {
         return u1;
       }
       throw new BadRequestException('Unexpected relation pattern in following');
     });
 
-    // Remove duplicates 
+    // Remove duplicates
     const uniqueFollowingIds = [...new Set(followingIds)];
 
     // Fetch detailed user information
@@ -182,7 +181,7 @@ export class RelationController {
     );
 
     // map each record to the blocked-user's ID
-    const blockingIds = records.map(r => {
+    const blockingIds = records.map((r) => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // if userId is in userTwoID, then userId blocks userOneID; otherwise userId blocks userTwoID
@@ -195,7 +194,7 @@ export class RelationController {
     );
 
     return { userId, blocking };
-  }  
+  }
 
   /**
    * GET /relations/recommendations?limit=10
@@ -218,13 +217,40 @@ export class RelationController {
     );
 
     if (recIds.length === 0) {
-      return { message: 'No recommendations available. Follow more users to get suggestions.' };
+      return {
+        message:
+          'No recommendations available. Follow more users to get suggestions.',
+      };
     }
 
     const recommendations = await Promise.all(
-      recIds.map(id => this.userService.getUserById(id)),
+      recIds.map((id) => this.userService.getUserById(id)),
     );
 
     return { recommendations };
+  }
+
+  @UseGuards(JwtRefreshAuthGuard)
+  @Post('followers/send-notification')
+  async notifyFollowersPost(
+    @CurrentUser('sub') userId: string,
+    @Body() input: { title: string; body: string; data?: any },
+  ): Promise<{ success: boolean; followers?: any; error?: string }> {
+    try {
+      const followers = await this.relationService.getFollowers(userId);
+      if (!followers.length) return { success: true, followers: [] };
+
+      await this.notificationService.sendPushNotification(
+        followers,
+        userId,
+        input.title || 'Thông báo mới',
+        input.body || 'Bạn có thông báo từ người bạn đang theo dõi',
+        input.data || {},
+      );
+
+      return { success: true, followers };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   }
 }

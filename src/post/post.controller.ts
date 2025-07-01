@@ -10,16 +10,14 @@ import {
   DefaultValuePipe,
   ParseIntPipe,
   Param,
+  NotFoundException,
 } from '@nestjs/common';
 import { PostService } from './post.service';
 import { CreatePostWithMediaDto } from 'src/post/dto/post-media.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { SearchDto } from './dto/search.dto';
-import { WeeklyPostsDto } from './dto/weekly-posts.dto';
 import { UserService } from 'src/user/user.service';
-import { LastTwoWeeksDto } from './dto/last-two-weeks.dto';
-import { TopPostDto } from './dto/top-posts.dto';
 
 @Controller('posts')
 @UseGuards(JwtRefreshAuthGuard)
@@ -86,6 +84,20 @@ export class PostController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.postService.findReelsWithMusic(userId);
+  }
+
+  @Get(':postId') 
+  async getPostDetail(@Param('postId') postId: string) {
+    const post = await this.postService.getPostById(postId);
+
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    return {
+      success: true,
+      data: post,
+    };
   }
 
   // Returns up to 50 posts and up to 50 reels for user

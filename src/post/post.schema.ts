@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import mongoose, { Document, Types } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import { MusicPostDto } from 'src/music/dto/music.dto';
 
 export type PostDocument = Post & Document;

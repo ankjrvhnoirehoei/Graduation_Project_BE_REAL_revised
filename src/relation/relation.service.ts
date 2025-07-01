@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Relation, RelationDocument, RelationType } from './relation.schema';
@@ -9,7 +13,7 @@ export class RelationService {
     @InjectModel(Relation.name) private relationModel: Model<RelationDocument>,
   ) {}
 
-  // create, update or delete the relation from A->B 
+  // create, update or delete the relation from A->B
   async createOrUpdateRelation(
     actingUserId: string,
     targetUserId: string,
@@ -21,7 +25,10 @@ export class RelationService {
     }
 
     // Validate ObjectIds
-    if (!Types.ObjectId.isValid(actingUserId) || !Types.ObjectId.isValid(targetUserId)) {
+    if (
+      !Types.ObjectId.isValid(actingUserId) ||
+      !Types.ObjectId.isValid(targetUserId)
+    ) {
       throw new BadRequestException('Invalid user ID format');
     }
 
@@ -31,10 +38,12 @@ export class RelationService {
     // Determine consistent ordering (lexicographically by string representation)
     const actingUserIdStr = actingUser.toString();
     const targetUserIdStr = targetUser.toString();
-    
-    const userOneId = actingUserIdStr < targetUserIdStr ? actingUser : targetUser;
-    const userTwoId = actingUserIdStr < targetUserIdStr ? targetUser : actingUser;
-    
+
+    const userOneId =
+      actingUserIdStr < targetUserIdStr ? actingUser : targetUser;
+    const userTwoId =
+      actingUserIdStr < targetUserIdStr ? targetUser : actingUser;
+
     // Determine if acting user is userOne or userTwo in the consistent ordering
     const actingUserIsUserOne = actingUserIdStr < targetUserIdStr;
 
@@ -46,13 +55,15 @@ export class RelationService {
           userOneId,
           userTwoId,
           actingUserIsUserOne,
-          action
+          action,
         );
       } catch (error) {
         // Handle duplicate key errors (race conditions)
         if (error.code === 11000 && attempt < maxRetries - 1) {
           // Wait a bit and retry
-          await new Promise(resolve => setTimeout(resolve, Math.random() * 100));
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.random() * 100),
+          );
           continue;
         }
         throw error;
@@ -75,7 +86,7 @@ export class RelationService {
     // Parse existing relation states, default to NULL
     let oneRel: 'FOLLOW' | 'BLOCK' | 'NULL' = 'NULL';
     let twoRel: 'FOLLOW' | 'BLOCK' | 'NULL' = 'NULL';
-    
+
     if (existing && existing.relation) {
       const parts = existing.relation.split('_');
       if (parts.length === 2) {
@@ -122,27 +133,29 @@ export class RelationService {
     }
 
     // Validate relation state
-    if (!['FOLLOW', 'BLOCK', 'NULL'].includes(oneRel) || 
-        !['FOLLOW', 'BLOCK', 'NULL'].includes(twoRel)) {
+    if (
+      !['FOLLOW', 'BLOCK', 'NULL'].includes(oneRel) ||
+      !['FOLLOW', 'BLOCK', 'NULL'].includes(twoRel)
+    ) {
       throw new BadRequestException('Invalid relation state');
     }
 
     // Upsert the relation with consistent ordering
     const newRelation = `${oneRel}_${twoRel}` as RelationType;
-    
+
     try {
       return await this.relationModel
         .findOneAndUpdate(
           { userOneID: userOneId, userTwoID: userTwoId },
-          { 
+          {
             relation: newRelation,
-            updated_at: new Date()
+            updated_at: new Date(),
           },
-          { 
-            upsert: true, 
-            new: true, 
+          {
+            upsert: true,
+            new: true,
             setDefaultsOnInsert: true,
-            runValidators: true
+            runValidators: true,
           },
         )
         .exec();
@@ -156,31 +169,43 @@ export class RelationService {
   }
 
   // Helper method to get relation between two users
-  async getRelation(userOneId: string, userTwoId: string): Promise<{
+  async getRelation(
+    userOneId: string,
+    userTwoId: string,
+  ): Promise<{
     relation: RelationType | null;
     userOneIsActing: boolean;
   }> {
-    if (!Types.ObjectId.isValid(userOneId) || !Types.ObjectId.isValid(userTwoId)) {
+    if (
+      !Types.ObjectId.isValid(userOneId) ||
+      !Types.ObjectId.isValid(userTwoId)
+    ) {
       throw new BadRequestException('Invalid user ID format');
     }
 
     const u1Str = new Types.ObjectId(userOneId).toString();
     const u2Str = new Types.ObjectId(userTwoId).toString();
-    
-    const userOneId_ordered = u1Str < u2Str ? new Types.ObjectId(userOneId) : new Types.ObjectId(userTwoId);
-    const userTwoId_ordered = u1Str < u2Str ? new Types.ObjectId(userTwoId) : new Types.ObjectId(userOneId);
-    
+
+    const userOneId_ordered =
+      u1Str < u2Str
+        ? new Types.ObjectId(userOneId)
+        : new Types.ObjectId(userTwoId);
+    const userTwoId_ordered =
+      u1Str < u2Str
+        ? new Types.ObjectId(userTwoId)
+        : new Types.ObjectId(userOneId);
+
     const relation = await this.relationModel
       .findOne({ userOneID: userOneId_ordered, userTwoID: userTwoId_ordered })
       .exec();
 
     return {
       relation: relation?.relation || null,
-      userOneIsActing: u1Str < u2Str
+      userOneIsActing: u1Str < u2Str,
     };
   }
 
-  // Fetch all relations for `userId`, filtered by one of four types 
+  // Fetch all relations for `userId`, filtered by one of four types
   async findByUserAndFilter(
     userId: string,
     filter: 'followers' | 'following' | 'blockers' | 'blocking',
@@ -192,16 +217,16 @@ export class RelationService {
       case 'followers':
         // A's followers = others who follow A
         or.push(
-          { userTwoID: u, relation: { $regex: '^FOLLOW_' } },  // B->A
-          { userOneID: u, relation: { $regex: '_FOLLOW$' } },  // A->B but B->A
+          { userTwoID: u, relation: { $regex: '^FOLLOW_' } }, // B->A
+          { userOneID: u, relation: { $regex: '_FOLLOW$' } }, // A->B but B->A
         );
         break;
 
       case 'following':
         // whom A follows
         or.push(
-          { userOneID: u, relation: { $regex: '^FOLLOW_' } },  // A->B
-          { userTwoID: u, relation: { $regex: '_FOLLOW$' } },  // B->A but A->B
+          { userOneID: u, relation: { $regex: '^FOLLOW_' } }, // A->B
+          { userTwoID: u, relation: { $regex: '_FOLLOW$' } }, // B->A but A->B
         );
         break;
 
@@ -240,8 +265,11 @@ export class RelationService {
     const u = new Types.ObjectId(userId);
 
     // 1. Direct followings of U
-    const followingRecords = await this.findByUserAndFilter(userId, 'following');
-    const followingIds = followingRecords.map(r => {
+    const followingRecords = await this.findByUserAndFilter(
+      userId,
+      'following',
+    );
+    const followingIds = followingRecords.map((r) => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       return u1 === userId ? u2 : u1;
@@ -251,16 +279,28 @@ export class RelationService {
     }
 
     // 2. Second-degree relations: followings of followings and followers of followings
-    const followingObjectIds = followingIds.map(id => new Types.ObjectId(id));
-    const rels = await this.relationModel.find({
-      $and: [
-        { $or: [ { userOneID: { $in: followingObjectIds } }, { userTwoID: { $in: followingObjectIds } } ] },
-        { $or: [ { relation: { $regex: '^FOLLOW_' } }, { relation: { $regex: '_FOLLOW$' } } ] },
-      ],
-    }).exec();
+    const followingObjectIds = followingIds.map((id) => new Types.ObjectId(id));
+    const rels = await this.relationModel
+      .find({
+        $and: [
+          {
+            $or: [
+              { userOneID: { $in: followingObjectIds } },
+              { userTwoID: { $in: followingObjectIds } },
+            ],
+          },
+          {
+            $or: [
+              { relation: { $regex: '^FOLLOW_' } },
+              { relation: { $regex: '_FOLLOW$' } },
+            ],
+          },
+        ],
+      })
+      .exec();
 
     // 3. Extract candidates (the other side of each relation)
-    const candidates = rels.map(r => {
+    const candidates = rels.map((r) => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
       // return the ID that isn't in followingIds
@@ -272,17 +312,55 @@ export class RelationService {
     const blocking = await this.findByUserAndFilter(userId, 'blocking');
     const blockers = await this.findByUserAndFilter(userId, 'blockers');
     const blockedSet = new Set<string>([
-      ...blocking.map(r => (r.userOneID.toString() === userId ? r.userTwoID : r.userOneID).toString()),
-      ...blockers.map(r => (r.userOneID.toString() === userId ? r.userTwoID : r.userOneID).toString()),
+      ...blocking.map((r) =>
+        (r.userOneID.toString() === userId
+          ? r.userTwoID
+          : r.userOneID
+        ).toString(),
+      ),
+      ...blockers.map((r) =>
+        (r.userOneID.toString() === userId
+          ? r.userTwoID
+          : r.userOneID
+        ).toString(),
+      ),
     ]);
 
-    const filtered = uniqueCandidates.filter(id =>
-      id !== userId &&
-      !followingIds.includes(id) &&
-      !blockedSet.has(id)
+    const filtered = uniqueCandidates.filter(
+      (id) =>
+        id !== userId && !followingIds.includes(id) && !blockedSet.has(id),
     );
 
     // 5. Cap at `limit`
     return filtered.slice(0, limit);
+  }
+
+  async getFollowers(userId: string): Promise<string[]> {
+    const objectId = new Types.ObjectId(userId);
+
+    const followers = await this.relationModel
+      .find({
+        $or: [
+          { userTwoID: objectId, relation: { $regex: '^FOLLOW_' } },
+          { userOneID: objectId, relation: { $regex: '_FOLLOW$' } },
+        ],
+      })
+      .select('userOneID userTwoID relation')
+      .lean();
+
+    const followerIds = followers.map((record) => {
+      const u1 = record.userOneID.toString();
+      const u2 = record.userTwoID.toString();
+
+      if (u2 === userId && record.relation.startsWith('FOLLOW_')) {
+        return u1;
+      } else if (u1 === userId && record.relation.endsWith('_FOLLOW')) {
+        return u2;
+      }
+
+      throw new BadRequestException('Unexpected relation pattern in followers');
+    });
+
+    return [...new Set(followerIds)];
   }
 }
