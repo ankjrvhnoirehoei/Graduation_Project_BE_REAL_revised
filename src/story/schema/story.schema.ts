@@ -12,7 +12,7 @@ export enum StoryType {
   HIGHLIGHTS = 'highlights',
 }
 
-@Schema({ versionKey: false, timestamps: true })
+@Schema({ versionKey: false })
 export class Story extends AbstractDocument {
   @Prop({ ref: User.name, required: true })
   ownerId: Types.ObjectId;
@@ -92,7 +92,7 @@ export class Story extends AbstractDocument {
     };
   }[];
 
-  @Prop({ default: Date.now() })
+  @Prop({ default: Date.now })
   createdAt: Date;
 }
 export const StorySchema = SchemaFactory.createForClass(Story);
