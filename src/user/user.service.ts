@@ -405,4 +405,63 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
   }
+
+  async disableUser(userId: string): Promise<boolean> {
+    const user = await this.userModel.findById(userId).select('deletedAt').exec();
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+
+    const newState = !user.deletedAt;
+    user.deletedAt = newState;
+    await user.save();
+
+    return newState;
+  }
+  
+async getNewUsersByDate(
+    from: Date,
+    to: Date,
+    page = 1,
+    limit = 20,
+  ): Promise<{
+    items: Partial<UserDocument>[];
+    pagination: {
+      currentPage: number;
+      totalPages: number;
+      totalCount: number;
+      limit: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
+  }> {
+    // Build base filter
+    const filter = { createdAt: { $gte: from, $lte: to } };
+
+    // Count total
+    const totalCount = await this.userModel.countDocuments(filter);
+    const totalPages = Math.max(Math.ceil(totalCount / limit), 1);
+
+    // Fetch paged items, excluding private fields
+    const items = await this.userModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .select('-password -refreshToken -fcmToken')
+      .lean()
+      .exec();
+
+    return {
+      items,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
+  }
 }

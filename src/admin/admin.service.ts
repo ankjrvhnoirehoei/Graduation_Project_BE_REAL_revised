@@ -12,7 +12,12 @@ import { TopFollowerDto } from 'src/user/dto/top-followers.dto';
 import { Relation, RelationDocument } from 'src/relation/relation.schema';
 import { User, UserDocument } from 'src/user/user.schema';
 import { InteractionPoint } from 'src/user/dto/search-user.dto';
+import { EditUserDto } from 'src/user/dto/update-user.dto';
+import { Comment, CommentDocument } from 'src/comment/comment.schema';
+import { PostLike, PostLikeDocument } from 'src/like_post/like_post.schema';
 
+type RangePair = { start: Date; end: Date };
+type RangeKey = '7days' | '30days' | 'year';
 @Injectable()
 export class AdminService {
   constructor(
@@ -21,15 +26,110 @@ export class AdminService {
     @InjectModel(Story.name) private storyModel: Model<StoryDocument>,
     @InjectModel(Relation.name) private readonly relationModel: Model<RelationDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(Comment.name) private commentModel: Model<CommentDocument>,
+    @InjectModel(PostLike.name) private likeModel: Model<PostLikeDocument>,
     private readonly userService: UserService,
   ) {}
 
-  private async ensureAdmin(userId: string) {
+  public async ensureAdmin(userId: string) {
     const user = await this.userService.findById(userId);
       if (!user || user.role !== 'admin') {
           throw new BadRequestException('Access denied: Admins only.');
       }
   }
+
+  private getRanges(key: 'default' | '7days' | '30days' | 'year'): { current: RangePair; previous: RangePair } {
+    const now = new Date();
+    // normalize today's 00:00
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let currStart: Date, prevStart: Date, prevEnd: Date;
+
+    if (key === 'default') {
+      // today vs yesterday
+      currStart = todayStart;
+      prevStart = new Date(todayStart.getTime() - 24*60*60*1000);
+      prevEnd   = new Date(todayStart.getTime() - 1);
+    } else if (key === '7days' || key === '30days') {
+      const days = key === '7days' ? 6 : 29; // inclusive of today
+      currStart = new Date(todayStart.getTime() - days*24*60*60*1000);
+      // previous is same length directly before
+      const lengthMs = (days+1)*24*60*60*1000;
+      prevEnd   = new Date(currStart.getTime() - 1);
+      prevStart = new Date(prevEnd.getTime() - lengthMs + 1);
+    } else { // 'year'
+      // Jan 1st this year to now
+      currStart = new Date(now.getFullYear(), 0, 1);
+      // same span in previous year
+      const spanDays = Math.floor((now.getTime() - currStart.getTime())/(24*60*60*1000)) + 1;
+      prevEnd   = new Date(currStart.getTime() - 1);
+      prevStart = new Date(prevEnd.getTime() - spanDays*24*60*60*1000 + 1);
+    }
+
+    return {
+      current: { start: currStart, end: now },
+      previous: { start: prevStart, end: prevEnd },
+    };
+  }
+
+  private buildRange(
+    range: RangeKey,
+  ): { from: Date; to: Date; unit: 'day' | 'month' } {
+    const now = new Date();
+    
+    // Create UTC dates instead of local timezone dates
+    const startOfTodayUTC = new Date(Date.UTC(
+      now.getUTCFullYear(), 
+      now.getUTCMonth(), 
+      now.getUTCDate()
+    ));
+    
+    let from: Date;
+    let unit: 'day' | 'month';
+
+    if (range === '7days') {
+      from = new Date(startOfTodayUTC.getTime() - 6 * 86_400_000);
+      unit = 'day';
+    } else if (range === '30days') {
+      from = new Date(startOfTodayUTC.getTime() - 29 * 86_400_000);
+      unit = 'day';
+    } else {
+      // Start of year in UTC
+      from = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+      unit = 'month';
+    }
+
+    // End of today in UTC
+    const endOfTodayUTC = new Date(startOfTodayUTC);
+    endOfTodayUTC.setUTCHours(23, 59, 59, 999);
+    const to = unit === 'day' ? endOfTodayUTC : now;
+
+    return { from, to, unit };
+  }
+  /** safe percent change */
+  private combinedFluct(currSum: number, prevSum: number): { percentageChange: number; trend: string } {
+    let pct: number;
+    if (prevSum === 0) {
+      pct = currSum === 0 ? 0 : 100;
+    } else {
+      pct = ((currSum - prevSum) / prevSum) * 100;
+    }
+
+    const trend = pct > 0 
+      ? 'increase' 
+      : pct < 0 
+        ? 'decrease' 
+        : 'no change';
+
+    // round to nearest integer 
+    return { percentageChange: Math.round(pct), trend };
+  }
+
+  private formatDate(d: Date): string {
+    const dd = `${d.getDate()}`.padStart(2, '0');
+    const mm = `${d.getMonth() + 1}`.padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }  
 
   async getWeeklyStats(userId: string): Promise<WeeklyPostsDto[]> {
     await this.ensureAdmin(userId);
@@ -1164,7 +1264,7 @@ export class AdminService {
   
 async searchUsers(userId: string, handleName: string) {
     await this.ensureAdmin(userId);
-        const trimmed = handleName.trim();
+    const trimmed = handleName.trim();
     if (!trimmed) {
       throw new BadRequestException('handleName cannot be empty');
     }
@@ -1309,5 +1409,373 @@ async searchUsers(userId: string, handleName: string) {
       },
     };
   }  
-}
 
+  async editAccount(userId: string, dto: EditUserDto) {
+    await this.ensureAdmin(userId);
+    return this.userService.updateProfile(userId, dto);
+  }
+
+  async getDashboardStats(userId: string, RangePair: 'default' | '7days' | '30days' | 'year') {
+    await this.ensureAdmin(userId);
+    const { current, previous } = this.getRanges(RangePair);
+
+    // New users
+    const [ usersCurr, usersPrev ] = await Promise.all([
+      this.userModel.countDocuments({ createdAt: { $gte: current.start, $lte: current.end } }),
+      this.userModel.countDocuments({ createdAt: { $gte: previous.start, $lte: previous.end } }),
+    ]);
+
+    // New content = posts + stories
+    const [ postsCurr, postsPrev, storiesCurr, storiesPrev ] = await Promise.all([
+      this.postModel.countDocuments({ createdAt: { $gte: current.start, $lte: current.end } }),
+      this.postModel.countDocuments({ createdAt: { $gte: previous.start, $lte: previous.end } }),
+      this.storyModel.countDocuments({ createdAt: { $gte: current.start, $lte: current.end } }),
+      this.storyModel.countDocuments({ createdAt: { $gte: previous.start, $lte: previous.end } }),
+    ]);
+    const contentsCurr = postsCurr + storiesCurr;
+    const contentsPrev = postsPrev + storiesPrev;
+
+    // Views
+    const [ viewsPostCurr, viewsPostPrev ] = await Promise.all([
+      this.postModel.aggregate([
+        { $match: { createdAt: { $gte: current.start, $lte: current.end } } },
+        { $group: { _id: null, sum: { $sum: '$viewCount' } } },
+      ]),
+      this.postModel.aggregate([
+        { $match: { createdAt: { $gte: previous.start, $lte: previous.end } } },
+        { $group: { _id: null, sum: { $sum: '$viewCount' } } },
+      ]),
+    ]);
+    const [ viewsStoryCurr, viewsStoryPrev ] = await Promise.all([
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: current.start, $lte: current.end } } },
+        { 
+          $project: { 
+            count: { 
+              $size: { 
+                $ifNull: [ '$viewedByUsers', [] ] 
+              } 
+            } 
+          } 
+        },
+        { $group: { _id: null, sum: { $sum: '$count' } } },
+      ]),
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: previous.start, $lte: previous.end } } },
+        { 
+          $project: { 
+            count: { 
+              $size: { 
+                $ifNull: [ '$viewedByUsers', [] ] 
+              } 
+            } 
+          } 
+        },
+        { $group: { _id: null, sum: { $sum: '$count' } } },
+      ]),
+    ]);
+    const viewsCurr = (viewsPostCurr[0]?.sum || 0) + (viewsStoryCurr[0]?.sum || 0);
+    const viewsPrev = (viewsPostPrev[0]?.sum || 0) + (viewsStoryPrev[0]?.sum || 0);
+
+    // Comments
+    const [ commCurr, commPrev ] = await Promise.all([
+      this.commentModel.countDocuments({ createdAt: { $gte: current.start, $lte: current.end } }),
+      this.commentModel.countDocuments({ createdAt: { $gte: previous.start, $lte: previous.end } }),
+    ]);
+
+    // sum up current & previous totals
+    const currTotal = usersCurr + contentsCurr + viewsCurr + commCurr;
+    const prevTotal = usersPrev + contentsPrev + viewsPrev + commPrev;
+
+    // build fluctuation
+    const { percentageChange, trend } = this.combinedFluct(currTotal, prevTotal);
+
+    // return with formatted dates and combined fluctuation
+    return {
+      users:    usersCurr,
+      contents: contentsCurr,
+      views:    viewsCurr,
+      comments: commCurr,
+      fluctuation: { 
+        percentageChange, 
+        trend 
+      },
+      period: {
+        from: this.formatDate(current.start),
+        to:   this.formatDate(current.end),
+      }
+    };
+  }  
+
+  async getNewPostsByDate(
+    adminId: string,
+    from: Date,
+    to: Date,
+  ): Promise<TopPostDto[]> {
+    await this.ensureAdmin(adminId);
+
+    const docs = await this.postModel.aggregate([
+      // filter by createdAt
+      { 
+        $match: { 
+          createdAt: { $gte: from, $lte: to } 
+        } 
+      },
+
+      // lookup media
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'medias',
+        },
+      },
+
+      // lookup likes
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likesArr',
+        },
+      },
+
+      // lookup comments
+      {
+        $lookup: {
+          from: 'comments',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'commentsArr',
+        },
+      },
+
+      // lookup author
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'authorArr',
+        },
+      },
+      { $unwind: '$authorArr' },
+
+      {
+        $project: {
+          id: '$_id',
+          thumbnail: {
+            $map: {
+              input: '$medias',
+              as: 'm',
+              in: { $ifNull: ['$$m.imageUrl', '$$m.videoUrl'] },
+            },
+          },
+          caption: 1,
+          author: '$authorArr.handleName',
+          likes: { $size: '$likesArr' },
+          comments: { $size: '$commentsArr' },
+          shares: { $ifNull: ['$shares', 0] },
+          createdAt: 1,
+        },
+      },
+
+      { $sort: { createdAt: -1 } },
+    ]);
+
+    return docs.map(d => ({
+      ...d,
+      id: d.id.toString(),
+    })) as TopPostDto[];
+  }
+
+  async getCumulativeNewUsers(
+    adminId: string,
+    range: RangeKey,
+  ): Promise<{
+    range: RangeKey;
+    unit: 'day' | 'month';
+    from: string;
+    to: string;
+    data: Array<{ period: string; accounts: number; cumulative: number }>;
+  }> {
+    await this.ensureAdmin(adminId);
+    const { from, to, unit } = this.buildRange(range);
+
+    // group key
+    const groupId =
+      unit === 'day'
+        ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
+        : { $month: '$createdAt' };
+
+    // aggregate raw counts
+    const raw = await this.userModel.aggregate([
+      { $match: { createdAt: { $gte: from, $lte: to } } },
+      { $group: { _id: groupId, count: { $sum: 1 } } },
+    ]);
+
+    const map = new Map<string | number, number>(raw.map(d => [d._id, d.count]));
+    const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    const data = [] as Array<{ period: string; accounts: number; cumulative: number }>;
+    let cumulative = 0;
+
+    if (unit === 'day') {
+      const days = Math.floor((to.getTime() - from.getTime()) / 86_400_000) + 1;
+      for (let i = 0; i < days; i++) {
+        const d = new Date(from.getTime() + i * 86_400_000);
+        const key = d.toISOString().slice(0,10);
+        const count = map.get(key) ?? 0;
+        cumulative += count;
+        data.push({
+          period: `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`,
+          accounts: count,
+          cumulative,
+        });
+      }
+    } else {
+      const current = to.getMonth() + 1;
+      for (let m = 1; m <= current; m++) {
+        const count = map.get(m) ?? 0;
+        cumulative += count;
+        data.push({ period: monthLabels[m-1], accounts: count, cumulative });
+      }
+    }
+
+    return { range, unit, from: this.formatDate(from), to: this.formatDate(to), data };
+  }
+
+  /**
+   * 2) Content activity (posts, reels, stories)
+   */
+  async getContentActivity(
+    adminId: string,
+    range: RangeKey,
+  ): Promise<{
+    range: RangeKey;
+    unit: 'day' | 'month';
+    from: string;
+    to: string;
+    data: Array<{ period: string; posts: number; reels: number; stories: number }>;
+  }> {
+    await this.ensureAdmin(adminId);
+    const { from, to, unit } = this.buildRange(range);
+
+    const groupId =
+      unit === 'day'
+        ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
+        : { $month: '$createdAt' };
+
+    const [postsRaw, reelsRaw, storiesRaw] = await Promise.all([
+      this.postModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to }, type: 'post' } },
+        { $group: { _id: groupId, count: { $sum: 1 } } },
+      ]),
+      this.postModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to }, type: 'reel' } },
+        { $group: { _id: groupId, count: { $sum: 1 } } },
+      ]),
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        { $group: { _id: groupId, count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const postsMap = new Map(postsRaw.map(d => [d._id, d.count]));
+    const reelsMap = new Map(reelsRaw.map(d => [d._id, d.count]));
+    const storiesMap = new Map(storiesRaw.map(d => [d._id, d.count]));
+    const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    const data = [] as Array<{ period: string; posts: number; reels: number; stories: number }>;
+    if (unit === 'day') {
+      const days = Math.floor((to.getTime() - from.getTime()) / 86_400_000) + 1;
+      for (let i = 0; i < days; i++) {
+        const d = new Date(from.getTime() + i * 86_400_000);
+        const key = d.toISOString().slice(0,10);
+        data.push({
+          period: `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`,
+          posts: postsMap.get(key) ?? 0,
+          reels: reelsMap.get(key) ?? 0,
+          stories: storiesMap.get(key) ?? 0,
+        });
+      }
+    } else {
+      const current = to.getMonth() + 1;
+      for (let m = 1; m <= current; m++) {
+        data.push({ period: monthLabels[m-1], posts: postsMap.get(m) ?? 0, reels: reelsMap.get(m) ?? 0, stories: storiesMap.get(m) ?? 0 });
+      }
+    }
+
+    return { range, unit, from: this.formatDate(from), to: this.formatDate(to), data };
+  }
+
+  /**
+   * 3) Engagement activity (likes, comments, follows)
+   */
+  async getEngagementActivity(
+    adminId: string,
+    range: RangeKey,
+  ): Promise<{
+    range: RangeKey;
+    unit: 'day' | 'month';
+    from: string;
+    to: string;
+    data: Array<{ period: string; likes: number; comments: number; follows: number }>;
+  }> {
+    await this.ensureAdmin(adminId);
+    const { from, to, unit } = this.buildRange(range);
+
+    const groupId =
+      unit === 'day'
+        ? { $dateToString: { format: '%Y-%m-%d',	date: '$createdAt' } }
+        : { $month: '$createdAt' };
+
+    const [likesRaw, commentsRaw, followsRaw] = await Promise.all([
+      this.likeModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        { $group: { _id: groupId, count: { $sum: 1 } } },
+      ]),
+      this.commentModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to }, isDeleted: false } },
+        { $group: { _id: groupId, count: { $sum: 1 } } },
+      ]),
+      this.relationModel.aggregate([
+        { $match: { updated_at: { $gte: from, $lte: to } } },
+        { $addFields: { followCount: { $add: [
+          { $cond: [{ $regexMatch: { input: '$relation', regex: /^FOLLOW_/ } }, 1, 0] },
+          { $cond: [{ $regexMatch: { input: '$relation', regex: /_FOLLOW$/ } }, 1, 0] }
+        ] } } },
+        { $group: { _id: groupId, count: { $sum: '$followCount' } } },
+      ]),
+    ]);
+
+    const likesMap    = new Map(likesRaw.map(d => [d._id, d.count]));
+    const commentsMap = new Map(commentsRaw.map(d => [d._id, d.count]));
+    const followsMap  = new Map(followsRaw.map(d => [d._id, d.count]));
+    const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    const data = [] as Array<{ period: string; likes: number; comments: number; follows: number }>;
+    if (unit === 'day') {
+      const days = Math.floor((to.getTime() - from.getTime()) / 86400_000) + 1;
+      for (let i = 0; i < days; i++) {
+        const d = new Date(from.getTime() + i * 86400_000);
+        const key = d.toISOString().slice(0,10);
+        data.push({
+          period: `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`,
+          likes: likesMap.get(key) ?? 0,
+          comments: commentsMap.get(key) ?? 0,
+          follows: followsMap.get(key) ?? 0,
+        });
+      }
+    } else {
+      const current = to.getMonth() + 1;
+      for (let m = 1; m <= current; m++) {
+        data.push({ period: monthLabels[m-1], likes: likesMap.get(m) ?? 0, comments: commentsMap.get(m) ?? 0, follows: followsMap.get(m) ?? 0 });
+      }
+    }
+
+    return { range, unit, from: this.formatDate(from), to: this.formatDate(to), data };
+  }
+}

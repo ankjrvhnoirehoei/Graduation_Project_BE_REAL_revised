@@ -26,6 +26,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    if (user.deletedAt && user.deletedAt !== false) {
+      throw new UnauthorizedException('Tài khoản đã bị vô hiệu hóa hoặc xóa.');
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       throw new UnauthorizedException('Invalid credentials');
