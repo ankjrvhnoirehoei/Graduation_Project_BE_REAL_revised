@@ -2013,4 +2013,17 @@ export class PostService {
 
     return this.postModel.aggregate(pipeline).exec();
   }
+
+  async disablePost(postId: string): Promise<Boolean> {
+    const post = await this.postModel.findById(postId).select('isEnable').exec();
+    if (!post) {
+      throw new NotFoundException(`Post ${postId} not found`);
+    }
+
+    const newState = !post.isEnable;
+    post.isEnable = newState;
+    await post.save();
+
+    return newState;
+  }
 }
