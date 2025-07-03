@@ -102,7 +102,7 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    const { password, refreshToken, ...safeUser } = user;
+    const { password, refreshToken, fcmToken, ...safeUser } = user;
     return safeUser;
   }
 

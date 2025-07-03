@@ -1729,8 +1729,13 @@ async searchUsers(userId: string, handleName: string) {
 
     const groupId =
       unit === 'day'
-        ? { $dateToString: { format: '%Y-%m-%d',	date: '$createdAt' } }
+        ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
         : { $month: '$createdAt' };
+
+    const followsGroupId =
+      unit === 'day'
+        ? { $dateToString: { format: '%Y-%m-%d', date: '$updated_at' } }
+        : { $month: '$updated_at' };
 
     const [likesRaw, commentsRaw, followsRaw] = await Promise.all([
       this.likeModel.aggregate([
@@ -1743,17 +1748,29 @@ async searchUsers(userId: string, handleName: string) {
       ]),
       this.relationModel.aggregate([
         { $match: { updated_at: { $gte: from, $lte: to } } },
-        { $addFields: { followCount: { $add: [
-          { $cond: [{ $regexMatch: { input: '$relation', regex: /^FOLLOW_/ } }, 1, 0] },
-          { $cond: [{ $regexMatch: { input: '$relation', regex: /_FOLLOW$/ } }, 1, 0] }
-        ] } } },
-        { $group: { _id: groupId, count: { $sum: '$followCount' } } },
+        { 
+          $addFields: { 
+            followCount: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ['$relation', 'FOLLOW_FOLLOW'] }, then: 2 },
+                  { case: { $eq: ['$relation', 'FOLLOW_NULL'] }, then: 1 },
+                  { case: { $eq: ['$relation', 'FOLLOW_BLOCK'] }, then: 1 },
+                  { case: { $eq: ['$relation', 'BLOCK_FOLLOW'] }, then: 1 },
+                  { case: { $eq: ['$relation', 'NULL_FOLLOW'] }, then: 1 },
+                ],
+                default: 0
+              }
+            }
+          } 
+        },
+        { $group: { _id: followsGroupId, count: { $sum: '$followCount' } } },
       ]),
     ]);
 
-    const likesMap    = new Map(likesRaw.map(d => [d._id, d.count]));
+    const likesMap = new Map(likesRaw.map(d => [d._id, d.count]));
     const commentsMap = new Map(commentsRaw.map(d => [d._id, d.count]));
-    const followsMap  = new Map(followsRaw.map(d => [d._id, d.count]));
+    const followsMap = new Map(followsRaw.map(d => [d._id, d.count]));
     const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
     const data = [] as Array<{ period: string; likes: number; comments: number; follows: number }>;
@@ -1772,7 +1789,12 @@ async searchUsers(userId: string, handleName: string) {
     } else {
       const current = to.getMonth() + 1;
       for (let m = 1; m <= current; m++) {
-        data.push({ period: monthLabels[m-1], likes: likesMap.get(m) ?? 0, comments: commentsMap.get(m) ?? 0, follows: followsMap.get(m) ?? 0 });
+        data.push({ 
+          period: monthLabels[m-1], 
+          likes: likesMap.get(m) ?? 0, 
+          comments: commentsMap.get(m) ?? 0, 
+          follows: followsMap.get(m) ?? 0 
+        });
       }
     }
 
