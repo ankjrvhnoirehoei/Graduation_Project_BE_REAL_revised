@@ -786,6 +786,27 @@ export class PostService {
     return { total, items };
   }
 
+  private buildCaptionSearchFilter(keyword: string): Record<string, any> {
+    const keywordLower = keyword.toLowerCase();
+    const tokens = keywordLower.split(/\s+/).filter((w) => w.length > 0);
+
+    if (tokens.length > 1) {
+      // multi-word: require each token anywhere in the caption (case-insensitive)
+      const andClauses = tokens.map((tok) => ({
+        caption: {
+          $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+          $options: 'i',
+        },
+      }));
+      return { $and: andClauses };
+    } else {
+      // single word: just one regex
+      const escaped = tokens[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return { caption: { $regex: escaped, $options: 'i' } };
+    }
+  }
+
+  // Refactored search method using the unified pipeline
   async searchByCaptionPaginated(
     userId: string,
     keyword: string,
@@ -820,326 +841,40 @@ export class PostService {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid userId');
     }
-    const currentUserObjectId = new Types.ObjectId(userId);
 
-    // build the caption‐matching condition
-    const keywordLower = keyword.toLowerCase();
-    const tokens = keywordLower.split(/\s+/).filter((w) => w.length > 0);
+    // build the caption search filter
+    const captionSearchFilter = this.buildCaptionSearchFilter(keyword);
 
-    let captionMatch: Record<string, any>;
-    if (tokens.length > 1) {
-      // multi-word: require each token anywhere in the caption (case‐insensitive)
-      const andClauses = tokens.map((tok) => ({
-        caption: {
-          $regex: tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-          $options: 'i',
-        },
-      }));
-      captionMatch = { $and: andClauses };
-    } else {
-      // single word: just one regex
-      const escaped = tokens[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      captionMatch = { caption: { $regex: escaped, $options: 'i' } };
-    }
-
-    //    non‐reel  =>  type: { $ne: 'reel' }
-    //    reels     =>  type: 'reel'
-    //
-    // each uses a $facet so we get BOTH a totalCount and a paginated data array in one shot
-
-    const [postsResult, reelsResult] = await Promise.all([
-      this._searchBucket(
-        currentUserObjectId,
-        captionMatch,
-        { $ne: 'reel' },
-        page,
-        limit,
-      ),
-      this._searchBucket(
-        currentUserObjectId,
-        captionMatch,
-        'reel',
-        page,
-        limit,
-      ),
-    ]);
-
-    // compute 'totalPages', 'hasNextPage', 'hasPrevPage' for each bucket
-    const computePagination = (totalCount: number) => {
-      const totalPages = Math.ceil(totalCount / limit) || 1;
-      return {
-        currentPage: page,
-        totalPages,
-        totalCount,
-        limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      };
+    // Build match filters for posts and reels
+    const postsMatchFilter = {
+      _userId: userId,
+      type: { $ne: 'reel' },
+      ...captionSearchFilter,
     };
+
+    const reelsMatchFilter = {
+      _userId: userId,
+      type: 'reel',
+      ...captionSearchFilter,
+    };
+
+    // Use the existing runPagedAggregation method for both posts and reels
+    const [postsResult, reelsResult] = await Promise.all([
+      this.runPagedAggregation(postsMatchFilter, page, limit),
+      this.runPagedAggregation(reelsMatchFilter, page, limit),
+    ]);
 
     return {
       message: 'Search results retrieved successfully',
       posts: {
         items: postsResult.items,
-        pagination: computePagination(postsResult.totalCount),
+        pagination: postsResult.pagination,
       },
       reels: {
         items: reelsResult.items,
-        pagination: computePagination(reelsResult.totalCount),
+        pagination: reelsResult.pagination,
       },
     };
-  }
-
-  /**
-   * a helper that runs an aggregation 'bucket':
-   *   `typeFilter` can be either a string (e.g. 'reel') or an object (e.g. { $ne: 'reel' })
-   *   it returns { totalCount, items: [ one page of data ] }
-   */
-  private async _searchBucket(
-    currentUserObjectId: Types.ObjectId,
-    captionMatch: Record<string, any>,
-    typeFilter: string | Record<string, any>,
-    page: number,
-    limit: number,
-  ): Promise<{ totalCount: number; items: any[] }> {
-    // calculate how many docs to skip
-    const skipCount = (page - 1) * limit;
-
-    const pipeline = [
-      // only consider enabled, non‐NSFW, matching captions, and matching typeFilter
-      {
-        $match: {
-          isEnable: true,
-          nsfw: false,
-          type: typeFilter,
-          ...captionMatch,
-        },
-      },
-
-      // exclude anything the current user has 'hidden'
-      {
-        $lookup: {
-          from: 'hidden_posts',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postId'] },
-                    { $eq: ['$userID', currentUserObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'hidden',
-        },
-      },
-      { $match: { hidden: { $eq: [] } } },
-
-      // sort by creation date (most recent first)
-      { $sort: { createdAt: -1 as -1 } },
-
-      // use a $facet to get BOTH a totalCount and the 'data page'
-      {
-        $facet: {
-          metadata: [{ $count: 'totalCount' }],
-          data: [
-            // lookup media array
-            {
-              $lookup: {
-                from: 'media',
-                localField: '_id',
-                foreignField: 'postID',
-                as: 'media',
-              },
-            },
-            // lookup user info
-            {
-              $lookup: {
-                from: 'users',
-                localField: 'userID',
-                foreignField: '_id',
-                as: 'user',
-              },
-            },
-            { $unwind: '$user' },
-
-            // lookup total likes
-            {
-              $lookup: {
-                from: 'postlikes',
-                localField: '_id',
-                foreignField: 'postId',
-                as: 'likes',
-              },
-            },
-
-            // lookup comments (non‐deleted only)
-            {
-              $lookup: {
-                from: 'comments',
-                let: { postID: '$_id' },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          { $eq: ['$postID', '$$postID'] },
-                          { $eq: ['$isDeleted', false] },
-                        ],
-                      },
-                    },
-                  },
-                ],
-                as: 'comments',
-              },
-            },
-
-            // add commentCount & likeCount fields
-            {
-              $addFields: {
-                commentCount: { $size: '$comments' },
-                likeCount: { $size: '$likes' },
-              },
-            },
-
-            // check if current user has liked this post
-            {
-              $lookup: {
-                from: 'postlikes',
-                let: { postId: '$_id' },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          { $eq: ['$postId', '$$postId'] },
-                          { $eq: ['$userId', currentUserObjectId] },
-                        ],
-                      },
-                    },
-                  },
-                ],
-                as: 'userLikeEntry',
-              },
-            },
-            {
-              $addFields: {
-                isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
-              },
-            },
-
-            // lookup optional music
-            {
-              $lookup: {
-                from: 'music',
-                localField: 'musicID',
-                foreignField: '_id',
-                as: 'music',
-              },
-            },
-            {
-              $unwind: {
-                path: '$music',
-                preserveNullAndEmptyArrays: true,
-              },
-            },
-
-            // lookup playlists
-            {
-              $lookup: {
-                from: 'bookmarkplaylists',
-                let: { uid: currentUserObjectId },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          { $eq: ['$userID', '$$uid'] },
-                          { $eq: ['$isDeleted', false] },
-                        ],
-                      },
-                    },
-                  },
-                  { $project: { _id: 1 } },
-                ],
-                as: 'myPlaylists',
-              },
-            },
-            // lookup bookmarkItems for this post
-            {
-              $lookup: {
-                from: 'bookmarkitems',
-                let: { postId: '$_id', pls: '$myPlaylists._id' },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          { $in: ['$playlistID', '$$pls'] },
-                          { $eq: ['$itemID', '$$postId'] },
-                          { $eq: ['$isDeleted', false] },
-                        ],
-                      },
-                    },
-                  },
-                  { $limit: 1 },
-                ],
-                as: 'bookmarkEntry',
-              },
-            },
-            // flag it
-            {
-              $addFields: {
-                isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] },
-              },
-            },
-
-            // project the exact fields
-            {
-              $project: {
-                _id: 1,
-                userID: 1,
-                type: 1,
-                caption: 1,
-                isFlagged: 1,
-                nsfw: 1,
-                isEnable: 1,
-                location: 1,
-                isArchived: 1,
-                viewCount: 1,
-                share: 1,
-                createdAt: 1,
-                updatedAt: 1,
-
-                media: 1,
-                isLike: 1,
-                likeCount: 1,
-                commentCount: 1,
-                music: 1,
-
-                'user._id': 1,
-                'user.handleName': 1,
-                'user.profilePic': 1,
-              },
-            },
-
-            // skip & limit for pagination
-            { $skip: skipCount },
-            { $limit: limit },
-          ],
-        },
-      },
-    ];
-
-    // run aggregation
-    const [aggResult] = await this.postModel.aggregate(pipeline).exec();
-    const totalCount =
-      aggResult.metadata.length > 0 ? aggResult.metadata[0].totalCount : 0;
-
-    return { totalCount, items: aggResult.data };
   }
 
   // returns the 30 most recent UNIQUE tags (strings without the '#') found in the captions
