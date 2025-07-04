@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Media, MediaDocument } from './media.schema';
 import { CreateMediaDto } from './dto/media.dto';
 
@@ -21,5 +21,10 @@ export class MediaService {
 
   async findByPostId(postID: string): Promise<Media[]> {
     return this.mediaModel.find({ postID: postID }).exec();
+  }
+
+  async findUserTaggedId(userId: string): Promise<Media[]> {
+    const mediaList = await this.mediaModel.find({ 'tags.userId': userId }).lean();
+    return mediaList;
   }
 }

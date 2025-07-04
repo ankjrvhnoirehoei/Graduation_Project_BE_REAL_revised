@@ -11,15 +11,19 @@ import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
 import { Music } from 'src/music/music.schema';
 import { Media } from 'src/media/media.schema';
+import { PostLikeService } from 'src/like_post/like_post.service';
+import { UserService } from 'src/user/user.service';
 
 @Injectable()
 export class PostService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
+    private readonly likePostService: PostLikeService,
+    private readonly userService: UserService,
     @InjectModel(Music.name) private musicModel: Model<any>,
     @InjectModel(Media.name) private mediaModel: Model<any>,
-  ) {}
+  ) { }
 
   async create(postDto: CreatePostDto): Promise<Post> {
     const createdPost = new this.postModel({
@@ -60,10 +64,10 @@ export class PostService {
 
     let musicObject:
       | {
-          musicId: Types.ObjectId;
-          timeStart: number;
-          timeEnd: number;
-        }
+        musicId: Types.ObjectId;
+        timeStart: number;
+        timeEnd: number;
+      }
       | undefined = undefined;
 
     if (postWithMediaDto.music) {
@@ -99,10 +103,10 @@ export class PostService {
       media: mediaCreated,
       music: musicObject
         ? {
-            musicId: musicObject.musicId.toString(),
-            timeStart: musicObject.timeStart,
-            timeEnd: musicObject.timeEnd,
-          }
+          musicId: musicObject.musicId.toString(),
+          timeStart: musicObject.timeStart,
+          timeEnd: musicObject.timeEnd,
+        }
         : undefined,
     };
   }
@@ -708,7 +712,7 @@ export class PostService {
     }
 
     const post = await this.runSinglePostAggregation(postId, userId);
-    
+
     if (!post) {
       throw new NotFoundException('Post not found');
     }
@@ -2032,4 +2036,53 @@ export class PostService {
 
     return newState;
   }
+
+  async getMyTaggedPosts(userId: string) {
+    const mediaList = await this.mediaService.findUserTaggedId(userId);
+    
+    if (!mediaList || mediaList.length === 0) {
+      return {
+        message: 'success',
+        data: [],
+      };
+    }
+
+    const postIds = mediaList.map(media => media.postID);
+    const posts = await this.postModel.find(
+      { _id: { $in: postIds } },
+      { _id: 1, userID: 1, music: 1, caption: 1, share: 1 }
+    ).lean();
+
+    const postIdToMedia = new Map<string, any>();
+    mediaList.forEach(media => {
+      const { postID, ...mediaData } = media;
+      postIdToMedia.set(String(media.postID), mediaData);
+    });
+
+    const result = await Promise.all(
+      posts.map(async (post) => {
+        const likeCounts = await this.likePostService.getPostLikesCount(post._id.toString());
+        const user = await this.userService.findById(post.userID.toString());
+        const media = postIdToMedia.get(String(post._id));
+        return {
+          owner: {
+            _id: user._id,
+            handleName: user.handleName,
+            profilePic: user.profilePic,
+          },
+          music: post.music,
+          caption: post.caption,
+          media,
+          share: post.share,
+          likeCounts,
+        };
+      })
+    );
+
+    return {
+      message: 'success',
+      data: result,
+    };
+  }
+
 }
