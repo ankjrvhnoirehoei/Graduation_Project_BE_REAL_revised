@@ -31,12 +31,13 @@ export class StoryService {
     };
   }
   private async enrichTagged(tag: (typeof Story.prototype.tags)[number]) {
-    const user = await this.getCommonUserData(tag.user.toString());
+    const userData = await this.getCommonUserData(tag.user.toString());
     return {
-      ...tag,
-      handleName: user?.handleName,
-      username: user?.username,
-    }
+      user: userData._id,
+      position: tag.position,
+      handleName: userData.handleName,
+      username: userData.username,
+    };
   }
    private async enrichStoryMusic(stories: Story[]) {
     if (!stories || stories.length === 0) {
@@ -84,12 +85,12 @@ export class StoryService {
         if (!tags || tags.length === 0) {
           return {
             ...rest,
-            tags: []
+            tags: [] as any[] // ✅ Explicit type
           };
         }
         return {
           ...rest,
-          tags: await Promise.all(tags.map(tag => this.enrichTagged(tag)))
+          tags: await Promise.all(tags.map(tag => this.enrichTagged(tag))) as any[] // ✅ Explicit type
         };
       })
     );
@@ -103,10 +104,11 @@ export class StoryService {
       _id: story._id,
       ownerId: story.ownerId,
       mediaUrl: story.mediaUrl,
-      viewedByUsers: story.viewedByUsers,
-      likedByUsers: story.likedByUsers,
-      music: story.music,
-      content: story.content,
+      viewedByUsers: story.viewedByUsers || [],
+      likedByUsers: story.likedByUsers || [],
+      music: story.music || null,
+      content: story.content || null,
+      tags: story.tags || [], // ✅ ADD THIS LINE
       createdAt: story.createdAt,
       ...(story.type === StoryType.HIGHLIGHTS && {
         collectionName: story.collectionName,
@@ -313,9 +315,40 @@ export class StoryService {
       ownerId: new Types.ObjectId(uid),
       type: StoryType.STORIES,
     });
+    
+    // ✅ Enrich tags with user data if they exist
+    let enrichedStory: any = story;
+    if (story.tags && story.tags.length > 0) {
+      try {
+        // Manually enrich tags for newly created story
+        const enrichedTags = await Promise.all(
+          story.tags.map(async (tag: any) => {
+            const userData = await this.getCommonUserData(tag.user.toString());
+            return {
+              user: userData._id,
+              position: tag.position,
+              handleName: userData.handleName,
+              username: userData.username,
+            };
+          })
+        );
+        
+        // Convert to plain object and replace tags
+        const storyObj = (story as any).toObject ? (story as any).toObject() : { ...story };
+        enrichedStory = { 
+          ...storyObj,
+          tags: enrichedTags 
+        };
+      } catch (error) {
+        this.logger.error('Error enriching tags:', error);
+        // Fallback to original story if enrichment fails
+        enrichedStory = story;
+      }
+    }
+    
     return {
       message: 'Success',
-      data: this.STORY_RESPONSE(story),
+      data: this.STORY_RESPONSE(enrichedStory),
     };
   }
 
