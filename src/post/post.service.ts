@@ -1810,6 +1810,7 @@ export class PostService {
             handleName: user.handleName,
             profilePic: user.profilePic,
           },
+          type: post.type,
           music: post.music,
           caption: post.caption,
           media,
