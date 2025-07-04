@@ -13,6 +13,7 @@ import { Music } from 'src/music/music.schema';
 import { Media } from 'src/media/media.schema';
 import { UserService } from 'src/user/user.service';
 import { PostLikeService } from 'src/like_post/like_post.service';
+import { CommentService } from 'src/comment/comment.service';
 
 @Injectable()
 export class PostService {
@@ -24,6 +25,7 @@ export class PostService {
 
     private readonly likePostService: PostLikeService,
     private readonly userService: UserService,
+    private readonly commentService: CommentService,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -1798,6 +1800,7 @@ export class PostService {
     const result = await Promise.all(
       posts.map(async (post) => {
         const likeCounts = await this.likePostService.getPostLikesCount(post._id.toString());
+        const commentCounts = await this.commentService.getCommentCount(post._id.toString());
         const user = await this.userService.findById(post.userID.toString());
         const media = postIdToMedia.get(String(post._id));
         return {
@@ -1811,6 +1814,7 @@ export class PostService {
           media,
           share: post.share,
           likeCounts,
+          commentCounts
         };
       })
     );
