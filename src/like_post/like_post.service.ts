@@ -169,4 +169,8 @@ async getPostLikers(postId: string, currentUserId: string) {
   async findByPostId(postID: string): Promise<PostLike[]> {
     return this.postLikeModel.find({ postId: postID }).exec();
   }  
+
+  async getPostLikesCount(postId: string): Promise<number> {
+    return await this.postLikeModel.countDocuments({ postId });
+  }
 }
