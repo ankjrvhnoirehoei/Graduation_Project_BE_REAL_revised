@@ -239,10 +239,4 @@ export class PostController {
       data
     };
   }
-
-  @Get('tagged/:userId')
-  async getUserTaggedPosts(
-    @Param('userId') userId: string) {
-    return await this.postService.getMyTaggedPosts(userId);
-  }
 }
