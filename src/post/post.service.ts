@@ -1804,6 +1804,7 @@ export class PostService {
         const user = await this.userService.findById(post.userID.toString());
         const media = postIdToMedia.get(String(post._id));
         return {
+          _id: post._id,
           owner: {
             _id: user._id,
             handleName: user.handleName,
