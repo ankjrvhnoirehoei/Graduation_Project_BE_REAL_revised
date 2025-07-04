@@ -1,10 +1,11 @@
 import { Injectable, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { PostLike, PostLikeDocument } from './like_post.schema';
 import { Post, PostDocument } from 'src/post/post.schema';
 import { User, UserDocument } from 'src/user/user.schema'; 
 import { RelationService } from 'src/relation/relation.service';
+import { PostService } from 'src/post/post.service';
 
 @Injectable()
 export class PostLikeService {
@@ -16,6 +17,7 @@ export class PostLikeService {
     @InjectModel(User.name)  
     private userModel: Model<UserDocument>, 
     private readonly relationService: RelationService,
+    private readonly postService: PostService,
   ) {}
 
   async like(postId: string, userId: string): Promise<void> {
@@ -35,76 +37,54 @@ export class PostLikeService {
     page: number = 1, 
     limit: number = 20
   ): Promise<{ posts: any[], totalCount: number, totalPages: number, currentPage: number }> {
-    // calculate skip value for pagination
     const skip = (page - 1) * limit;
-
-    // get all post IDs liked by the user (ordered by creation time, newest first)
+    
     const likedPostRecords = await this.postLikeModel
       .find({ userId })
       .select('postId')
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .lean();
 
     const likedPostIds = likedPostRecords.map(record => record.postId);
 
     if (likedPostIds.length === 0) {
+      const totalCount = await this.postLikeModel.countDocuments({ userId });
       return {
         posts: [],
-        totalCount: 0,
-        totalPages: 0,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
         currentPage: page
       };
     }
 
-    // get total count of enabled posts that user has liked
-    const totalEnabledPosts = await this.postModel.countDocuments({
-      _id: { $in: likedPostIds },
-      isEnable: { $ne: false }
-    });
+    // Get total count of liked posts for pagination
+    const totalCount = await this.postLikeModel.countDocuments({ userId });
 
-    // fetch the actual posts with pagination and only enabled posts
+    // Use the post service's base pipeline but without pagination (since we paginated at like level)
+    const currentUser = new Types.ObjectId(userId);
+    const baseMatch = { _id: { $in: likedPostIds } };
+    
     const posts = await this.postModel
-      .find({ 
-        _id: { $in: likedPostIds },
-        isEnable: { $ne: false }
-      })
-      .select({
-        userID: 1,
-        musicID: 1,
-        type: 1,
-        caption: 1,
-        isFlagged: 1,
-        nsfw: 1,
-        isEnable: 1,
-        location: 1,
-        isArchived: 1,
-        viewCount: 1
-      })
-      .skip(skip)
-      .limit(limit)
-      .lean();
+      .aggregate([
+        ...this.postService.buildBasePipeline(currentUser, baseMatch),
+        { $sort: { createdAt: -1 } } 
+      ])
+      .exec();
 
-    const transformedPosts = posts.map(post => ({
-      _id: post._id,
-      userID: post.userID,
-      musicID: post.music?.musicId || null,
-      type: post.type,
-      caption: post.caption || null,
-      isFlagged: post.isFlagged || false,
-      nsfw: post.nsfw || false,
-      isEnable: post.isEnable !== false, 
-      location: post.location || null,
-      isArchived: post.isArchived || false,
-      viewCount: post.viewCount || 0
-    }));
+    // If you want to maintain the like order, you can sort the posts based on likedPostIds order
+    const postsOrderedByLikeTime = likedPostIds.map(likedId => 
+      posts.find(post => post._id.toString() === likedId.toString())
+    ).filter(Boolean);
 
     return {
-      posts: transformedPosts,
-      totalCount: totalEnabledPosts,
-      totalPages: Math.ceil(totalEnabledPosts / limit),
+      posts: postsOrderedByLikeTime,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit),
       currentPage: page
     };
-  }  
+  }
   
 async getPostLikers(postId: string, currentUserId: string) {
   const likes = await this.postLikeModel

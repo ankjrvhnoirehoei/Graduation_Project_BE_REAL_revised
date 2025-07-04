@@ -18,7 +18,7 @@ import { Comment, CommentSchema } from 'src/comment/comment.schema';
     MediaModule,
     MusicModule,
     forwardRef(() => UserModule), 
-    PostLikeModule,
+    forwardRef(() => PostLikeModule),
     CommentModule,
     StoryModule,
   ],

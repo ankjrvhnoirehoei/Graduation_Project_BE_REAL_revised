@@ -120,7 +120,7 @@ export class PostService {
     return post.type as 'post' | 'reel' | 'music';
   }
 
-  private buildBasePipeline(
+  public buildBasePipeline(
     currentUser: Types.ObjectId,
     matchFilter: Record<string, any>,
   ): PipelineStage[] {
@@ -620,7 +620,7 @@ export class PostService {
   }
 
   // generic pagination and runner
-  private async runPagedAggregation(
+  public async runPagedAggregation(
     matchFilter: Record<string, any>,
     page: number,
     limit: number,
