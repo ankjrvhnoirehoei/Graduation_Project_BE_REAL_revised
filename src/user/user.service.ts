@@ -20,7 +20,7 @@ import { JwtService } from '@nestjs/jwt';
 import { TopFollowerDto } from './dto/top-followers.dto';
 import { Relation, RelationDocument } from 'src/relation/relation.schema';
 import { Post, PostDocument } from 'src/post/post.schema';
-import { InteractionPoint } from './dto/search-user.dto'
+import { InteractionPoint } from './dto/search-user.dto';
 import { Story, StoryDocument } from 'src/story/schema/story.schema';
 
 @Injectable()
@@ -29,7 +29,8 @@ export class UserService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly jwtService: JwtService,
-    @InjectModel(Relation.name) private readonly relationModel: Model<RelationDocument>,
+    @InjectModel(Relation.name)
+    private readonly relationModel: Model<RelationDocument>,
     @InjectModel(Post.name) private readonly postModel: Model<PostDocument>,
     @InjectModel(Story.name) private storyModel: Model<StoryDocument>,
   ) {
@@ -46,7 +47,9 @@ export class UserService {
   }
 
   async findById(id: string) {
-    return this.userModel.findById(id).select('_id handleName profilePic role');
+    return this.userModel
+      .findById(id)
+      .select('_id handleName username profilePic role');
   }
 
   async register(registerDto: RegisterDto): Promise<User> {
@@ -92,17 +95,13 @@ export class UserService {
   }
 
   async getUserById(userId: string): Promise<Partial<User>> {
-    // console.log('[getUserById] Called with userId:', userId);
-
     const user = await this.userModel.findById(userId).lean();
-    // console.log('[getUserById] Fetched user:', user);
 
     if (!user) {
-      // console.warn('[getUserById] User not found!');
       throw new NotFoundException('User not found');
     }
 
-    const { password, refreshToken, fcmToken, ...safeUser } = user;
+    const { refreshToken, fcmToken, ...safeUser } = user;
     return safeUser;
   }
 
@@ -282,7 +281,7 @@ export class UserService {
   ): Promise<Partial<User>> {
     // build a clean update object
     const update: Partial<Record<keyof EditUserDto, any>> = {};
-    
+
     for (const [key, value] of Object.entries(dto)) {
       if (value !== undefined && key !== 'password' && key !== 'handleName') {
         update[key] = value;
@@ -295,13 +294,11 @@ export class UserService {
         handleName: { $regex: new RegExp(`^${dto.handleName}$`, 's') },
         _id: { $ne: userId }, // exclude current user
       });
-      
+
       if (existingUser) {
-        throw new BadRequestException(
-          'Handle name is already taken',
-        );
+        throw new BadRequestException('Handle name is already taken');
       }
-      
+
       update.handleName = dto.handleName;
     }
 
@@ -407,7 +404,10 @@ export class UserService {
   }
 
   async disableUser(userId: string): Promise<boolean> {
-    const user = await this.userModel.findById(userId).select('deletedAt').exec();
+    const user = await this.userModel
+      .findById(userId)
+      .select('deletedAt')
+      .exec();
     if (!user) {
       throw new NotFoundException(`User ${userId} not found`);
     }
@@ -418,8 +418,8 @@ export class UserService {
 
     return newState;
   }
-  
-async getNewUsersByDate(
+
+  async getNewUsersByDate(
     from: Date,
     to: Date,
     page = 1,

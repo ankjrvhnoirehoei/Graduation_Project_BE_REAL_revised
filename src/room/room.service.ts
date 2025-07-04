@@ -251,4 +251,17 @@ export class RoomService {
     room.name = updateRoomNameDto.name;
     return room.save();
   }
+
+  async getUserIdsInRoom(roomId: string): Promise<string[]> {
+    const room = await this.roomModel
+      .findById(roomId)
+      .select('user_ids')
+      .lean();
+
+    if (!room) {
+      throw new NotFoundException('Room not found');
+    }
+
+    return room.user_ids.map((id: Types.ObjectId) => id.toString());
+  }
 }

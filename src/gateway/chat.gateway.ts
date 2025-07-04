@@ -12,6 +12,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { MessageService } from 'src/message/message.service';
 import { UserService } from 'src/user/user.service';
 import { CreateMessageDto } from 'src/message/dto/message.dto';
+import { NotificationService } from 'src/notification/notification.service';
+import { RoomService } from 'src/room/room.service';
 
 @WebSocketGateway({
   cors: {
@@ -25,12 +27,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
+  private onlineUsers = new Map<string, string>();
+
   constructor(
     private readonly messageService: MessageService,
     private readonly userService: UserService,
+    private readonly notificationService: NotificationService,
+    private readonly roomService: RoomService,
   ) {}
 
-  afterInit(server: Server) {
+  afterInit() {
     console.log('✅ WebSocket server initialized');
   }
 
@@ -39,16 +45,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   handleDisconnect(client: Socket) {
-    console.log(`❌ Client disconnected: ${client.id}`);
+    const userId = client.data.userId;
+    if (userId) {
+      this.onlineUsers.delete(userId);
+      console.log(`❌ User ${userId} disconnected`);
+    }
   }
 
   @SubscribeMessage('joinRoom')
   handleJoinRoom(
-    @MessageBody('roomId') roomId: string,
+    @MessageBody() payload: { roomId: string; userId: string },
     @ConnectedSocket() client: Socket,
   ) {
+    const { roomId, userId } = payload;
+    client.data.userId = userId;
+    this.onlineUsers.set(userId, client.id);
     client.join(roomId);
-    console.log(`📥 Client ${client.id} joined room: ${roomId}`);
+    console.log(`📥 User ${userId} (${client.id}) joined room: ${roomId}`);
   }
 
   @SubscribeMessage('leaveRoom')
@@ -96,6 +109,36 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           profilePic: populatedMessage.senderId.profilePic,
         },
       });
+
+      // 🔔 Gửi FCM nếu user nhận không online hoặc không trong room
+      const recipientIds = await this.roomService.getUserIdsInRoom(roomId);
+      const sender = await this.userService.findById(senderId);
+
+      for (const recipientId of recipientIds) {
+        if (recipientId === senderId) continue;
+
+        const socketId = this.onlineUsers.get(recipientId);
+        const isOnline = !!socketId;
+        const inRoom =
+          isOnline &&
+          this.server.sockets.adapter.rooms.get(roomId)?.has(socketId);
+
+        if (!isOnline || !inRoom) {
+          const recipient = await this.userService.findById(recipientId);
+          if (recipient?.fcmToken) {
+            await this.notificationService.sendPushNotification(
+              [recipientId],
+              senderId,
+              'Tin nhắn mới',
+              `Bạn có tin nhắn mới từ ${sender?.username || 'người lạ'}`,
+              {
+                type: 'chat',
+                roomId,
+              },
+            );
+          }
+        }
+      }
     } catch (err) {
       console.error('❗ Error sending message:', err);
       client.emit('errorMessage', 'Failed to send message');
@@ -109,7 +152,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const { callerName, type, roomId } = payload;
-
     client.to(roomId).emit('incomingCall', { callerName, type });
   }
 
@@ -125,8 +167,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const { roomId, senderId, missed, duration } = payload;
-
-    const messageContent = missed ? `Cuộc gọi nhở` : `Cuộc gọi đã kết thúc`;
+    const messageContent = missed ? 'Cuộc gọi nhỡ' : 'Cuộc gọi đã kết thúc';
 
     try {
       const message = await this.messageService.create({
@@ -169,9 +210,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const { roomId, senderId } = payload;
-
     console.log(`📞 Call cancelled by ${senderId} in room ${roomId}`);
-
     client.to(roomId).emit('callCancelled', { senderId });
   }
 }
