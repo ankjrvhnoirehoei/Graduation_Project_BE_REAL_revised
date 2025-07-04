@@ -29,29 +29,6 @@ export class PostService {
     return createdPost.save();
   }
 
-  async getPostById(postId: string) {
-    const post = await this.postModel.findById(postId).lean();
-    if (!post) throw new NotFoundException('Post not found');
-
-    let musicInfo = null;
-    if (post.music?.musicId && Types.ObjectId.isValid(post.music.musicId)) {
-      musicInfo = await this.musicModel.findById(post.music.musicId).lean();
-    }
-
-    const media = await this.mediaModel
-      .find({ postID: new Types.ObjectId(postId) })
-      .lean();
-
-    return {
-      ...post,
-      music: {
-        ...post.music,
-        musicId: musicInfo,
-      },
-      media,
-    };
-  }
-
   async createPostWithMediaAndMusic(postWithMediaDto: {
     post: CreatePostDto;
     media: CreateMediaDto[];
@@ -709,7 +686,36 @@ export class PostService {
     );
   }
 
-  // returns up to 50 'post'‐type documents for the given user, plus a total count
+  private async runSinglePostAggregation(
+    postId: string,
+    userId: string,
+  ): Promise<any> {
+    const currentUser = new Types.ObjectId(userId);
+    const matchFilter = { _id: new Types.ObjectId(postId) };
+
+    const result = await this.postModel
+      .aggregate([
+        ...this.buildBasePipeline(currentUser, matchFilter),
+      ])
+      .exec();
+
+    return result[0] || null;
+  }
+
+  async getPostById(postId: string, userId: string) {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Invalid post ID format');
+    }
+
+    const post = await this.runSinglePostAggregation(postId, userId);
+    
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    return post;
+  }
+
   async getUserPostsWithMedia(
     userId: string,
     page: number = 1,

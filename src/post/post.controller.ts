@@ -87,8 +87,8 @@ export class PostController {
   }
 
   @Get(':postId') 
-  async getPostDetail(@Param('postId') postId: string) {
-    const post = await this.postService.getPostById(postId);
+  async getPostDetail(@Param('postId') postId: string, @CurrentUser('sub') userId: string,) {
+    const post = await this.postService.getPostById(postId, userId);
 
     if (!post) {
       throw new NotFoundException('Post not found');
