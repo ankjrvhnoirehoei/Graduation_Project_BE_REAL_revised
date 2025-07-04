@@ -16,5 +16,6 @@ import { Message, MessageSchema } from '../message/message.schema';
   ],
   controllers: [RoomController],
   providers: [RoomService],
+  exports: [RoomService],
 })
 export class RoomModule {}

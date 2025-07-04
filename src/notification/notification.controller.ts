@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Query, Param } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 import { SendNotificationDto } from './dto/sendNoti.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
@@ -35,13 +35,39 @@ export class NotificationController {
 
   @UseGuards(JwtRefreshAuthGuard)
   @Get()
-  async getNotifications(@CurrentUser('sub') userId: string) {
-    const notifications =
-      await this.notificationService.getNotificationsForUser(userId);
+  async getNotifications(
+    @CurrentUser('sub') userId: string,
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+  ) {
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+
+    const { data, pagination } =
+      await this.notificationService.getNotificationsForUser(
+        userId,
+        pageNum,
+        limitNum,
+      );
 
     return {
       success: true,
-      notifications,
+      data,
+      pagination,
+    };
+  }
+
+  @UseGuards(JwtRefreshAuthGuard)
+  @Post(':notificationId/read')
+  async markNotificationAsRead(
+    @CurrentUser('sub') userId: string,
+    @Param('notificationId') notificationId: string,
+  ) {
+    await this.notificationService.markNotificationAsRead(userId, notificationId);
+
+    return {
+      success: true,
+      message: 'Notification marked as read',
     };
   }
 }

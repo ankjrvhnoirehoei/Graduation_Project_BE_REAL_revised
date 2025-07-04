@@ -63,28 +63,64 @@ export class NotificationService {
     }
   }
 
-  // Lấy danh sách thông báo cho 1 user
-  async getNotificationsForUser(userId: string) {
+  async getNotificationsForUser(userId: string, page = 1, limit = 10) {
     try {
+      const skip = (page - 1) * limit;
+
       const notifications = await this.notificationModel
         .find({ 'receiver.userId': new Types.ObjectId(userId) })
         .sort({ createdAt: -1 })
-        .lean();
+        .skip(skip)
+        .limit(limit)
+        .populate('senderId', 'username handleName _id profilePic');
 
-      // Lấy isRead riêng của user đó
-      const result = notifications.map((notification) => {
+      const total = await this.notificationModel.countDocuments({
+        'receiver.userId': new Types.ObjectId(userId),
+      });
+
+      const result = (notifications as any[]).map((notification) => {
         const receiverData = notification.receiver.find((r) =>
           r.userId.equals(userId),
         );
         return {
-          ...notification,
+          _id: notification._id,
+          title: notification.title,
+          body: notification.body,
+          data: notification.data,
+          createdAt: notification.createdAt,
           isRead: receiverData?.isRead ?? false,
+          sender: notification.senderId,
         };
       });
 
-      return result;
+      return {
+        data: result,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
     } catch (error) {
       console.error('❌ Error getting notifications:', error);
+      throw error;
+    }
+  }
+
+  async markNotificationAsRead(userId: string, notificationId: string) {
+    try {
+      await this.notificationModel.updateOne(
+        {
+          _id: new Types.ObjectId(notificationId),
+          'receiver.userId': new Types.ObjectId(userId),
+        },
+        {
+          $set: { 'receiver.$.isRead': true },
+        },
+      );
+    } catch (error) {
+      console.error('❌ Error marking notification as read:', error);
       throw error;
     }
   }
