@@ -14,13 +14,18 @@ import { PostLike, PostLikeSchema } from 'src/like_post/like_post.schema';
 import { Comment, CommentSchema } from 'src/comment/comment.schema';
 @Module({
   imports: [
-    DatabaseModule.forFeature([{ name: Post.name, schema: PostSchema }, {name: Story.name, schema: StorySchema}, {name: PostLike.name, schema: PostLikeSchema}, {name: Comment.name, schema: CommentSchema}]),
+    DatabaseModule.forFeature([
+      { name: Post.name, schema: PostSchema },
+      { name: Story.name, schema: StorySchema },
+      { name: PostLike.name, schema: PostLikeSchema },
+      { name: Comment.name, schema: CommentSchema }
+    ]),
     MediaModule,
     MusicModule,
     forwardRef(() => UserModule), 
-    forwardRef(() => PostLikeModule),
     CommentModule,
     StoryModule,
+    forwardRef(() => PostLikeModule),
   ],
   controllers: [PostController],
   providers: [PostService],

@@ -1,4 +1,4 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, forwardRef, Inject } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { PostLike, PostLikeDocument } from './like_post.schema';
@@ -17,6 +17,8 @@ export class PostLikeService {
     @InjectModel(User.name)  
     private userModel: Model<UserDocument>, 
     private readonly relationService: RelationService,
+
+    @Inject(forwardRef(() => PostService))
     private readonly postService: PostService,
   ) {}
 
@@ -168,5 +170,9 @@ async getPostLikers(postId: string, currentUserId: string) {
 
   async findByPostId(postID: string): Promise<PostLike[]> {
     return this.postLikeModel.find({ postId: postID }).exec();
-  }  
+  }
+
+  async getPostLikesCount(postId: string): Promise<number> {
+    return await this.postLikeModel.countDocuments({ postId });
+  }
 }

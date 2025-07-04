@@ -22,4 +22,9 @@ export class MediaService {
   async findByPostId(postID: string): Promise<Media[]> {
     return this.mediaModel.find({ postID: postID }).exec();
   }
+
+  async findUserTaggedId(userId: string): Promise<Media[]> {
+    const mediaList = await this.mediaModel.find({ 'tags.userId': userId }).lean();
+    return mediaList;
+  }
 }
