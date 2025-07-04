@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PostLike, PostLikeSchema } from './like_post.schema';
 import { PostLikeService } from './like_post.service';
@@ -6,6 +6,7 @@ import { PostLikeController } from './like_post.controller';
 import { Post, PostSchema } from 'src/post/post.schema';
 import { UserSchema } from 'src/user/user.schema';
 import { RelationModule } from 'src/relation/relation.module';
+import { PostModule } from 'src/post/post.module';
 
 @Module({
   imports: [
@@ -14,7 +15,8 @@ import { RelationModule } from 'src/relation/relation.module';
       { name: Post.name, schema: PostSchema },
       { name: 'User', schema: UserSchema },
     ]),
-    RelationModule
+    RelationModule,
+    forwardRef(() => PostModule),
   ],
   controllers: [PostLikeController],
   providers: [PostLikeService],
