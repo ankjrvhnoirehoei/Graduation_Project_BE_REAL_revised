@@ -25,6 +25,9 @@ export class MediaService {
 
   async findUserTaggedId(userId: string): Promise<Media[]> {
     const mediaList = await this.mediaModel.find({ 'tags.userId': userId }).lean();
-    return mediaList;
+    return mediaList.map((media) => {
+      const { __v, ...mediaData } = media;
+      return mediaData;
+    });
   }
 }

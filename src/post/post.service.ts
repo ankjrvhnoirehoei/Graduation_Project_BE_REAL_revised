@@ -13,6 +13,7 @@ import { Music } from 'src/music/music.schema';
 import { Media } from 'src/media/media.schema';
 import { UserService } from 'src/user/user.service';
 import { PostLikeService } from 'src/like_post/like_post.service';
+import { CommentService } from 'src/comment/comment.service';
 
 @Injectable()
 export class PostService {
@@ -24,6 +25,7 @@ export class PostService {
 
     private readonly likePostService: PostLikeService,
     private readonly userService: UserService,
+    private readonly commentService: CommentService,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -1775,22 +1777,34 @@ export class PostService {
 
   async getMyTaggedPosts(userId: string) {
     const mediaList = await this.mediaService.findUserTaggedId(userId);
-    
     if (!mediaList || mediaList.length === 0) {
       return {
         message: 'success',
         data: [],
       };
     }
+    const grouped = mediaList.reduce((acc, current) => {
+      const existingPost = acc.find(item => item.postID.equals(current.postID));
+      if (existingPost) {
+        existingPost.media.push(current);
+      } else {
+        acc.push({
+          postID: current.postID,
+          media: [current],
+        });
+      }
+      
+      return acc;
+    }, []) as { postID: Types.ObjectId, media: Media[] }[];
 
-    const postIds = mediaList.map(media => media.postID);
+    const postIds = grouped.map(media => media.postID);
     const posts = await this.postModel.find(
       { _id: { $in: postIds } },
       { _id: 1, userID: 1, music: 1, caption: 1, share: 1 }
     ).lean();
-
+    
     const postIdToMedia = new Map<string, any>();
-    mediaList.forEach(media => {
+    grouped.forEach(media => {
       const { postID, ...mediaData } = media;
       postIdToMedia.set(String(media.postID), mediaData);
     });
@@ -1798,19 +1812,23 @@ export class PostService {
     const result = await Promise.all(
       posts.map(async (post) => {
         const likeCounts = await this.likePostService.getPostLikesCount(post._id.toString());
+        const commentCounts = await this.commentService.getCommentCount(post._id.toString());
         const user = await this.userService.findById(post.userID.toString());
         const media = postIdToMedia.get(String(post._id));
         return {
+          _id: post._id,
           owner: {
             _id: user._id,
             handleName: user.handleName,
             profilePic: user.profilePic,
           },
+          type: post.type,
           music: post.music,
           caption: post.caption,
-          media,
+          media: media.media, // have to do this, bcs media is as a Map<string, media>
           share: post.share,
           likeCounts,
+          commentCounts
         };
       })
     );

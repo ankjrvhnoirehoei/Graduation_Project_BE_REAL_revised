@@ -121,5 +121,12 @@ export class CommentService {
 
   async findByPostId(postID: string): Promise<Comment[]> {
     return this.commentModel.find({ postID: postID }).exec();
-  }    
+  }
+
+  async getCommentCount(postID: string): Promise<number> {
+    return await this.commentModel.countDocuments({
+      postID: new Types.ObjectId(postID),
+      isDeleted: false,
+    }).lean();
+  }
 }
