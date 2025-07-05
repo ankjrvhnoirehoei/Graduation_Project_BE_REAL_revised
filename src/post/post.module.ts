@@ -12,6 +12,8 @@ import { Story, StorySchema } from 'src/story/schema/story.schema';
 import { StoryModule } from 'src/story/story.module';
 import { PostLike, PostLikeSchema } from 'src/like_post/like_post.schema';
 import { Comment, CommentSchema } from 'src/comment/comment.schema';
+import { RelationModule } from 'src/relation/relation.module';
+
 @Module({
   imports: [
     DatabaseModule.forFeature([
@@ -26,6 +28,8 @@ import { Comment, CommentSchema } from 'src/comment/comment.schema';
     CommentModule,
     StoryModule,
     forwardRef(() => PostLikeModule),
+    RelationModule,
+    MusicModule,
   ],
   controllers: [PostController],
   providers: [PostService],

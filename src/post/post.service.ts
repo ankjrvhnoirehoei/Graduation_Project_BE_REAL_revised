@@ -14,6 +14,8 @@ import { Media } from 'src/media/media.schema';
 import { UserService } from 'src/user/user.service';
 import { PostLikeService } from 'src/like_post/like_post.service';
 import { CommentService } from 'src/comment/comment.service';
+import { RelationService } from 'src/relation/relation.service';
+import { MusicService } from 'src/music/music.service';
 
 @Injectable()
 export class PostService {
@@ -26,6 +28,8 @@ export class PostService {
     private readonly likePostService: PostLikeService,
     private readonly userService: UserService,
     private readonly commentService: CommentService,
+    private readonly relationService: RelationService,
+    private readonly musicService: MusicService
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -1775,7 +1779,7 @@ export class PostService {
     return newState;
   }
 
-  async getMyTaggedPosts(userId: string) {
+  async getUserTaggedPosts(userId: string) {
     const mediaList = await this.mediaService.findUserTaggedId(userId);
     if (!mediaList || mediaList.length === 0) {
       return {
@@ -1811,24 +1815,35 @@ export class PostService {
 
     const result = await Promise.all(
       posts.map(async (post) => {
-        const likeCounts = await this.likePostService.getPostLikesCount(post._id.toString());
-        const commentCounts = await this.commentService.getCommentCount(post._id.toString());
+        const likeCount = await this.likePostService.getPostLikesCount(post._id.toString());
+        const commentCount = await this.commentService.getCommentCount(post._id.toString());
+        const isMeLike = await this.likePostService.isMeLikePost(userId, post._id.toString());
+        const isMeFollow = await this.relationService.getRelationType(userId, post.userID.toString());
         const user = await this.userService.findById(post.userID.toString());
+        let mMusic = {};
+        if (post.music?.musicId) {
+          mMusic = await this.musicService.findByID(post.music?.musicId.toString());
+        }
         const media = postIdToMedia.get(String(post._id));
         return {
           _id: post._id,
-          owner: {
+          user: {
             _id: user._id,
             handleName: user.handleName,
             profilePic: user.profilePic,
           },
           type: post.type,
-          music: post.music,
           caption: post.caption,
-          media: media.media, // have to do this, bcs media is as a Map<string, media>
+          media: media.media,
           share: post.share,
-          likeCounts,
-          commentCounts
+          createdAt: (post as any).createdAt,
+          isLike: isMeLike,
+          isFollow: isMeFollow === 'NULL_FOLLOW' ? false : true,
+          isBookmarked: false,
+          music: post.music || {},
+          musicInfo: mMusic,
+          likeCount,
+          commentCount
         };
       })
     );

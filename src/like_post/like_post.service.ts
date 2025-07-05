@@ -236,4 +236,9 @@ async getPostLikers(postId: string, currentUserId: string) {
   async getPostLikesCount(postId: string): Promise<number> {
     return await this.postLikeModel.countDocuments({ postId });
   }
+
+  async isMeLikePost(userId: string, postId: string): Promise<boolean> {
+    const count = await this.postLikeModel.countDocuments({ postId, userId });
+    return count > 0;
+  }
 }
