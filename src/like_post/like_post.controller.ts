@@ -2,6 +2,7 @@ import { Controller, Post, Param, UseGuards, Delete, Get, Query, BadRequestExcep
 import { PostLikeService } from './like_post.service';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
+import { TimeRange, SortOrder } from './like_post.service';
 
 @Controller('post-like')
 export class PostLikeController {
@@ -39,7 +40,9 @@ export class PostLikeController {
   async getLikedPosts(
     @CurrentUser('sub') userId: string,
     @Query('page') page?: string,
-    @Query('limit') limit?: string
+    @Query('limit') limit?: string,
+    @Query('timeRange') timeRange?: string,
+    @Query('sortOrder') sortOrder?: string
   ) {
     const pageNum = parseInt(page || '1') || 1;
     const limitNum = parseInt(limit || '20') || 20;
@@ -52,7 +55,37 @@ export class PostLikeController {
       throw new BadRequestException('Limit must be between 1 and 50');
     }
 
-    const result = await this.postLikeService.getLikedPosts(userId, pageNum, limitNum);
+    // Validate time range parameter
+    let validTimeRange: TimeRange | undefined;
+    if (timeRange) {
+      const validTimeRanges = Object.values(TimeRange);
+      if (!validTimeRanges.includes(timeRange as TimeRange)) {
+        throw new BadRequestException(
+          `Invalid time range. Must be one of: ${validTimeRanges.join(', ')}`
+        );
+      }
+      validTimeRange = timeRange as TimeRange;
+    }
+
+    // Validate sort order parameter
+    let validSortOrder: SortOrder = SortOrder.DESC; // Default to descending
+    if (sortOrder) {
+      const validSortOrders = Object.values(SortOrder);
+      if (!validSortOrders.includes(sortOrder as SortOrder)) {
+        throw new BadRequestException(
+          `Invalid sort order. Must be one of: ${validSortOrders.join(', ')}`
+        );
+      }
+      validSortOrder = sortOrder as SortOrder;
+    }
+
+    const result = await this.postLikeService.getLikedPosts(
+      userId, 
+      pageNum, 
+      limitNum, 
+      validTimeRange, 
+      validSortOrder
+    );
     
     return {
       message: 'Liked posts retrieved successfully',

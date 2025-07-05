@@ -6,6 +6,16 @@ import { Post, PostDocument } from 'src/post/post.schema';
 import { User, UserDocument } from 'src/user/user.schema'; 
 import { RelationService } from 'src/relation/relation.service';
 import { PostService } from 'src/post/post.service';
+export enum TimeRange {
+  TODAY = 'today',
+  THIS_MONTH = 'this_month',
+  THIS_YEAR = 'this_year'
+}
+
+export enum SortOrder {
+  ASC = 'asc',
+  DESC = 'desc'
+}
 
 @Injectable()
 export class PostLikeService {
@@ -37,14 +47,65 @@ export class PostLikeService {
   async getLikedPosts(
     userId: string, 
     page: number = 1, 
-    limit: number = 20
+    limit: number = 20,
+    timeRange?: TimeRange,
+    sortOrder: SortOrder = SortOrder.DESC
   ): Promise<{ posts: any[], totalCount: number, totalPages: number, currentPage: number }> {
     const skip = (page - 1) * limit;
     
+    // Build time range filter
+    let timeFilter: any = {};
+    if (timeRange) {
+      const now = new Date();
+      
+      switch (timeRange) {
+        case TimeRange.TODAY:
+          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+          timeFilter = {
+            createdAt: {
+              $gte: startOfToday,
+              $lt: endOfToday
+            }
+          };
+          break;
+          
+        case TimeRange.THIS_MONTH:
+          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+          const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+          timeFilter = {
+            createdAt: {
+              $gte: startOfMonth,
+              $lt: endOfMonth
+            }
+          };
+          break;
+          
+        case TimeRange.THIS_YEAR:
+          const startOfYear = new Date(now.getFullYear(), 0, 1);
+          const endOfYear = new Date(now.getFullYear() + 1, 0, 1);
+          timeFilter = {
+            createdAt: {
+              $gte: startOfYear,
+              $lt: endOfYear
+            }
+          };
+          break;
+      }
+    }
+    
+    // Build query with time filter
+    const query = { userId, ...timeFilter };
+    
+    // Build sort order
+    const sortDirection: 1 | -1 = sortOrder === SortOrder.ASC ? 1 : -1;
+    const sortQuery: { [key: string]: 1 | -1 } = { createdAt: sortDirection };
+    
+    // Get paginated liked post records
     const likedPostRecords = await this.postLikeModel
-      .find({ userId })
+      .find(query)
       .select('postId')
-      .sort({ createdAt: -1 })
+      .sort(sortQuery)
       .skip(skip)
       .limit(limit)
       .lean();
@@ -52,7 +113,7 @@ export class PostLikeService {
     const likedPostIds = likedPostRecords.map(record => record.postId);
 
     if (likedPostIds.length === 0) {
-      const totalCount = await this.postLikeModel.countDocuments({ userId });
+      const totalCount = await this.postLikeModel.countDocuments(query);
       return {
         posts: [],
         totalCount,
@@ -61,8 +122,8 @@ export class PostLikeService {
       };
     }
 
-    // Get total count of liked posts for pagination
-    const totalCount = await this.postLikeModel.countDocuments({ userId });
+    // Get total count of liked posts for pagination (with time filter)
+    const totalCount = await this.postLikeModel.countDocuments(query);
 
     // Use the post service's base pipeline but without pagination (since we paginated at like level)
     const currentUser = new Types.ObjectId(userId);
@@ -71,11 +132,11 @@ export class PostLikeService {
     const posts = await this.postModel
       .aggregate([
         ...this.postService.buildBasePipeline(currentUser, baseMatch),
-        { $sort: { createdAt: -1 } } 
+        // Don't sort here since we want to maintain the like order
       ])
       .exec();
 
-    // If you want to maintain the like order, you can sort the posts based on likedPostIds order
+    // Maintain the like order based on the sorted likedPostIds
     const postsOrderedByLikeTime = likedPostIds.map(likedId => 
       posts.find(post => post._id.toString() === likedId.toString())
     ).filter(Boolean);
