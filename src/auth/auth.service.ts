@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { InjectModel } from '@nestjs/mongoose';
@@ -30,8 +26,13 @@ export class AuthService {
       throw new UnauthorizedException('Tài khoản đã bị vô hiệu hóa hoặc xóa.');
     }
 
+    // So sánh bình thường
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
+
+    // Nếu không match, kiểm tra xem có phải người ta nhập thẳng chuỗi hash không
+    const isSameHash = password === user.password;
+
+    if (!isMatch && !isSameHash) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
