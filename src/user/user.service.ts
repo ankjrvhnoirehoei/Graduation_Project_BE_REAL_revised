@@ -49,7 +49,7 @@ export class UserService {
   async findById(id: string) {
     return this.userModel
       .findById(id)
-      .select('_id handleName username profilePic role');
+      .select('_id handleName username profilePic role fcmToken');
   }
 
   async register(registerDto: RegisterDto): Promise<User> {

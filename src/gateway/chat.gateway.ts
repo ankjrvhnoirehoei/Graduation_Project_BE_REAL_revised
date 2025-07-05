@@ -110,7 +110,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         },
       });
 
-      // 🔔 Gửi FCM nếu user nhận không online hoặc không trong room
       const recipientIds = await this.roomService.getUserIdsInRoom(roomId);
       const sender = await this.userService.findById(senderId);
 
