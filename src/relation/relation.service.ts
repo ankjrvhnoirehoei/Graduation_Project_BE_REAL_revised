@@ -167,6 +167,13 @@ export class RelationService {
       throw new BadRequestException('Failed to update relation');
     }
   }
+  async getRelationType(
+    from: string,
+    to: string,
+  ): Promise<RelationType | null> {
+    const relation = await this.getRelation(from, to);
+    return relation.relation;
+  }
 
   // Helper method to get relation between two users
   async getRelation(
