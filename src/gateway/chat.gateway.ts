@@ -110,6 +110,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         },
       });
 
+      const room = await this.roomService.findById(roomId);
+      const isWaiting = room?.type === 'waiting';
       const recipientIds = await this.roomService.getUserIdsInRoom(roomId);
       const sender = await this.userService.findById(senderId);
 
@@ -132,7 +134,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
               `Bạn có tin nhắn mới từ ${sender?.username || 'người lạ'}`,
               {
                 type: 'message',
-                roomId,
+                roomId: roomId,
+                isWaiting: isWaiting,
               },
             );
           }

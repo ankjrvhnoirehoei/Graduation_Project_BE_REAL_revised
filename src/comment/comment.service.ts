@@ -5,7 +5,7 @@ import { Comment } from './comment.schema';
 import { CommentDto } from './dto/comment.dto';
 import { plainToInstance } from 'class-transformer';
 import { CreateCommentResponse } from './dto/commentRes.dto';
-import { User } from '../user/user.schema'; // Import User schema
+import { User } from '../user/user.schema';
 
 @Injectable()
 export class CommentService {

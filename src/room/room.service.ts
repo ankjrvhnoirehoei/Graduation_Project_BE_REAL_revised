@@ -17,6 +17,10 @@ export class RoomService {
     @InjectModel(Message.name) private messageModel: Model<Message>,
   ) {}
 
+  async findById(roomId: string): Promise<Room | null> {
+    return this.roomModel.findById(roomId).exec();
+  }
+
   async createRoom(
     createRoomDto: CreateRoomDto,
     userId: string,
