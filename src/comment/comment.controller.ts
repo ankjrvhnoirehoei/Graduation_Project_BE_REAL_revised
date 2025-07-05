@@ -10,7 +10,10 @@ export class CommentController {
 
   @Get('post/:postID')
   @UseGuards(JwtRefreshAuthGuard)
-  async getCommentsByPost(@Param('postID') postID: string, @CurrentUser('sub') userId: string,) {
+  async getCommentsByPost(
+    @Param('postID') postID: string,
+    @CurrentUser('sub') userId: string,
+  ) {
     return this.commentService.getCommentsByPost(postID, userId);
   }
 
@@ -21,5 +24,23 @@ export class CommentController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.commentService.createComment(dto, userId);
+  }
+
+  @Post(':commentId/like')
+  @UseGuards(JwtRefreshAuthGuard)
+  async likeComment(
+    @Param('commentId') commentId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.commentService.likeComment(commentId, userId);
+  }
+
+  @Post(':commentId/unlike')
+  @UseGuards(JwtRefreshAuthGuard)
+  async unlikeComment(
+    @Param('commentId') commentId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.commentService.unlikeComment(commentId, userId);
   }
 }

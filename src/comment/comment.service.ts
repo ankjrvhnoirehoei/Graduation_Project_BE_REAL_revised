@@ -3,14 +3,21 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Comment } from './comment.schema';
 import { CommentDto } from './dto/comment.dto';
+import { plainToInstance } from 'class-transformer';
+import { CreateCommentResponse } from './dto/commentRes.dto';
+import { User } from '../user/user.schema'; // Import User schema
 
 @Injectable()
 export class CommentService {
   constructor(
     @InjectModel(Comment.name) private commentModel: Model<Comment>,
+    @InjectModel(User.name) private userModel: Model<User>,
   ) {}
 
-  async createComment(dto: CommentDto, userID: string): Promise<Comment> {
+  async createComment(
+    dto: CommentDto,
+    userID: string,
+  ): Promise<CreateCommentResponse> {
     const comment = new this.commentModel({
       userID: new Types.ObjectId(userID),
       postID: new Types.ObjectId(dto.postID),
@@ -19,10 +26,35 @@ export class CommentService {
       mediaUrl: dto.mediaUrl,
       isDeleted: dto.isDeleted ?? false,
     });
-    return comment.save();
+
+    const savedComment = await comment.save();
+
+    const user = await this.userModel
+      .findById(userID)
+      .select('_id handleName profilePic')
+      .lean();
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const result = {
+      comment: {
+        ...savedComment.toObject(),
+        userID: userID.toString(),
+      },
+      user: user,
+    };
+
+    return plainToInstance(CreateCommentResponse, result, {
+      excludeExtraneousValues: true,
+    });
   }
 
-  async getCommentsByPost(postID: string, currentUserId: string): Promise<any[]> {
+  async getCommentsByPost(
+    postID: string,
+    currentUserId: string,
+  ): Promise<any[]> {
     const allComments = await this.commentModel.aggregate([
       { $match: { postID: new Types.ObjectId(postID) } },
 
@@ -102,7 +134,9 @@ export class CommentService {
           return {
             ...restReply,
             totalLikes: likedBy.length,
-            isLiked: likedBy.some((id: Types.ObjectId) => id.toString() === currentUserId),
+            isLiked: likedBy.some(
+              (id: Types.ObjectId) => id.toString() === currentUserId,
+            ),
           };
         });
 
@@ -111,7 +145,9 @@ export class CommentService {
       return {
         ...restComment,
         totalLikes: likedBy.length,
-        isLiked: likedBy.some((id: Types.ObjectId) => id.toString() === currentUserId),
+        isLiked: likedBy.some(
+          (id: Types.ObjectId) => id.toString() === currentUserId,
+        ),
         reply: replyList,
       };
     });
@@ -124,9 +160,25 @@ export class CommentService {
   }
 
   async getCommentCount(postID: string): Promise<number> {
-    return await this.commentModel.countDocuments({
-      postID: new Types.ObjectId(postID),
-      isDeleted: false,
-    }).lean();
+    return await this.commentModel
+      .countDocuments({
+        postID: new Types.ObjectId(postID),
+        isDeleted: false,
+      })
+      .lean();
+  }
+
+  async likeComment(commentId: string, userId: string): Promise<any> {
+    return this.commentModel.updateOne(
+      { _id: new Types.ObjectId(commentId) },
+      { $addToSet: { likedBy: new Types.ObjectId(userId) } },
+    );
+  }
+
+  async unlikeComment(commentId: string, userId: string): Promise<any> {
+    return this.commentModel.updateOne(
+      { _id: new Types.ObjectId(commentId) },
+      { $pull: { likedBy: new Types.ObjectId(userId) } },
+    );
   }
 }
