@@ -131,7 +131,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
               'Tin nhắn mới',
               `Bạn có tin nhắn mới từ ${sender?.username || 'người lạ'}`,
               {
-                type: 'chat',
+                type: 'message',
                 roomId,
               },
             );
