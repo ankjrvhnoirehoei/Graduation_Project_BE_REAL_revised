@@ -71,6 +71,12 @@ export class UserController {
     return user;
   }
 
+  @UseGuards(JwtRefreshAuthGuard)
+  @Get('username-by-handle/:handleName')
+  async getUsernameByHandleName(@Param('handleName') handleName: string) {
+    return this.userService.findUserIdByHandleName(handleName);
+  }
+
   @Post('check-refresh-token')
   @UseGuards(JwtRefreshAuthGuard)
   async checkRefreshToken(@CurrentUser('sub') userId: string, @Req() req: any) {

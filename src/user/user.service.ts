@@ -94,6 +94,21 @@ export class UserService {
     return newUser.save();
   }
 
+  async findUserIdByHandleName(
+    handleName: string,
+  ): Promise<{ userId: string }> {
+    const user = await this.userModel.findOne({
+      handleName,
+      deletedAt: { $ne: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return { userId: user._id.toString() };
+  }
+
   async getUserById(userId: string): Promise<Partial<User>> {
     const user = await this.userModel.findById(userId).lean();
 
@@ -134,6 +149,7 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
     user.refreshToken = '';
+    user.fcmToken = '';
     await user.save();
   }
 
