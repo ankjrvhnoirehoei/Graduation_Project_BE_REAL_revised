@@ -1804,8 +1804,8 @@ export class PostService {
     const postIds = grouped.map(media => media.postID);
     const posts = await this.postModel.find(
       { _id: { $in: postIds } },
-      { _id: 1, userID: 1, music: 1, caption: 1, share: 1 }
-    ).lean();
+      { _id: 1, userID: 1, music: 1, caption: 1, share: 1, createdAt: 1 }
+    ).exec();
     
     const postIdToMedia = new Map<string, any>();
     grouped.forEach(media => {
