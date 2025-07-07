@@ -6,6 +6,7 @@ import {
   Delete,
   Get,
   UseGuards,
+  Patch,
 } from '@nestjs/common';
 import { RoomService } from './room.service';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
@@ -17,7 +18,7 @@ import { UpdateRoomNameDto } from './dto/update-room-name.dto';
 @Controller('rooms')
 @UseGuards(JwtRefreshAuthGuard)
 export class RoomController {
-  constructor(private readonly roomService: RoomService) {}
+  constructor(private readonly roomService: RoomService) { }
 
   @Post()
   create(@Body() dto: CreateRoomDto, @CurrentUser('sub') userId: string) {
@@ -76,5 +77,10 @@ export class RoomController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.roomService.updateRoomName(roomId, userId, updateRoomNameDto);
+  }
+
+  @Patch(':roomId/name')
+  async updateRoomType(@Param('roomId') roomId: string) {
+    return await this.roomService.updateRoomType(roomId);
   }
 }

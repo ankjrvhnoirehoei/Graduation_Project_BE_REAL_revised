@@ -7,6 +7,8 @@ import {
   Put,
   Query,
   BadRequestException,
+  Param,
+  Req,
 } from '@nestjs/common';
 import { RelationService } from './relation.service';
 import { RelationType } from './relation.schema';
@@ -19,6 +21,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { GetBlockingDto } from './dto/get-blocking.dto';
 import { UserService } from '../user/user.service';
 import { NotificationService } from 'src/notification/notification.service';
+import { Types } from 'mongoose';
 
 @Controller('relations')
 export class RelationController {
@@ -26,7 +29,7 @@ export class RelationController {
     private readonly relationService: RelationService,
     private readonly userService: UserService,
     private readonly notificationService: NotificationService,
-  ) {}
+  ) { }
 
   /**
    * PUT /relations/relation-action
@@ -253,4 +256,22 @@ export class RelationController {
       return { success: false, error: error.message };
     }
   }
+
+  /**
+   * This controller will get relationship between two user
+   */
+  @Get('/:fromUserId/:toUserId')
+  async getRelationShip(
+    @Param('fromUserId') fromUserId: string,
+    @Param('toUserId') toUserId: string,
+  ) {
+    if (!Types.ObjectId.isValid(fromUserId) || !Types.ObjectId.isValid(toUserId)) {
+      return {
+        message: 'Invalid user ID format',
+        data: null,
+      };
+    }
+    return await this.relationService.getRelationShip(fromUserId, toUserId);
+  }
+
 }

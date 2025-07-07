@@ -11,7 +11,7 @@ import { Relation, RelationDocument, RelationType } from './relation.schema';
 export class RelationService {
   constructor(
     @InjectModel(Relation.name) private relationModel: Model<RelationDocument>,
-  ) {}
+  ) { }
 
   // create, update or delete the relation from A->B
   async createOrUpdateRelation(
@@ -369,5 +369,18 @@ export class RelationService {
     });
 
     return [...new Set(followerIds)];
+  }
+
+  async getRelationShip(fromUserId: string, toUserId: string) {
+    const relation = this.relationModel.exists({
+      userOneID: new Types.ObjectId(fromUserId),
+      userTwoID: new Types.ObjectId(toUserId),
+      relation: { $regex: '^FOLLOW' },
+    }).lean();
+    console.log(relation);
+    return {
+      message: 'Success',
+      data: relation !== null,
+    };
   }
 }
