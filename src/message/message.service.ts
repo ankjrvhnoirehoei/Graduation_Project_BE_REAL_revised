@@ -15,6 +15,11 @@ interface LeanMessageWithSender {
     handleName: string;
     profilePic?: string;
   };
+  reactions?: {
+    userId: string;
+    content: string;
+    createdAt: string;
+  }[];
 }
 
 @Injectable()
@@ -67,6 +72,7 @@ export class MessageService {
         handleName: msg.senderId.handleName,
         profilePic: msg.senderId.profilePic,
       },
+      reaction: msg.reactions ?? [],
     }));
   }
 
