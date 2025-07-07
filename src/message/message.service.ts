@@ -72,7 +72,7 @@ export class MessageService {
         handleName: msg.senderId.handleName,
         profilePic: msg.senderId.profilePic,
       },
-      reaction: msg.reactions ?? [],
+      reactions: msg.reactions ?? [],
     }));
   }
 
