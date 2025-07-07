@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { CreateMessageDto } from './dto/message.dto';
 import { Message } from './message.schema';
 
@@ -85,5 +85,31 @@ export class MessageService {
       .deleteOne({ _id: messageId, senderId: userId })
       .exec();
     return { deleted: result.deletedCount === 1 };
+  }
+
+  async addOrUpdateReaction(
+    messageId: string,
+    userId: string,
+    content: string,
+  ) {
+    const message = await this.messageModel.findById(messageId);
+
+    if (!message) throw new Error('Message not found');
+
+    message.reactions = message.reactions.filter(
+      (r) => r.userId.toString() !== userId,
+    );
+
+    message.reactions.push({
+      userId: new Types.ObjectId(userId),
+      content,
+    } as any);
+
+    await message.save();
+
+    return message.populate({
+      path: 'senderId',
+      select: 'handleName profilePic',
+    });
   }
 }
