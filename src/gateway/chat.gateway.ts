@@ -147,6 +147,36 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('addReaction')
+  async handleAddReaction(
+    @MessageBody()
+    payload: { messageId: string; userId: string; content: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { messageId, userId, content } = payload;
+
+    if (!messageId || !userId || !content) {
+      client.emit('errorMessage', 'Missing required fields for reaction');
+      return;
+    }
+
+    try {
+      const updatedMessage = await this.messageService.addOrUpdateReaction(
+        messageId,
+        userId,
+        content,
+      );
+
+      this.server.to(updatedMessage.roomId.toString()).emit('reactionUpdated', {
+        messageId,
+        reactions: updatedMessage.reactions,
+      });
+    } catch (err) {
+      console.error('❗ Error adding reaction:', err);
+      client.emit('errorMessage', 'Failed to add reaction');
+    }
+  }
+
   @SubscribeMessage('incomingCall')
   handleIncomingCall(
     @MessageBody()
