@@ -268,4 +268,18 @@ export class RoomService {
 
     return room.user_ids.map((id: Types.ObjectId) => id.toString());
   }
+
+  async getRoomById(id: string) {
+    return this.roomModel
+      .findById(id)
+      .populate({
+        path: 'user_ids',
+        select: '-password -refreshToken -fcmToken -role',
+      })
+      .populate({
+        path: 'created_by',
+        select: '-password -refreshToken -fcmToken -role',
+      })
+      .exec();
+  }
 }
