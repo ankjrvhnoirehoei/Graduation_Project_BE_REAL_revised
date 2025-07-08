@@ -79,7 +79,7 @@ export class RoomController {
     return this.roomService.updateRoomName(roomId, userId, updateRoomNameDto);
   }
 
-  @Patch(':roomId/name')
+  @Patch(':roomId')
   async updateRoomType(@Param('roomId') roomId: string) {
     return await this.roomService.updateRoomType(roomId);
   }
