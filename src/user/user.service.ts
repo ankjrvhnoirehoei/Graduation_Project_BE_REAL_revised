@@ -116,7 +116,7 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    const { refreshToken, fcmToken, ...safeUser } = user;
+    const { password, refreshToken, fcmToken, ...safeUser } = user;
     return safeUser;
   }
 
@@ -127,7 +127,7 @@ export class UserService {
     const users = await this.userModel.find({ _id: { $in: objectIds } }).lean();
 
     return users.map((u) => {
-      const { password, refreshToken, ...safe } = u;
+      const { password, refreshToken, fcmToken, ...safe } = u;
       return {
         ...safe,
         _id: safe._id.toString(), // Convert to string

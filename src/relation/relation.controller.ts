@@ -113,9 +113,7 @@ export class RelationController {
     const uniqueFollowerIds = [...new Set(followerIds)];
 
     // Fetch detailed user information
-    const followers = await Promise.all(
-      uniqueFollowerIds.map((id) => this.userService.getUserById(id)),
-    );
+    const followers = await this.userService.findManyByIds(uniqueFollowerIds);
 
     console.log('Request Body:', dto);
     console.log('Followers count:', uniqueFollowerIds.length);
@@ -152,9 +150,7 @@ export class RelationController {
     const uniqueFollowingIds = [...new Set(followingIds)];
 
     // Fetch detailed user information
-    const following = await Promise.all(
-      uniqueFollowingIds.map((id) => this.userService.getUserById(id)),
-    );
+    const following = await this.userService.findManyByIds(uniqueFollowingIds);
 
     console.log('Request Body:', dto);
     console.log('Following count:', uniqueFollowingIds.length);
