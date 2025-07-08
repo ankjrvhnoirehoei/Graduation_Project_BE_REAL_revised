@@ -6,6 +6,7 @@ import {
   Delete,
   Get,
   UseGuards,
+  Patch,
   NotFoundException,
 } from '@nestjs/common';
 import { RoomService } from './room.service';
@@ -18,7 +19,7 @@ import { UpdateRoomNameDto } from './dto/update-room-name.dto';
 @Controller('rooms')
 @UseGuards(JwtRefreshAuthGuard)
 export class RoomController {
-  constructor(private readonly roomService: RoomService) {}
+  constructor(private readonly roomService: RoomService) { }
 
   @Post()
   create(@Body() dto: CreateRoomDto, @CurrentUser('sub') userId: string) {
@@ -79,6 +80,11 @@ export class RoomController {
     return this.roomService.updateRoomName(roomId, userId, updateRoomNameDto);
   }
 
+  @Patch(':roomId')
+  async updateRoomType(@Param('roomId') roomId: string) {
+    return await this.roomService.updateRoomType(roomId);
+  }
+  
   @Get(':id')
   async getRoomById(@Param('id') id: string) {
     const room = await this.roomService.getRoomById(id);

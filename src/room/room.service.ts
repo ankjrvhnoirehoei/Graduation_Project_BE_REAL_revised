@@ -268,6 +268,17 @@ export class RoomService {
 
     return room.user_ids.map((id: Types.ObjectId) => id.toString());
   }
+  
+  async updateRoomType(roomId: string) {
+    const updated = await this.roomModel.updateOne(
+      { _id: roomId },
+      { type: 'accept' }
+    ).lean();
+    return {
+      message: 'success',
+      data: updated.upsertedId,
+    };
+  }
 
   async getRoomById(id: string) {
     return this.roomModel
