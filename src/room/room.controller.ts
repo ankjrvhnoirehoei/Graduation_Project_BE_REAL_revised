@@ -7,6 +7,7 @@ import {
   Get,
   UseGuards,
   Patch,
+  NotFoundException,
 } from '@nestjs/common';
 import { RoomService } from './room.service';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
@@ -82,5 +83,14 @@ export class RoomController {
   @Patch(':roomId')
   async updateRoomType(@Param('roomId') roomId: string) {
     return await this.roomService.updateRoomType(roomId);
+  }
+  
+  @Get(':id')
+  async getRoomById(@Param('id') id: string) {
+    const room = await this.roomService.getRoomById(id);
+    if (!room) {
+      throw new NotFoundException('Room not found');
+    }
+    return room;
   }
 }
