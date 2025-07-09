@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { InjectModel } from '@nestjs/mongoose';
@@ -16,33 +16,37 @@ export class AuthService {
     email: string,
     password: string,
     fcmToken?: string,
-  ): Promise<{ accessToken: string; refreshToken: string; fcmToken?: string }> {
-    const user: any = await this.userModel.findOne({ email });
+  ): Promise<{ message: string; accessToken: string; refreshToken: string; fcmToken?: string }> {
+    if (!email) {
+      throw new BadRequestException("Vui lòng cung cấp địa chỉ email.");
+    }
+
+    if (!password) {
+      throw new BadRequestException("Vui lòng cung cấp mật khẩu.");
+    }
+
+    const user = await this.userModel.findOne({ email });
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException("Thông tin đăng nhập không hợp lệ.");
     }
 
-    if (user.deletedAt && user.deletedAt !== false) {
-      throw new UnauthorizedException('Tài khoản đã bị vô hiệu hóa hoặc xóa.');
+    if (user.deletedAt) {
+      throw new UnauthorizedException("Tài khoản đã bị vô hiệu hóa hoặc xóa.");
     }
 
-    // So sánh bình thường
     const isMatch = await bcrypt.compare(password, user.password);
-
-    // Nếu không match, kiểm tra xem có phải người ta nhập thẳng chuỗi hash không
     const isSameHash = password === user.password;
 
     if (!isMatch && !isSameHash) {
-      throw new UnauthorizedException('Invalid credentials');
+      // Optionally track failed attempts here and lock after N tries
+      throw new UnauthorizedException("Thông tin đăng nhập không hợp lệ.");
     }
 
     const payload = { sub: user._id.toString() };
-
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: process.env.JWT_ACCESS_SECRET,
       expiresIn: '15m',
     });
-
     const refreshToken = await this.jwtService.signAsync(payload, {
       secret: process.env.JWT_REFRESH_SECRET,
       expiresIn: '7d',
@@ -54,6 +58,11 @@ export class AuthService {
     }
     await user.save();
 
-    return { accessToken, refreshToken, fcmToken };
+    return {
+      message: "Đăng nhập thành công.",
+      accessToken,
+      refreshToken,
+      fcmToken,
+    };
   }
 }

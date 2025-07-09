@@ -222,9 +222,7 @@ export class RelationController {
       };
     }
 
-    const recommendations = await Promise.all(
-      recIds.map((id) => this.userService.getUserById(id)),
-    );
+    const recommendations = await this.userService.findManyByIds(recIds);
 
     return { recommendations };
   }

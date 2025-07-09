@@ -109,15 +109,16 @@ export class UserService {
     return { userId: user._id.toString() };
   }
 
-  async getUserById(userId: string): Promise<Partial<User>> {
+    async getUserById(userId: string): Promise<(Partial<User> & { _id: string }) | null> {
     const user = await this.userModel.findById(userId).lean();
-
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('User not found.');
     }
-
     const { password, refreshToken, fcmToken, ...safeUser } = user;
-    return safeUser;
+    return {
+      ...safeUser,
+      _id: safeUser._id.toString(), 
+    };
   }
 
   async findManyByIds(
@@ -130,7 +131,7 @@ export class UserService {
       const { password, refreshToken, fcmToken, ...safe } = u;
       return {
         ...safe,
-        _id: safe._id.toString(), // Convert to string
+        _id: safe._id.toString(),
       };
     });
   }
