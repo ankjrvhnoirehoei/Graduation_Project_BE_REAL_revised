@@ -56,7 +56,7 @@ export class UserController {
     const { email, password, fcmToken } = loginDto;
     const tokens = await this.authService.login(email, password, fcmToken);
     return {
-      message: 'Login successful',
+      message: 'Login thành công',
       ...tokens,
     };
   }
@@ -93,20 +93,20 @@ export class UserController {
     if (!isValid) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-    return { valid: true, message: 'Token is valid' };
+    return { valid: true, message: 'Token hợp lệ.' };
   }
 
   @Post('logout')
   @UseGuards(JwtRefreshAuthGuard)
   async logout(@CurrentUser('sub') userId: string) {
     await this.userService.logout(userId);
-    return { message: 'Logout successful' };
+    return { message: 'Đăng xuất thành công.' };
   }
 
   @Post('check-email')
   async checkEmail(@Body('email') email: string): Promise<{ exists: boolean }> {
     if (!email) {
-      throw new ConflictException('Email is required');
+      throw new ConflictException('Vui lòng nhập Email.');
     }
     const exists = await this.userService.checkEmailExists(email);
     return { exists };
@@ -122,7 +122,7 @@ export class UserController {
       req.headers['authorization'] || req.headers.authorization;
     const tokenFromClient = authHeader?.replace('Bearer ', '');
     if (!tokenFromClient) {
-      throw new UnauthorizedException('No refresh token provided');
+      throw new UnauthorizedException('Không có refresh token.');
     }
 
     // verify that this refresh token matches what's stored in the DB
@@ -131,7 +131,7 @@ export class UserController {
       tokenFromClient,
     );
     if (!isValid) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException('Refresh token không hợp lệ.');
     }
 
     // since it's valid, issue a brand‐new access token:
@@ -203,7 +203,7 @@ export class UserController {
   ) {
     const trimmed = keyword.trim();
     if (!trimmed) {
-      throw new BadRequestException('Keyword must not be empty');
+      throw new BadRequestException('Từ khóa không được để trống.');
     }
     const { items: rawUsers, totalCount } =
       await this.userService.searchUsersRawPaginated(
@@ -262,7 +262,7 @@ export class UserController {
     };
 
     return {
-      message: 'Searched results retrieved successfully',
+      message: 'Kết quả tìm kiếm trả về thành công.',
       users: {
         items: enriched,
         pagination,

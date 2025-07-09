@@ -44,10 +44,10 @@ export class RelationController {
     const { targetId, action } = dto;
 
     if (me === targetId) {
-      throw new BadRequestException('Cannot follow/block yourself');
+      throw new BadRequestException('Không thể follow chính mình.');
     }
     if (!['follow', 'unfollow', 'block', 'unblock'].includes(action)) {
-      throw new BadRequestException('Invalid action');
+      throw new BadRequestException('Action sai.');
     }
 
     const rel = await this.relationService.createOrUpdateRelation(
@@ -57,7 +57,7 @@ export class RelationController {
     );
     return rel
       ? { relation: rel.relation as RelationType, updatedAt: rel.updated_at }
-      : { relation: 'NULL_NULL', message: 'No relationship exists anymore' };
+      : { relation: 'NULL_NULL', message: 'Không có mối quan hệ nào.' };
   }
 
   /**
@@ -109,7 +109,7 @@ export class RelationController {
       } else if (u1 === userId && r.relation.endsWith('_FOLLOW')) {
         return u2;
       }
-      throw new BadRequestException('Unexpected relation pattern in followers');
+      throw new BadRequestException('Mối quan hệ bất hợp lệ.');
     });
 
     // Remove duplicates
@@ -146,7 +146,7 @@ export class RelationController {
       } else if (u2 === userId && r.relation.endsWith('_FOLLOW')) {
         return u1;
       }
-      throw new BadRequestException('Unexpected relation pattern in following');
+      throw new BadRequestException('Mối quan hệ bất hợp lệ.');
     });
 
     // Remove duplicates
@@ -207,7 +207,7 @@ export class RelationController {
   ) {
     const limit = limitQ ? parseInt(limitQ, 10) : 10;
     if (isNaN(limit) || limit <= 0) {
-      throw new BadRequestException('`limit` must be a positive integer');
+      throw new BadRequestException('`limit` phải là số nguyên dương');
     }
 
     const recIds = await this.relationService.getRecommendations(
@@ -218,7 +218,7 @@ export class RelationController {
     if (recIds.length === 0) {
       return {
         message:
-          'No recommendations available. Follow more users to get suggestions.',
+          'Không có đề xuất. Theo dõi thêm nhiều người khác để có đề xuất.',
       };
     }
 

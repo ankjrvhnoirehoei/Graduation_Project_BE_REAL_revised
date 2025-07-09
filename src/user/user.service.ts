@@ -103,7 +103,7 @@ export class UserService {
     });
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('Không tìm thấy User');
     }
 
     return { userId: user._id.toString() };
@@ -112,7 +112,7 @@ export class UserService {
     async getUserById(userId: string): Promise<(Partial<User> & { _id: string }) | null> {
     const user = await this.userModel.findById(userId).lean();
     if (!user) {
-      throw new NotFoundException('User not found.');
+      throw new NotFoundException('Không tìm thấy User.');
     }
     const { password, refreshToken, fcmToken, ...safeUser } = user;
     return {
@@ -139,7 +139,7 @@ export class UserService {
   async validateRefreshToken(userId: string, token: string): Promise<boolean> {
     const user = await this.userModel.findById(userId).lean();
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('Không tìm thấy User');
     }
     return user.refreshToken === token;
   }
@@ -147,7 +147,7 @@ export class UserService {
   async logout(userId: string): Promise<void> {
     const user = await this.userModel.findById(userId);
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('Không tìm thấy User');
     }
     user.refreshToken = '';
     user.fcmToken = '';
@@ -174,7 +174,7 @@ export class UserService {
     isVip: boolean;
   }> {
     if (!Types.ObjectId.isValid(userId)) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('Không tìm thấy User');
     }
 
     const user = await this.userModel.findById(userId).lean().select({
@@ -189,7 +189,7 @@ export class UserService {
     });
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('Không tìm thấy User');
     }
 
     return {
@@ -313,7 +313,7 @@ export class UserService {
       });
 
       if (existingUser) {
-        throw new BadRequestException('Handle name is already taken');
+        throw new BadRequestException('Handlename đã được dùng.');
       }
 
       update.handleName = dto.handleName;
@@ -323,13 +323,13 @@ export class UserService {
     if (dto.password) {
       const user = await this.userModel.findById(userId);
       if (!user) {
-        throw new NotFoundException('User not found');
+        throw new NotFoundException('Không tìm thấy User');
       }
       // check if new password is same as current
       const isSame = await bcrypt.compare(dto.password, user.password);
       if (isSame) {
         throw new BadRequestException(
-          'New password must be different from the current password',
+          'Mật khẩu mới phải khác mật khẩu hiện tại.',
         );
       }
       // hash new password and add it to update object
@@ -338,7 +338,7 @@ export class UserService {
 
     // ensure there is something to update
     if (Object.keys(update).length === 0) {
-      throw new BadRequestException('No editable fields provided');
+      throw new BadRequestException('Không có thông tin hợp lệ để chỉnh sửa.');
     }
 
     const updated = await this.userModel
@@ -346,7 +346,7 @@ export class UserService {
       .lean();
 
     if (!updated) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('Không tìm thấy User');
     }
 
     // strip out sensitive fields
@@ -364,7 +364,7 @@ export class UserService {
     // check uniqueness
     const exists = await this.userModel.findOne({ email: dto.email }).lean();
     if (exists) {
-      throw new ConflictException('Email already in use');
+      throw new ConflictException('Email đã được sử dụng.');
     }
 
     // generate confirmation code
@@ -416,7 +416,7 @@ export class UserService {
       { new: true },
     );
     if (!updated) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('Không tìm thấy User');
     }
   }
 
@@ -426,7 +426,7 @@ export class UserService {
       .select('deletedAt')
       .exec();
     if (!user) {
-      throw new NotFoundException(`User ${userId} not found`);
+      throw new NotFoundException(`Không tìm thấy User ${userId}`);
     }
 
     const newState = !user.deletedAt;

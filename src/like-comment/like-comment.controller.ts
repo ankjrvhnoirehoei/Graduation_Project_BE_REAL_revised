@@ -19,7 +19,7 @@ export class LikeCommentController {
   ) {
     const result = await this.likeCommentService.toggleLike(commentId, userId);
     return {
-      message: result.liked ? 'Comment liked successfully' : 'Comment unliked successfully',
+      message: result.liked ? 'Thích bình luận thành công.' : 'Bỏ thích bình luận thành công.',
       liked: result.liked,
     };
   }
@@ -33,6 +33,6 @@ export class LikeCommentController {
     @CurrentUser('sub') userId: string,
   ) {
     const likers = await this.likeCommentService.getCommentLikers(commentId, userId);
-    return { message: 'Comment likers retrieved successfully', data: likers };
+    return { message: 'Người thích bình luận trả về thành công.', data: likers };
   }
 }

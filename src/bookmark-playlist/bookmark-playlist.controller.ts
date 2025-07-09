@@ -38,7 +38,7 @@ export class BookmarkPlaylistController {
     @CurrentUser('sub') userId: string,
   ) {
     if (!playlistName || typeof playlistName !== 'string') {
-      throw new BadRequestException('playlistName is required and must be a string.');
+      throw new BadRequestException('Thiếu playlistName và phải là chuỗi.');
     }
     return this.playlistService.createPlaylist(userId, playlistName);
   }
@@ -52,7 +52,7 @@ export class BookmarkPlaylistController {
     @CurrentUser('sub') userId: string,
   ) {
     if (!playlistName || typeof playlistName !== 'string') {
-      throw new BadRequestException('playlistName is required and must be a string.');
+      throw new BadRequestException('Thiếu playlistName và phải là chuỗi.');
     }
     return this.playlistService.renamePlaylist(playlistId, userId, playlistName);
   }
@@ -66,10 +66,10 @@ export class BookmarkPlaylistController {
     @CurrentUser('sub') userId: string,
   ) {
     if (!playlistId) {
-      throw new BadRequestException('playlistId is required in the request body.');
+      throw new BadRequestException('Thiếu playlistId trong body.');
     }
     if (!postId) {
-      throw new BadRequestException('postId is required in the request body.');
+      throw new BadRequestException('Thiếu postId trong body.');
     }
     // Create the bookmark item first
     const bookmarkItem = await this.itemService.create(playlistId, postId, userId);
@@ -89,10 +89,10 @@ export class BookmarkPlaylistController {
     @CurrentUser('sub') userId: string,
   ) {
     if (!playlistId) {
-      throw new BadRequestException('playlistId is required in the request body.');
+      throw new BadRequestException('Thiếu playlistId trong body.');
     }
     if (!Array.isArray(postIds) || postIds.length === 0) {
-      throw new BadRequestException('postIds (array of strings) is required in the request body.');
+      throw new BadRequestException('Cần postId dạng array trong body.');
     }
 
     await this.playlistService.findByIdAndUser(playlistId, userId);
@@ -121,7 +121,7 @@ export class BookmarkPlaylistController {
   ) {
     console.log('userID: ', userId);
     if (!musicId) {
-      throw new BadRequestException('musicId is required.');
+      throw new BadRequestException('Thiếu musicId.');
     }
     return this.playlistService.addMusicToPlaylist(userId, musicId);
   }
@@ -134,7 +134,7 @@ export class BookmarkPlaylistController {
     @CurrentUser('sub') userId: string,
   ) {
     if (!musicId) {
-      throw new BadRequestException('musicId is required.');
+      throw new BadRequestException('Thiếu musicId.');
     }
     return this.playlistService.removeMusicFromPlaylist(userId, musicId);
   }  
@@ -147,7 +147,7 @@ export class BookmarkPlaylistController {
     @CurrentUser('sub') userId: string,
   ) {
     if (!postId) {
-      throw new BadRequestException('postId is required.');
+      throw new BadRequestException('Thiếu postId.');
     }
     return this.playlistService.addPostToDefault(userId, postId);
   }
@@ -162,7 +162,7 @@ export class BookmarkPlaylistController {
     @Body('postIds') postIds?: string[],
   ) {
     if (!playlistId) {
-      throw new BadRequestException('playlistId is required.');
+      throw new BadRequestException('Thiếu playlistId.');
     }
 
     // Handle both single postId and multiple postIds
@@ -173,12 +173,12 @@ export class BookmarkPlaylistController {
     } else if (postId) {
       idsToProcess = [postId];
     } else {
-      throw new BadRequestException('Either postId or postIds array is required.');
+      throw new BadRequestException('Cần có 1 postId hoặc array postId.');
     }
 
     // Validate all IDs are provided
     if (idsToProcess.some(id => !id || typeof id !== 'string')) {
-      throw new BadRequestException('All post IDs must be valid strings.');
+      throw new BadRequestException('Tất cả IDs phải là chuỗi hợp lệ.');
     }
 
     return this.playlistService.switchPostsPlaylist(userId, playlistId, idsToProcess);
