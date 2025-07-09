@@ -440,16 +440,27 @@ export class StoryService {
       this.storyRepo.findOne({ _id: storyDto._id }),
       this.storyRepo.findAllUserHighlights(new Types.ObjectId(uid))
     ]);
+
     const uids = new Types.ObjectId(uid);
     if (!existingStory.ownerId.equals(uids)) {
       return new Error("You can't delete this story");
     }
-    if (!highlight) {
+
+    // if it type is a HIGHLIGHTS -> Delete it
+    if (existingStory.type === StoryType.HIGHLIGHTS) {
       await this.storyRepo.findOneAndDelete({ _id: storyDto._id });
       return {
         message: 'Success',
       };
     }
+    // if it type is a STORIES && have no HIGHLIGHTS -> Delete it
+    if (!highlight || highlight.length === 0) {
+      await this.storyRepo.findOneAndDelete({ _id: storyDto._id });
+      return {
+        message: 'Success',
+      };
+    }
+
     await Promise.all([
       highlight.map(story => {
         const hasStory = story.storyId.filter(id =>
@@ -460,7 +471,8 @@ export class StoryService {
           : this.storyRepo.updateStory(story._id, { storyId: hasStory })
       }),
       this.storyRepo.findOneAndDelete({ _id: storyDto._id })
-    ])
+    ]);
+
     return {
       message: 'Success',
     };
