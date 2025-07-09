@@ -50,7 +50,7 @@ export class User {
   @Prop({ default: false })
   deletedAt?: boolean;
 
-  @Prop ({ default: false })
+  @Prop ({ default: true })
   wantNotified?: boolean;
 }
 

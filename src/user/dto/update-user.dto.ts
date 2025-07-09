@@ -92,6 +92,9 @@ export class EditUserDto {
     message: 'Password must contain at least one special character',
   })
   password?: string;
+
+  @IsOptional()
+  wantNotified?: boolean;
 }
 
 export class ChangeEmailDto {

@@ -303,6 +303,9 @@ export class UserService {
       if (value !== undefined && key !== 'password' && key !== 'handleName') {
         update[key] = value;
       }
+      if (key === 'wantNotified' && typeof value === 'boolean') {
+        update.wantNotified = value;
+      }
     }
 
     // handleName uniqueness check if provided
