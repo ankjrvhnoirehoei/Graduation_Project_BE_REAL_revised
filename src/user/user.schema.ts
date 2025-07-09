@@ -49,6 +49,9 @@ export class User {
 
   @Prop({ default: false })
   deletedAt?: boolean;
+
+  @Prop ({ default: true })
+  wantNotified?: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

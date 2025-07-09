@@ -35,7 +35,7 @@ export class CommentService {
       .lean();
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('Không tìm thấy User');
     }
 
     const result = {

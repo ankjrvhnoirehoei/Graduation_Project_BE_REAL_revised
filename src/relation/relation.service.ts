@@ -365,7 +365,7 @@ export class RelationService {
         return u2;
       }
 
-      throw new BadRequestException('Unexpected relation pattern in followers');
+      throw new BadRequestException('Mối quan hệ bất hợp lệ.');
     });
 
     return [...new Set(followerIds)];
