@@ -83,13 +83,13 @@ export class StoryController {
     return this.storyService.createHighlight(userId, storyDto);
   }
 
-  @Post('share')
+  @Post('send')
   @ApiOperation({ summary: `Share story to other people` })
-  async shareStory(
+  async sendStory(
     @CurrentUser('sub') currentUser: string,
     @Body(new ValidationPipe()) storyDto: ShareStoryDTO,
   ) {
-    return this.storyService.shareStory(currentUser, storyDto);
+    return this.storyService.sendStory(currentUser, storyDto);
   }
 
   @Patch('update/highlight')

@@ -98,6 +98,19 @@ export class StoryService {
       })
     );
   }
+  async sendStoryToOther(currentUser: string, shareStoryDto: ShareStoryDTO) {
+    await Promise.all(
+      shareStoryDto.roomIds.map( async room => {
+        const messageData = {
+          roomId: room,
+          content: shareStoryDto.message || '',
+          media: shareStoryDto.media,
+          senderId: currentUser
+        };
+        await this.messageService.create(messageData);
+      })
+    )
+  }
 
   // STANDARDIZE FOR STORY & RESPONSE
   private LIMIT_HIGHLIGHTS = 50;
@@ -481,18 +494,8 @@ export class StoryService {
     };
   }
 
-  async shareStory(senderId: string, shareStoryDto: ShareStoryDTO) {
-    await Promise.all(
-      shareStoryDto.roomIds.map( async room => {
-        const messageData = {
-          roomId: room,
-          content: shareStoryDto.message || '',
-          media: shareStoryDto.media,
-          senderId: senderId
-        };
-        await this.messageService.create(messageData);
-      })
-    )
+  async sendStory(senderId: string, shareStoryDto: ShareStoryDTO) {
+    await this.sendStoryToOther(senderId, shareStoryDto)
     return {
       message: `success`,
       data: {
