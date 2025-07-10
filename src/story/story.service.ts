@@ -9,6 +9,8 @@ import { UserService } from 'src/user/user.service';
 import { UpdateHighlightDto } from './dto/update-highlight.dto';
 import { Story, StoryType } from './schema/story.schema';
 import { MusicService } from 'src/music/music.service';
+import { ShareStoryDTO } from './dto/share-story.dto';
+import { MessageService } from 'src/message/message.service';
 
 @Injectable()
 export class StoryService {
@@ -18,6 +20,7 @@ export class StoryService {
     private readonly relationServ: RelationService,
     private readonly userService: UserService,
     private readonly musicService: MusicService,
+    private readonly messageService: MessageService,
   ) { }
 
   // Utilities functional
@@ -39,7 +42,7 @@ export class StoryService {
       username: userData.username,
     };
   }
-   private async enrichStoryMusic(stories: Story[]) {
+  private async enrichStoryMusic(stories: Story[]) {
     if (!stories || stories.length === 0) {
       return stories;
     }
@@ -94,6 +97,19 @@ export class StoryService {
         };
       })
     );
+  }
+  async sendStoryToOther(currentUser: string, shareStoryDto: ShareStoryDTO) {
+    await Promise.all(
+      shareStoryDto.roomIds.map( async room => {
+        const messageData = {
+          roomId: room,
+          content: shareStoryDto.message || '',
+          media: shareStoryDto.media,
+          senderId: currentUser
+        };
+        await this.messageService.create(messageData);
+      })
+    )
   }
 
   // STANDARDIZE FOR STORY & RESPONSE
@@ -315,7 +331,7 @@ export class StoryService {
       ownerId: new Types.ObjectId(uid),
       type: StoryType.STORIES,
     });
-    
+
     // ✅ Enrich tags with user data if they exist
     let enrichedStory: any = story;
     if (story.tags && story.tags.length > 0) {
@@ -332,12 +348,12 @@ export class StoryService {
             };
           })
         );
-        
+
         // Convert to plain object and replace tags
         const storyObj = (story as any).toObject ? (story as any).toObject() : { ...story };
-        enrichedStory = { 
+        enrichedStory = {
           ...storyObj,
-          tags: enrichedTags 
+          tags: enrichedTags
         };
       } catch (error) {
         this.logger.error('Error enriching tags:', error);
@@ -345,7 +361,7 @@ export class StoryService {
         enrichedStory = story;
       }
     }
-    
+
     return {
       message: 'Success',
       data: this.STORY_RESPONSE(enrichedStory),
@@ -477,4 +493,16 @@ export class StoryService {
       message: 'Success',
     };
   }
+
+  async sendStory(senderId: string, shareStoryDto: ShareStoryDTO) {
+    await this.sendStoryToOther(senderId, shareStoryDto)
+    return {
+      message: `success`,
+      data: {
+        shareTo: shareStoryDto.roomIds,
+        content: shareStoryDto.message
+      }
+    };
+  }
+
 }

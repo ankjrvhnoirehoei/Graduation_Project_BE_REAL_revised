@@ -7,6 +7,7 @@ import { Story, StorySchema } from './schema/story.schema';
 import { RelationModule } from 'src/relation/relation.module';
 import { UserModule } from 'src/user/user.module';
 import { MusicModule } from 'src/music/music.module';
+import { MessageModule } from 'src/message/message.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { MusicModule } from 'src/music/music.module';
     RelationModule,
     forwardRef(() => UserModule),
     MusicModule,
+    MessageModule
   ],
   controllers: [StoryController],
   providers: [StoryService, StoryRepository],

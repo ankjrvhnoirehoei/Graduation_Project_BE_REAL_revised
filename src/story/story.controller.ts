@@ -17,6 +17,7 @@ import { CreateHighlightStoryDto } from './dto/create-highlight.dto';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ShareStoryDTO } from './dto/share-story.dto';
 
 @ApiTags('stories')
 @Controller('stories')
@@ -80,6 +81,15 @@ export class StoryController {
     @Body(new ValidationPipe()) storyDto: CreateHighlightStoryDto,
   ) {
     return this.storyService.createHighlight(userId, storyDto);
+  }
+
+  @Post('send')
+  @ApiOperation({ summary: `Share story to other people` })
+  async sendStory(
+    @CurrentUser('sub') currentUser: string,
+    @Body(new ValidationPipe()) storyDto: ShareStoryDTO,
+  ) {
+    return this.storyService.sendStory(currentUser, storyDto);
   }
 
   @Patch('update/highlight')
