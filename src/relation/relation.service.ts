@@ -372,7 +372,7 @@ export class RelationService {
   }
 
   async getRelationShip(fromUserId: string, toUserId: string) {
-    const relation = this.relationModel.exists({
+    const relation = await this.relationModel.exists({
       userOneID: new Types.ObjectId(fromUserId),
       userTwoID: new Types.ObjectId(toUserId),
       relation: { $regex: '^FOLLOW' },
