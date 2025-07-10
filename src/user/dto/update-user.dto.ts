@@ -95,6 +95,10 @@ export class EditUserDto {
 
   @IsOptional()
   wantNotified?: boolean;
+
+  @IsOptional()
+  @IsString()
+  fcmToken?: string;
 }
 
 export class ChangeEmailDto {

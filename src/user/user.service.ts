@@ -306,6 +306,9 @@ export class UserService {
       if (key === 'wantNotified' && typeof value === 'boolean') {
         update.wantNotified = value;
       }
+      if (key === 'fcmToken' && typeof value === 'string') {
+        update.fcmToken = value;
+      }
     }
 
     // handleName uniqueness check if provided
