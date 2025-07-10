@@ -9,7 +9,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class MediaDto {
+export class MediaDto {
   @IsEnum(['image', 'video', 'audio', 'call'])
   type: 'image' | 'video' | 'audio' | 'call';
 
