@@ -26,7 +26,7 @@ interface LeanMessageWithSender {
 export class MessageService {
   constructor(
     @InjectModel(Message.name) private messageModel: Model<Message>,
-  ) {}
+  ) { }
 
   async create(
     createMessageDto: CreateMessageDto & { senderId: string },
@@ -118,4 +118,49 @@ export class MessageService {
       select: 'handleName profilePic',
     });
   }
+
+  async getMediaInRoom(roomId: string, page: number = 1) {
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    const messages = await this.messageModel
+      .find({
+        roomId,
+        'media.type': { $in: ['image', 'video'] },
+        media: { $ne: null }
+      })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate({
+        path: 'senderId',
+        select: 'handleName',
+      })
+      .lean()
+    ;
+
+    const res = messages.map((message: any) =>  {
+      const {
+        roomId,
+        updatedAt,
+        __v,
+        reactions,
+        senderId: {_id: senderId, ...restSender },
+        ...rest
+      } = message;
+      return {
+        ...rest,
+        senderId: restSender
+      }
+    });
+
+    return {
+      message: 'success',
+      data: {
+        page: page,
+        media: res,
+      }
+    };
+  }
+
 }

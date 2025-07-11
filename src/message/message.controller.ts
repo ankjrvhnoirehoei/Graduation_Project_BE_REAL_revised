@@ -1,8 +1,10 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   Param,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -20,6 +22,14 @@ export class MessageController {
     @Query('limit') limit: number = 20,
   ) {
     return this.messageService.getRecentMessages(roomId, limit);
+  }
+
+  @Get('media/:roomId')
+  async getMediaInRoom(
+    @Param('roomId') roomId: string,
+    @Query('page') page: number,
+  ) {
+    return await this.messageService.getMediaInRoom(roomId, page);
   }
 
   @Delete('room/:roomId')
