@@ -118,6 +118,35 @@ export class PostService {
     };
   }
 
+  async disablePosts(
+    userId: string,
+    postIds: string[],
+  ): Promise<{ modifiedCount: number }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid userID');
+    }
+    const objectIds = postIds.map(id => {
+      if (!Types.ObjectId.isValid(id)) {
+        throw new BadRequestException(`Invalid postId: ${id}`);
+      }
+      return new Types.ObjectId(id);
+    });
+
+    const userObjectId = new Types.ObjectId(userId);
+
+    const result = await this.postModel.updateMany({
+        _id: { $in: objectIds },
+        userID: userObjectId,
+      },{ $set: { isEnable: false } },
+    );
+
+    if (result.matchedCount === 0) {
+      throw new NotFoundException('No posts found for deletion');
+    }
+
+    return { modifiedCount: result.modifiedCount };
+  }
+
   async getPostType(postId: string): Promise<'post' | 'reel' | 'music'> {
     if (!Types.ObjectId.isValid(postId)) {
       throw new BadRequestException('Invalid post ID format');

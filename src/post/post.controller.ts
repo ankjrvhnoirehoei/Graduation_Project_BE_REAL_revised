@@ -18,6 +18,7 @@ import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { SearchDto } from './dto/search.dto';
 import { UserService } from 'src/user/user.service';
+import { DeletePostsDto } from './dto/delete-posts.dto';
 
 @Controller('posts')
 @UseGuards(JwtRefreshAuthGuard)
@@ -38,6 +39,18 @@ export class PostController {
     };
 
     return this.postService.createPostWithMediaAndMusic(mergedPostWithMediaDto);
+  }
+
+  @Post('delete')
+  async deletePosts(
+  @Body() deletePostsDto: DeletePostsDto,
+  @CurrentUser('sub') userId: string,
+  ) {
+    const { postIds } = deletePostsDto;
+    if (!postIds || postIds.length === 0) {
+    throw new BadRequestException('postIds must be a non-empty array');
+    }
+    return this.postService.disablePosts(userId, postIds);
   }
 
   @Get('get-all-with-media')
