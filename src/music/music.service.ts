@@ -47,7 +47,7 @@ export class MusicService {
                   $expr: {
                     $and: [
                       { $eq: ['$userID', '$$userId'] },
-                      { $eq: ['$playlistName', 'Music'] },
+                      { $in: ['$playlistName', ['Music', 'Âm nhạc']] },
                       { $eq: ['$isDeleted', false] },
                     ]
                   }
