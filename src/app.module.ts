@@ -12,7 +12,6 @@ import { PostLikeModule } from './like_post/like_post.module';
 import { UserHiddenPostModule } from './hide_post/hide_post.module';
 import { BookmarkPlaylistModule } from './bookmark-playlist/bookmark-playlist.module';
 import { BookmarkItemModule } from './bookmark-item/bookmark-item.module';
-import { StreamModule } from './streamM3U8/stream.module';
 import { JwtModule } from '@nestjs/jwt';
 import { R2UploadModule } from './r2/r2.module';
 import { RoomModule } from './room/room.module';
@@ -56,7 +55,6 @@ import { AdminModule } from './admin/admin.module';
     UserHiddenPostModule,
     BookmarkPlaylistModule,
     BookmarkItemModule,
-    StreamModule,
     R2UploadModule,
     RoomModule,
     LikeCommentModule,

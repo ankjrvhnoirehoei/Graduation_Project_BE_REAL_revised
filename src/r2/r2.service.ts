@@ -31,5 +31,25 @@ export async function generatePresignedUrl(
   } catch (err) {
     console.error('❌ Error in generatePresignedUrl:', err);
     throw err;
+  
+  }
+}
+
+export async function generatePresignedVideoUrl(
+  fileName: string,
+  contentType: string = 'video/mp4'
+) {
+  try {
+    const command = new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_VIDEO,
+      Key: fileName,
+      ContentType: contentType,
+    });
+
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    return signedUrl;
+  } catch (err) {
+    console.error('❌ Error in generatePresignedVideoUrl:', err);
+    throw err;
   }
 }
