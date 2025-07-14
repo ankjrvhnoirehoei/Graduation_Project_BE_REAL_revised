@@ -17,7 +17,6 @@ import {
   NotFoundException,
   ValidationPipe,
 } from '@nestjs/common';
-import { Response } from 'express';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from 'src/auth/dto/login.dto';
@@ -34,9 +33,10 @@ import {
   ChangeEmailDto,
   ChangePasswordDTO,
   ConfirmEmailDto,
-  EditUserDto,
+  EditUserDto,  
+  ForgotPasswordDto,
+  ConfirmForgotPasswordDto,
 } from './dto/update-user.dto';
-import { TopFollowerDto } from './dto/top-followers.dto';
 
 @Controller('users')
 export class UserController {
@@ -308,5 +308,34 @@ export class UserController {
   ) {
     await this.userService.confirmEmailChange(userId, dto);
     return { message: 'Email updated successfully' };
+  }
+
+  @Post('forgot-password')
+  async initiateForgotPassword(
+    @Body() dto: ForgotPasswordDto,
+  ): Promise<{ token: string }> {
+    return this.userService.initiatePasswordReset(dto);
+  }
+
+  @Post('forgot-password/confirm')
+  async confirmForgotPassword(
+    @Body() dto: ConfirmForgotPasswordDto,
+  ): Promise<{ message: string; newPassword: string }> {
+    const { newPassword } = await this.userService.confirmPasswordReset(dto);
+    return {
+      message: 'Đặt lại mật khẩu thành công. Mật khẩu mới của bạn là: ',
+      newPassword,
+    };
+  }  
+
+  @UseGuards(JwtRefreshAuthGuard)
+  @Get('validate/:userId')
+  async validateUser(@Param('userId') userId: string) {
+    try {
+      const result = await this.userService.validateUser(userId);
+      return result;
+    } catch (error) {
+      throw error;
+    }
   }
 }

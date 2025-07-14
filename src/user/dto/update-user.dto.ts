@@ -126,3 +126,13 @@ export class ChangePasswordDTO {
   @Type(() => String)
   newPassword: string;
 }
+
+export class ForgotPasswordDto {
+  email: string;
+  newPassword: string;
+}
+
+export class ConfirmForgotPasswordDto {
+  token: string;
+  code: string;
+}

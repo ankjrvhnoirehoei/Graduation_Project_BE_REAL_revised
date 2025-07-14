@@ -16,12 +16,12 @@ import {
   ChangePasswordDTO,
   ConfirmEmailDto,
   EditUserDto,
+  ForgotPasswordDto,
+  ConfirmForgotPasswordDto,
 } from './dto/update-user.dto';
 import { JwtService } from '@nestjs/jwt';
-import { TopFollowerDto } from './dto/top-followers.dto';
 import { Relation, RelationDocument } from 'src/relation/relation.schema';
 import { Post, PostDocument } from 'src/post/post.schema';
-import { InteractionPoint } from './dto/search-user.dto';
 import { Story, StoryDocument } from 'src/story/schema/story.schema';
 
 @Injectable()
@@ -554,5 +554,138 @@ export class UserService {
       data: rest
     };
   }
+  
+  // Forgot password 1: write your email and new password
+  async initiatePasswordReset(
+    dto: ForgotPasswordDto,
+  ): Promise<{ token: string }> {
+    const { email, newPassword } = dto;
+    const user = await this.userModel.findOne({ email }).lean();
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy tài khoản với email này.');
+    }
+    if (user.deletedAt) {
+      throw new BadRequestException('Tài khoản đã bị vô hiệu hoá.');
+    }
 
+    // confirmation code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+    await this.mailer.sendMail({
+      from: process.env.EMAIL_FROM,
+      to: email,
+      subject: 'Mã xác nhận đặt lại mật khẩu',
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #333;">
+          <h2 style="color: #4a90e2;">Đặt lại mật khẩu</h2>
+          <p>Xin chào,</p>
+          <p>Bạn đã yêu cầu đặt lại mật khẩu. Hãy sử dụng mã xác nhận bên dưới:</p>
+          <div style="
+            background: #f5f5f5;
+            padding: 20px;
+            text-align: center;
+            font-size: 1.5em;
+            letter-spacing: 5px;
+            margin: 20px 0;
+            border-radius: 6px;
+          ">
+            <strong>${code}</strong>
+          </div>
+          <p style="font-size: 0.9em; color: #777;">
+            Mã này có hiệu lực trong 15 phút. Nếu bạn không yêu cầu, vui lòng bỏ qua email này.
+          </p>
+          <hr style="border:none; border-top:1px solid #eee;">
+          <p style="font-size:0.8em; color:#aaa;">
+            © Cirla
+          </p>
+        </div>
+      `
+    });
+
+    // email token
+    const token = this.jwtService.sign(
+      { email, newPassword, code },
+      {
+        secret: process.env.JWT_ACCESS_SECRET,
+        expiresIn: '15m',
+      },
+    );
+
+    return { token };
+  }
+
+  // Forgot password 2: enter the confirmation code
+  async confirmPasswordReset(
+    dto: ConfirmForgotPasswordDto,
+  ): Promise<{ newPassword: string }> {
+    let payload: { email: string; newPassword: string; code: string };
+    try {
+      payload = this.jwtService.verify(dto.token, {
+        secret: process.env.JWT_ACCESS_SECRET,
+      });
+    } catch (err) {
+      throw new BadRequestException('Token không hợp lệ hoặc đã hết hạn.');
+    }
+
+    if (payload.code !== dto.code) {
+      throw new BadRequestException('Mã xác nhận không đúng.');
+    }
+
+    const user = await this.userModel.findOne({ email: payload.email });
+    if (!user || user.deletedAt) {
+      throw new NotFoundException('Tài khoản không hợp lệ hoặc đã bị vô hiệu hoá.');
+    }
+
+    const hashed = await bcrypt.hash(payload.newPassword, 10);
+    user.password = hashed;
+    await user.save();
+
+    return { newPassword: payload.newPassword };
+  }
+
+  async validateUser(userId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Check if userId is a valid ObjectId
+      if (!Types.ObjectId.isValid(userId)) {
+        throw new BadRequestException({
+          success: false,
+          message: 'ID người dùng không hợp lệ',
+        });
+      }
+
+      // Check if user exists in database
+      const user = await this.userModel.findById(userId);
+      if (!user) {
+        throw new NotFoundException({
+          success: false,
+          message: 'Không tìm thấy người dùng',
+        });
+      }
+
+      // Check if user is not deleted
+      if (user.deletedAt) {
+        throw new NotFoundException({
+          success: false,
+          message: 'Người dùng đã bị xóa',
+        });
+      }
+
+      // All checks passed
+      return {
+        success: true,
+        message: 'Người dùng hợp lệ',
+      };
+    } catch (error) {
+      // If it's already a NestJS exception, re-throw it
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+      
+      // Handle any other unexpected errors
+      throw new BadRequestException({
+        success: false,
+        message: 'Đã xảy ra lỗi khi xác thực người dùng',
+      });
+    }
+  }
 }
