@@ -39,16 +39,11 @@ export class CommentService {
     }
 
     const result = {
-      comment: {
-        ...savedComment.toObject(),
-        userID: userID.toString(),
-      },
-      user: user,
+      comment: comment.toObject({ getters: true }),
+      user,
     };
 
-    return plainToInstance(CreateCommentResponse, result, {
-      excludeExtraneousValues: true,
-    });
+    return plainToInstance(CreateCommentResponse, result);
   }
 
   async getCommentsByPost(
