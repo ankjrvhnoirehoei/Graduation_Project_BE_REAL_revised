@@ -575,4 +575,50 @@ export class UserService {
 
     return { newPassword: payload.newPassword };
   }
+
+  async validateUser(userId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Check if userId is a valid ObjectId
+      if (!Types.ObjectId.isValid(userId)) {
+        throw new BadRequestException({
+          success: false,
+          message: 'ID người dùng không hợp lệ',
+        });
+      }
+
+      // Check if user exists in database
+      const user = await this.userModel.findById(userId);
+      if (!user) {
+        throw new NotFoundException({
+          success: false,
+          message: 'Không tìm thấy người dùng',
+        });
+      }
+
+      // Check if user is not deleted
+      if (user.deletedAt) {
+        throw new NotFoundException({
+          success: false,
+          message: 'Người dùng đã bị xóa',
+        });
+      }
+
+      // All checks passed
+      return {
+        success: true,
+        message: 'Người dùng hợp lệ',
+      };
+    } catch (error) {
+      // If it's already a NestJS exception, re-throw it
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+      
+      // Handle any other unexpected errors
+      throw new BadRequestException({
+        success: false,
+        message: 'Đã xảy ra lỗi khi xác thực người dùng',
+      });
+    }
+  }
 }

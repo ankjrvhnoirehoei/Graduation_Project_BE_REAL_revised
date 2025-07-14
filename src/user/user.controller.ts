@@ -316,4 +316,15 @@ export class UserController {
       newPassword,
     };
   }  
+
+  @UseGuards(JwtRefreshAuthGuard)
+  @Get('validate/:userId')
+  async validateUser(@Param('userId') userId: string) {
+    try {
+      const result = await this.userService.validateUser(userId);
+      return result;
+    } catch (error) {
+      throw error;
+    }
+  }
 }
