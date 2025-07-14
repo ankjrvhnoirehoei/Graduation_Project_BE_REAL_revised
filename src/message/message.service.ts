@@ -122,14 +122,14 @@ export class MessageService {
   async getMediaMsginRoomChat(
     roomId: string,
     page: number = 1
-  ): Promise<{ message: string; data: any[] }> {
+  ): Promise<{ media: any[]; page: number }> {
     const limit = 20;
     const skip = (page - 1) * limit;
 
     const messages = await this.messageModel
       .find({
         roomId,
-        media: { $exists: true, $ne: null }
+        'media.type': { $in: ['image', 'video'] }
       })
       .populate('senderId', 'handleName profilePic')
       .sort({ createdAt: -1 })
@@ -152,8 +152,8 @@ export class MessageService {
     }));
 
     return {
-      message: 'success',
-      data: formattedData
+      page: page,
+      media: formattedData,
     };
   }
 }
