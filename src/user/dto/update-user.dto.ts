@@ -115,3 +115,13 @@ export class ConfirmEmailDto {
   @Length(6, 6, { message: 'Confirmation code must be 6 characters' })
   code: string;
 }
+
+export class ForgotPasswordDto {
+  email: string;
+  newPassword: string;
+}
+
+export class ConfirmForgotPasswordDto {
+  token: string;
+  code: string;
+}
