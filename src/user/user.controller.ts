@@ -15,6 +15,7 @@ import {
   Patch,
   Res,
   NotFoundException,
+  ValidationPipe,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { RegisterDto } from './dto/register.dto';
@@ -30,6 +31,7 @@ import { RelationService } from 'src/relation/relation.service';
 import { SearchUserDto } from './dto/search-user.dto';
 import {
   ChangeEmailDto,
+  ChangePasswordDTO,
   ConfirmEmailDto,
   EditUserDto,  
   ForgotPasswordDto,
@@ -275,6 +277,15 @@ export class UserController {
   async editMe(@CurrentUser('sub') userId: string, @Body() dto: EditUserDto) {
     const updated = await this.userService.updateProfile(userId, dto);
     return { message: 'Profile updated', user: updated };
+  }
+
+  @Patch('password')
+  @UseGuards(JwtRefreshAuthGuard)
+  async changePassword(
+    @CurrentUser('sub') userId: string,
+    @Body(new ValidationPipe()) body: ChangePasswordDTO,
+  ) {
+    return this.userService.changePassword(userId, body);
   }
 
   // email change: send code + return token

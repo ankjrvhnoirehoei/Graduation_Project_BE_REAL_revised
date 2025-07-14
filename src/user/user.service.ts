@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { RegisterDto } from './dto/register.dto';
 import {
   ChangeEmailDto,
+  ChangePasswordDTO,
   ConfirmEmailDto,
   EditUserDto,
   ForgotPasswordDto,
@@ -45,6 +46,30 @@ export class UserService {
       },
     });
   }
+
+  private readonly PASSWORD_LENGTH = 3;
+  private readonly PASSWORD_SPECIAL_CHARS = '!@#$%^&*()_+-=[]{}|;\':",./<>?`~';
+  private isStrongPassword = (password: string) => {
+    if (password.length < this.PASSWORD_LENGTH) {
+      return { valid: false, message: 'Mật khẩu phải có ít nhất 6 ký tự' };
+    }
+    if (!/[a-z]/.test(password)) {
+      return { valid: false, message: 'Mật khẩu phải chứa ít nhất một chữ thường' };
+    }
+    if (!/[A-Z]/.test(password)) {
+      return { valid: false, message: 'Mật khẩu phải chứa ít nhất một chữ hoa' };
+    }
+    if (!/\d/.test(password)) {
+      return { valid: false, message: 'Mật khẩu phải chứa ít nhất một số' };
+    }
+    if (!/[\W_]/.test(password)) {
+      return { valid: false, message: `Mật khẩu phải chứa ít nhất một ký tự đặc biệt (${this.PASSWORD_SPECIAL_CHARS})` };
+    }
+    return {
+      valid: true,
+      message: ''
+    };
+  };
 
   async findById(id: string) {
     return this.userModel
@@ -109,7 +134,7 @@ export class UserService {
     return { userId: user._id.toString() };
   }
 
-    async getUserById(userId: string): Promise<(Partial<User> & { _id: string }) | null> {
+  async getUserById(userId: string): Promise<(Partial<User> & { _id: string }) | null> {
     const user = await this.userModel.findById(userId).lean();
     if (!user) {
       throw new NotFoundException('Không tìm thấy User.');
@@ -117,7 +142,7 @@ export class UserService {
     const { password, refreshToken, fcmToken, ...safeUser } = user;
     return {
       ...safeUser,
-      _id: safeUser._id.toString(), 
+      _id: safeUser._id.toString(),
     };
   }
 
@@ -486,8 +511,50 @@ export class UserService {
         hasPrevPage: page > 1,
       },
     };
-  }
+  };
 
+  async changePassword(userId: string, body: ChangePasswordDTO) {
+    const currentUser = await this.userModel.findById(userId).exec();
+    if (!currentUser) {
+      return {
+        message: 'Failed',
+        error: 'Không tìm thấy người dùng'
+      }
+    }
+
+    const isCurrentPasswordCorrect = bcrypt.compareSync(
+      body.currentPassword,
+      currentUser.password
+    );
+
+    if (!isCurrentPasswordCorrect) {
+      return {
+        message: 'Failed',
+        error: 'Sai mật khẩu hiện tại'
+      }
+    }
+
+    const hasStrongPas = this.isStrongPassword(body.newPassword);
+    if (!hasStrongPas.valid) {
+      return {
+        message: hasStrongPas.message,
+        data: ''
+      }
+    }
+
+    await this.userModel.findByIdAndUpdate(
+      userId,
+      { password: bcrypt.hashSync(body.newPassword, 10) }
+    ).exec();
+
+    const { password, ...rest } = currentUser.toObject();
+
+    return {
+      message: 'Success',
+      data: rest
+    };
+  }
+  
   // Forgot password 1: write your email and new password
   async initiatePasswordReset(
     dto: ForgotPasswordDto,

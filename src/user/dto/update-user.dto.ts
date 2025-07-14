@@ -1,11 +1,10 @@
+import { Type } from 'class-transformer';
 import {
   IsOptional,
   IsString,
   IsNotEmpty,
-  MaxLength,
   Matches,
   IsIn,
-  Validate,
   ValidationArguments,
   registerDecorator,
   ValidationOptions,
@@ -114,6 +113,18 @@ export class ConfirmEmailDto {
   @IsString()
   @Length(6, 6, { message: 'Confirmation code must be 6 characters' })
   code: string;
+}
+
+export class ChangePasswordDTO {
+  @IsString()
+  @IsNotEmpty({ message: 'currentPassword is required' })
+  @Type(() => String)
+  currentPassword: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'newPassword is required' })
+  @Type(() => String)
+  newPassword: string;
 }
 
 export class ForgotPasswordDto {
