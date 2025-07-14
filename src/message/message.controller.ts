@@ -22,6 +22,14 @@ export class MessageController {
     return this.messageService.getRecentMessages(roomId, limit);
   }
 
+  @Get('media/:roomId')
+  async getMediaMsginRoomChat(
+    @Param('roomId') roomId: string,
+    @Query('page') limit: number,
+  ) {
+    return this.messageService.getMediaMsginRoomChat(roomId, limit);
+  }
+
   @Delete('room/:roomId')
   async deleteMessagesByRoom(@Param('roomId') roomId: string) {
     return this.messageService.deleteMessagesByRoom(roomId);

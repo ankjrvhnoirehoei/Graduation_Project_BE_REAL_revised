@@ -26,7 +26,7 @@ interface LeanMessageWithSender {
 export class MessageService {
   constructor(
     @InjectModel(Message.name) private messageModel: Model<Message>,
-  ) {}
+  ) { }
 
   async create(
     createMessageDto: CreateMessageDto & { senderId: string },
@@ -117,5 +117,43 @@ export class MessageService {
       path: 'senderId',
       select: 'handleName profilePic',
     });
+  }
+
+  async getMediaMsginRoomChat(
+    roomId: string,
+    page: number = 1
+  ): Promise<{ message: string; data: any[] }> {
+    const limit = 20;
+    const skip = (page - 1) * limit;
+
+    const messages = await this.messageModel
+      .find({
+        roomId,
+        media: { $exists: true, $ne: null }
+      })
+      .populate('senderId', 'handleName profilePic')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean()
+      .exec() as any[]
+    ;
+
+    const formattedData = messages.map((msg) => ({
+      _id: msg._id.toString(),
+      media: {
+        url: msg.media?.url,
+        type: msg.media?.type
+      },
+      createdAt: msg.createdAt.toISOString(),
+      senderId: {
+        handleName: msg.senderId.handleName
+      }
+    }));
+
+    return {
+      message: 'success',
+      data: formattedData
+    };
   }
 }
