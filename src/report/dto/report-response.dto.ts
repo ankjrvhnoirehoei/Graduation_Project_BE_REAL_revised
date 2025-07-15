@@ -1,12 +1,11 @@
 import { Types } from 'mongoose';
-import { ReportTargetType, ReportStatus, ReportPriority, AdminAction } from '../report.schema';
+import { ReportStatus, ReportPriority, AdminAction, ReportReason } from '../report.schema';
 
 export class ReportResponseDto {
     _id: Types.ObjectId;
     reporterId: Types.ObjectId;
-    targetType: ReportTargetType;
     targetId: Types.ObjectId;
-    reason: string;
+    reason: ReportReason;
     description?: string;
     status: ReportStatus;
     priority: ReportPriority;
@@ -30,7 +29,13 @@ export class ReportResponseDto {
         handleName: string;
     };
 
-    target?: any; // Will be populated based on targetType
+    target?: {
+        _id: Types.ObjectId;
+        caption: string;
+        type: string;
+        isEnable: boolean;
+        isFlagged: boolean;
+    };
 }
 
 export class ReportStatsDto {
@@ -38,12 +43,6 @@ export class ReportStatsDto {
     pendingReports: number;
     resolvedReports: number;
     dismissedReports: number;
-    reportsByType: {
-        post: number;
-        story: number;
-        user: number;
-        comment: number;
-    };
     reportsByPriority: {
         low: number;
         medium: number;

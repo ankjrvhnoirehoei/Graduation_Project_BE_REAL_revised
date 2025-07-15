@@ -1,7 +1,7 @@
 # Report Module Documentation
 
 ## Overview
-Report Module cung cấp API để người dùng báo cáo nội dung vi phạm và admin quản lý các báo cáo.
+Report Module cung cấp API để người dùng báo cáo bài viết vi phạm và admin quản lý các báo cáo. Module này chỉ xử lý báo cáo cho Posts.
 
 ## Cấu trúc Module
 
@@ -29,7 +29,7 @@ src/report/
 ## Tính năng
 
 ### Cho User thường:
-- ✅ Báo cáo post/story/user/comment vi phạm
+- ✅ Báo cáo bài viết vi phạm với 8 lý do cụ thể
 - ✅ Xem lịch sử báo cáo của mình với filter/pagination
 - ✅ Xóa báo cáo pending
 - ✅ Validation tránh báo cáo trùng lặp
@@ -61,13 +61,27 @@ POST /reports
 Content-Type: application/json
 
 {
-  "targetType": "post",
   "targetId": "64f8a1b2c3d4e5f6a7b8c9d0",
-  "reason": "Nội dung không phù hợp",
-  "description": "Bài viết chứa nội dung bạo lực",
-  "priority": "high"
+  "reason": "Bạo lực, thù ghét hoặc bóc lột",
+  "description": "Bài viết chứa nội dung bạo lực"
 }
 ```
+
+**Các lý do báo cáo có sẵn:**
+- `Bắt nạt hoặc liên hệ theo cách không mong muốn`
+- `Tự tử, tự gây thương tích hoặc chứng rối loạn ăn uống`
+- `Bạo lực, thù ghét hoặc bóc lột`
+- `Bán hoặc quảng cáo mặt hàng bị hạn chế`
+- `Ảnh khỏa thân hoặc hoạt động tình dục`
+- `Lừa đảo, gian lận hoặc spam`
+- `Thông tin sai sự thật`
+- `Quyền sở hữu trí tuệ`
+
+**Độ ưu tiên tự động:**
+- Dưới 3 báo cáo: `LOW`
+- 3-4 báo cáo: `MEDIUM`
+- 5-7 báo cáo: `HIGH`
+- 8+ báo cáo: `CRITICAL`
 
 **Response:**
 ```json
@@ -77,12 +91,11 @@ Content-Type: application/json
   "data": {
     "_id": "64f8a1b2c3d4e5f6a7b8c9d1",
     "reporterId": "64f8a1b2c3d4e5f6a7b8c9d2",
-    "targetType": "post",
     "targetId": "64f8a1b2c3d4e5f6a7b8c9d0",
-    "reason": "Nội dung không phù hợp",
+    "reason": "Bạo lực, thù ghét hoặc bóc lột",
     "description": "Bài viết chứa nội dung bạo lực",
     "status": "pending",
-    "priority": "high",
+    "priority": "low",
     "createdAt": "2023-09-06T10:30:00.000Z"
   }
 }
@@ -97,7 +110,7 @@ GET /reports/my?page=1&limit=20&status=pending&targetType=post
 - `page` (optional): Số trang (default: 1)
 - `limit` (optional): Số lượng mỗi trang (default: 20)
 - `status` (optional): Trạng thái báo cáo (pending, reviewed, resolved, dismissed)
-- `targetType` (optional): Loại đối tượng (post, story, user, comment)
+- `targetType` (optional): Loại đối tượng (chỉ post)
 
 **Response:**
 ```json
@@ -155,10 +168,7 @@ GET /admin/reports/stats
     "resolvedReports": 1100,
     "dismissedReports": 105,
     "reportsByType": {
-      "post": 800,
-      "story": 200,
-      "user": 150,
-      "comment": 100
+      "post": 1250
     },
     "reportsByPriority": {
       "low": 300,

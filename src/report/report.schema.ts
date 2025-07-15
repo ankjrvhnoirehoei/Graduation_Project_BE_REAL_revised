@@ -5,13 +5,6 @@ import { User } from 'src/user/user.schema';
 
 export type ReportDocument = Report & Document;
 
-export enum ReportTargetType {
-    POST = 'post',
-    STORY = 'story',
-    USER = 'user',
-    COMMENT = 'comment',
-}
-
 export enum ReportStatus {
     PENDING = 'pending',
     REVIEWED = 'reviewed',
@@ -26,6 +19,17 @@ export enum ReportPriority {
     CRITICAL = 'critical',
 }
 
+export enum ReportReason {
+    HARASSMENT_BULLYING = 'Bắt nạt hoặc liên hệ theo cách không mong muốn',
+    SELF_HARM_SUICIDE = 'Tự tử, tự gây thương tích hoặc chứng rối loạn ăn uống',
+    VIOLENCE_HATE = 'Bạo lực, thù ghét hoặc bóc lột',
+    SALE_RESTRICTED_ITEMS = 'Bán hoặc quảng cáo mặt hàng bị hạn chế',
+    NUDITY_SEXUAL_ACTIVITY = 'Ảnh khỏa thân hoặc hoạt động tình dục',
+    SCAM_FRAUD = 'Lừa đảo, gian lận hoặc spam',
+    FALSE_INFORMATION = 'Thông tin sai sự thật',
+    INTELLECTUAL_PROPERTY = 'Quyền sở hữu trí tuệ',
+}
+
 export enum AdminAction {
     DISABLE = 'disable',
     DELETE = 'delete',
@@ -33,19 +37,16 @@ export enum AdminAction {
     NO_ACTION = 'no_action',
 }
 
-@Schema({ timestamps: true })
+@Schema({ versionKey: false })
 export class Report extends AbstractDocument {
     @Prop({ type: Types.ObjectId, ref: User.name, required: true })
     reporterId: Types.ObjectId;
 
-    @Prop({ type: String, enum: ReportTargetType, required: true })
-    targetType: ReportTargetType;
-
     @Prop({ type: Types.ObjectId, required: true })
     targetId: Types.ObjectId;
 
-    @Prop({ required: true })
-    reason: string;
+    @Prop({ type: String, enum: ReportReason, required: true })
+    reason: ReportReason;
 
     @Prop()
     description?: string;
@@ -53,7 +54,7 @@ export class Report extends AbstractDocument {
     @Prop({ type: String, enum: ReportStatus, default: ReportStatus.PENDING })
     status: ReportStatus;
 
-    @Prop({ type: String, enum: ReportPriority, default: ReportPriority.MEDIUM })
+    @Prop({ type: String, enum: ReportPriority, default: ReportPriority.LOW })
     priority: ReportPriority;
 
     @Prop({ type: Types.ObjectId, ref: User.name })

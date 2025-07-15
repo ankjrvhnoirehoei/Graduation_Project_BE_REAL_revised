@@ -1,24 +1,16 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, IsMongoId } from 'class-validator';
-import { ReportTargetType, ReportPriority } from '../report.schema';
+import { IsNotEmpty, IsOptional, IsString, IsMongoId, IsEnum } from 'class-validator';
+import { ReportReason } from '../report.schema';
 
 export class CreateReportDto {
-    @IsEnum(ReportTargetType)
-    @IsNotEmpty()
-    targetType: ReportTargetType;
-
     @IsMongoId()
     @IsNotEmpty()
     targetId: string;
 
-    @IsString()
+    @IsEnum(ReportReason)
     @IsNotEmpty()
-    reason: string;
+    reason: ReportReason;
 
     @IsString()
     @IsOptional()
     description?: string;
-
-    @IsEnum(ReportPriority)
-    @IsOptional()
-    priority?: ReportPriority;
 }

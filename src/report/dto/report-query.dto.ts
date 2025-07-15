@@ -1,15 +1,11 @@
 import { IsEnum, IsOptional, IsString, IsInt, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ReportStatus, ReportTargetType, ReportPriority } from '../report.schema';
+import { ReportStatus, ReportPriority } from '../report.schema';
 
 export class ReportQueryDto {
     @IsOptional()
     @IsEnum(ReportStatus)
     status?: ReportStatus;
-
-    @IsOptional()
-    @IsEnum(ReportTargetType)
-    targetType?: ReportTargetType;
 
     @IsOptional()
     @IsEnum(ReportPriority)
