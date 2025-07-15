@@ -121,9 +121,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
         const socketId = this.onlineUsers.get(recipientId);
         const isOnline = !!socketId;
-        const inRoom =
-          isOnline &&
-          this.server.sockets.adapter.rooms.get(roomId)?.has(socketId);
+
+        const recipientSocket = socketId
+          ? this.server.sockets.sockets.get(socketId)
+          : null;
+        const inRoom = recipientSocket
+          ? recipientSocket.rooms.has(roomId)
+          : false;
 
         if (!isOnline || !inRoom) {
           const recipient = await this.userService.findById(recipientId);
@@ -135,8 +139,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
               `Bạn có tin nhắn mới từ ${sender?.username || 'người lạ'}`,
               {
                 type: 'message',
-                roomId: roomId,
-                isWaiting: isWaiting,
+                roomId,
+                isWaiting,
               },
             );
           }
