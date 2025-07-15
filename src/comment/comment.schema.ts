@@ -1,8 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+
 export type CommentDocument = Comment & Document;
+
 @Schema({ timestamps: true })
-export class Comment extends Document {
+export class Comment {
   @Prop({ required: true, ref: 'User' })
   userID: Types.ObjectId;
 
@@ -22,7 +24,7 @@ export class Comment extends Document {
   isDeleted: boolean;
 
   @Prop({ type: [Types.ObjectId], default: [] })
-  likedBy?: Types.ObjectId[];;
+  likedBy?: Types.ObjectId[];
 }
 
 export const CommentSchema = SchemaFactory.createForClass(Comment);

@@ -100,7 +100,7 @@ export class StoryService {
   }
   async sendStoryToOther(currentUser: string, shareStoryDto: ShareStoryDTO) {
     await Promise.all(
-      shareStoryDto.roomIds.map( async room => {
+      shareStoryDto.roomIds.map(async room => {
         const messageData = {
           roomId: room,
           content: shareStoryDto.message || '',

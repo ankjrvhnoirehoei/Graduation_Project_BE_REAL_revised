@@ -20,6 +20,7 @@ import { MessageModule } from './message/message.module';
 import { LikeCommentModule } from './like-comment/like-comment.module';
 import { NotificationModule } from './notification/notification.module';
 import { AdminModule } from './admin/admin.module';
+import { ReportModule } from './report/report.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { AdminModule } from './admin/admin.module';
     MessageModule,
     NotificationModule,
     AdminModule,
+    ReportModule,
   ],
   // providers: [
   //   {
@@ -69,4 +71,4 @@ import { AdminModule } from './admin/admin.module';
   //   },
   // ],
 })
-export class AppModule {}
+export class AppModule { }

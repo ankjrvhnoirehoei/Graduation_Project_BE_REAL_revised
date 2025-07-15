@@ -19,6 +19,12 @@ import { MusicService } from 'src/music/music.service';
 
 @Injectable()
 export class PostService {
+  findById(targetId: string) {
+    throw new Error('Method not implemented.');
+  }
+  deletePost(targetId: string) {
+    throw new Error('Method not implemented.');
+  }
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
@@ -30,7 +36,7 @@ export class PostService {
     private readonly commentService: CommentService,
     private readonly relationService: RelationService,
     private readonly musicService: MusicService
-  ) {}
+  ) { }
 
   async create(postDto: CreatePostDto): Promise<Post> {
     const createdPost = new this.postModel({
@@ -71,10 +77,10 @@ export class PostService {
 
     let musicObject:
       | {
-          musicId: Types.ObjectId;
-          timeStart: number;
-          timeEnd: number;
-        }
+        musicId: Types.ObjectId;
+        timeStart: number;
+        timeEnd: number;
+      }
       | undefined = undefined;
 
     if (postWithMediaDto.music) {
@@ -110,10 +116,10 @@ export class PostService {
       media: mediaCreated,
       music: musicObject
         ? {
-            musicId: musicObject.musicId.toString(),
-            timeStart: musicObject.timeStart,
-            timeEnd: musicObject.timeEnd,
-          }
+          musicId: musicObject.musicId.toString(),
+          timeStart: musicObject.timeStart,
+          timeEnd: musicObject.timeEnd,
+        }
         : undefined,
     };
   }
@@ -135,9 +141,9 @@ export class PostService {
     const userObjectId = new Types.ObjectId(userId);
 
     const result = await this.postModel.updateMany({
-        _id: { $in: objectIds },
-        userID: userObjectId,
-      },{ $set: { isEnable: false } },
+      _id: { $in: objectIds },
+      userID: userObjectId,
+    }, { $set: { isEnable: false } },
     );
 
     if (result.matchedCount === 0) {
@@ -748,7 +754,7 @@ export class PostService {
     }
 
     const post = await this.runSinglePostAggregation(postId, userId);
-    
+
     if (!post) {
       throw new NotFoundException('Post not found');
     }
@@ -1826,7 +1832,7 @@ export class PostService {
           media: [current],
         });
       }
-      
+
       return acc;
     }, []) as { postID: Types.ObjectId, media: Media[] }[];
 
@@ -1835,7 +1841,7 @@ export class PostService {
       { _id: { $in: postIds } },
       { _id: 1, userID: 1, music: 1, caption: 1, share: 1, createdAt: 1 }
     ).exec();
-    
+
     const postIdToMedia = new Map<string, any>();
     grouped.forEach(media => {
       const { postID, ...mediaData } = media;

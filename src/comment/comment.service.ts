@@ -12,7 +12,7 @@ export class CommentService {
   constructor(
     @InjectModel(Comment.name) private commentModel: Model<Comment>,
     @InjectModel(User.name) private userModel: Model<User>,
-  ) {}
+  ) { }
 
   async createComment(
     dto: CommentDto,
