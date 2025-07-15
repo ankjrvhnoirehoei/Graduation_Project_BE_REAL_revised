@@ -108,6 +108,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           handleName: populatedMessage.senderId.handleName,
           profilePic: populatedMessage.senderId.profilePic,
         },
+        reactions: populatedMessage.reactions || [],
       });
 
       const room = await this.roomService.findById(roomId);
