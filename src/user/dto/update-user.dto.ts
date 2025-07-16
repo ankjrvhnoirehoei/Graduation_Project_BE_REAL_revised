@@ -128,7 +128,25 @@ export class ChangePasswordDTO {
 }
 
 export class ForgotPasswordDto {
-  email: string;
+  phone?: string;
+
+  @IsEmail({}, { message: 'Phải là 1 email hợp lệ' })
+  email?: string;
+
+  @IsString()
+  @MinLength(6, { message: 'Mật khẩu ít nhất 6 chữ số' })
+  @Matches(/(?=.*\d)/, {
+    message: 'Mật khẩu phải có ít nhất 1 số',
+  })
+  @Matches(/(?=.*[a-z])/, {
+    message: 'Mật khẩu phải có ít nhất 1 ký tự thường',
+  })
+  @Matches(/(?=.*[A-Z])/, {
+    message: 'Mật khẩu phải có ít nhất 1 ký tự in hoa',
+  })
+  @Matches(/(?=.*[\W_])/, {
+    message: 'Mật khẩu phải có ít nhất 1 ký tự đặt biệt',
+  })
   newPassword: string;
 }
 
