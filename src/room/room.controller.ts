@@ -19,7 +19,7 @@ import { UpdateRoomNameDto } from './dto/update-room-name.dto';
 @Controller('rooms')
 @UseGuards(JwtRefreshAuthGuard)
 export class RoomController {
-  constructor(private readonly roomService: RoomService) { }
+  constructor(private readonly roomService: RoomService) {}
 
   @Post()
   create(@Body() dto: CreateRoomDto, @CurrentUser('sub') userId: string) {
@@ -84,7 +84,7 @@ export class RoomController {
   async updateRoomType(@Param('roomId') roomId: string) {
     return await this.roomService.updateRoomType(roomId);
   }
-  
+
   @Get(':id')
   async getRoomById(@Param('id') id: string) {
     const room = await this.roomService.getRoomById(id);
@@ -95,7 +95,10 @@ export class RoomController {
   }
 
   @Get(':roomId/users')
-  async getUsersInRoom(@Param('roomId') roomId: string) {
-    return this.roomService.getUsersInRoom(roomId);
+  async getUsersInRoom(
+    @Param('roomId') roomId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.roomService.getUsersInRoom(roomId, userId);
   }
 }

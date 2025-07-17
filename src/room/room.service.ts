@@ -10,11 +10,17 @@ import { CreateRoomDto } from './dto/room.dto';
 import { UpdateThemeRoomDto } from './dto/update-theme-room.dto';
 import { UpdateRoomNameDto } from './dto/update-room-name.dto';
 import { Message } from '../message/message.schema';
+import {
+  Relation,
+  RelationDocument,
+  RelationType,
+} from 'src/relation/relation.schema';
 @Injectable()
 export class RoomService {
   constructor(
     @InjectModel(Room.name) private roomModel: Model<Room>,
     @InjectModel(Message.name) private messageModel: Model<Message>,
+    @InjectModel(Relation.name) private relationModel: Model<RelationDocument>,
   ) {}
 
   async findById(roomId: string): Promise<Room | null> {
@@ -293,16 +299,23 @@ export class RoomService {
       .exec();
   }
 
-  async getUsersInRoom(roomId: string): Promise<{
+  async getUsersInRoom(
+    roomId: string,
+    currentUserId: string,
+  ): Promise<{
     count: number;
-    users: {
+    users: Array<{
+      user_id: string;
       username: string;
       handleName: string;
       bio?: string;
       gender?: string;
       profilePic?: string;
-    }[];
+      isCreated: boolean;
+      isFollow: boolean;
+    }>;
   }> {
+    // 1) Lấy room + populate user_ids
     const room = await this.roomModel
       .findById(roomId)
       .populate('user_ids', 'username handleName bio gender profilePic')
@@ -313,17 +326,45 @@ export class RoomService {
       throw new NotFoundException('Room not found');
     }
 
-    const users = (room.user_ids as any[]) || [];
-    return {
-      count: users.length,
-      users: users.map((u) => ({
-        user_id: u._id,
+    const userDocs = room.user_ids as any[];
+    const userIds = userDocs.map((u) => u._id.toString());
+
+    const relations = await this.relationModel
+      .find({
+        userOneID: new Types.ObjectId(currentUserId),
+        userTwoID: { $in: userIds.map((id) => new Types.ObjectId(id)) },
+      })
+      .lean();
+
+    // map để lookup nhanh
+    const relationMap = new Map<string, RelationType>();
+    relations.forEach((rel) => {
+      relationMap.set(rel.userTwoID.toString(), rel.relation);
+    });
+
+    // 4) Build kết quả
+    const users = userDocs.map((u) => {
+      const id = u._id.toString();
+      // isCreated nếu chính là creator
+      const isCreated = room.created_by.toString() === id;
+      const relType = relationMap.get(id);
+      const isFollow = relType ? relType.split('_')[0] === 'FOLLOW' : false;
+
+      return {
+        user_id: id,
         username: u.username,
         handleName: u.handleName,
         bio: u.bio,
         gender: u.gender,
         profilePic: u.profilePic,
-      })),
+        isCreated,
+        isFollow,
+      };
+    });
+
+    return {
+      count: users.length,
+      users,
     };
   }
 }
