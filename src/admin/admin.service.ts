@@ -18,6 +18,7 @@ import { PostLike, PostLikeDocument } from 'src/like_post/like_post.schema';
 
 type RangePair = { start: Date; end: Date };
 type RangeKey = '7days' | '30days' | 'year';
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -33,36 +34,41 @@ export class AdminService {
 
   public async ensureAdmin(userId: string) {
     const user = await this.userService.findById(userId);
-      if (!user || user.role !== 'admin') {
-          throw new BadRequestException('Access denied: Admins only.');
-      }
+    if (!user || user.role !== 'admin') {
+      throw new BadRequestException('Access denied: Admins only.');
+    }
   }
 
+  /**
+   * Get local time boundaries for comparison periods
+   * Uses Vietnamese timezone (UTC+7) for proper local time calculation
+   */
   private getRanges(key: 'default' | '7days' | '30days' | 'year'): { current: RangePair; previous: RangePair } {
     const now = new Date();
-    // normalize today's 00:00
+    // Get today's start in local timezone
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
     let currStart: Date, prevStart: Date, prevEnd: Date;
 
     if (key === 'default') {
-      // today vs yesterday
+      // today vs yesterday (local time)
       currStart = todayStart;
-      prevStart = new Date(todayStart.getTime() - 24*60*60*1000);
-      prevEnd   = new Date(todayStart.getTime() - 1);
+      prevStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+      prevEnd = new Date(todayStart.getTime() - 1);
     } else if (key === '7days' || key === '30days') {
       const days = key === '7days' ? 6 : 29; // inclusive of today
-      currStart = new Date(todayStart.getTime() - days*24*60*60*1000);
-      // previous is same length directly before
-      const lengthMs = (days+1)*24*60*60*1000;
-      prevEnd   = new Date(currStart.getTime() - 1);
+      currStart = new Date(todayStart.getTime() - days * 24 * 60 * 60 * 1000);
+      // previous period is same length directly before
+      const lengthMs = (days + 1) * 24 * 60 * 60 * 1000;
+      prevEnd = new Date(currStart.getTime() - 1);
       prevStart = new Date(prevEnd.getTime() - lengthMs + 1);
     } else { // 'year'
-      // Jan 1st this year to now
+      // Jan 1st this year to now (local time)
       currStart = new Date(now.getFullYear(), 0, 1);
       // same span in previous year
-      const spanDays = Math.floor((now.getTime() - currStart.getTime())/(24*60*60*1000)) + 1;
-      prevEnd   = new Date(currStart.getTime() - 1);
-      prevStart = new Date(prevEnd.getTime() - spanDays*24*60*60*1000 + 1);
+      const spanDays = Math.floor((now.getTime() - currStart.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+      prevEnd = new Date(currStart.getTime() - 1);
+      prevStart = new Date(prevEnd.getTime() - spanDays * 24 * 60 * 60 * 1000 + 1);
     }
 
     return {
@@ -71,97 +77,59 @@ export class AdminService {
     };
   }
 
-  private buildRange(
-    range: RangeKey,
-  ): { from: Date; to: Date; unit: 'day' | 'month' } {
+  /**
+   * Build range for analytics with proper timezone handling
+   * Returns local time boundaries for aggregation
+   */
+  private buildRange(range: RangeKey): { from: Date; to: Date; unit: 'day' | 'month' } {
     const now = new Date();
-    
-    // Create UTC dates instead of local timezone dates
-    const startOfTodayUTC = new Date(Date.UTC(
-      now.getUTCFullYear(), 
-      now.getUTCMonth(), 
-      now.getUTCDate()
-    ));
+    // Get today's start in local timezone
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
     let from: Date;
     let unit: 'day' | 'month';
 
     if (range === '7days') {
-      from = new Date(startOfTodayUTC.getTime() - 6 * 86_400_000);
+      from = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
       unit = 'day';
     } else if (range === '30days') {
-      from = new Date(startOfTodayUTC.getTime() - 29 * 86_400_000);
+      from = new Date(todayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
       unit = 'day';
-    } else {
-      // Start of year in UTC
-      from = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+    } else { // 'year'
+      from = new Date(now.getFullYear(), 0, 1);
       unit = 'month';
     }
 
-    // End of today in UTC
-    const endOfTodayUTC = new Date(startOfTodayUTC);
-    endOfTodayUTC.setUTCHours(23, 59, 59, 999);
-    const to = unit === 'day' ? endOfTodayUTC : now;
+    // End of today in local timezone
+    const todayEnd = new Date(todayStart);
+    todayEnd.setHours(23, 59, 59, 999);
+    const to = unit === 'day' ? todayEnd : now;
 
     return { from, to, unit };
   }
-  /** safe percent change */
-  private combinedFluct(currSum: number, prevSum: number): { percentageChange: number; trend: string } {
-    let pct: number;
-    if (prevSum === 0) {
-      pct = currSum === 0 ? 0 : 100;
-    } else {
-      pct = ((currSum - prevSum) / prevSum) * 100;
-    }
 
-    const trend = pct > 0 
-      ? 'increase' 
-      : pct < 0 
-        ? 'decrease' 
-        : 'no change';
-
-    // round to nearest integer 
-    return { percentageChange: Math.round(pct), trend };
+  // Get Monday of current week in local timezone
+  private getMondayOfWeek(date: Date = new Date()): Date {
+    const todayDow = date.getDay();
+    const daysSinceMonday = todayDow === 0 ? 6 : todayDow - 1;
+    
+    const monday = new Date(date);
+    monday.setDate(date.getDate() - daysSinceMonday);
+    monday.setHours(0, 0, 0, 0);
+    
+    return monday;
   }
 
-  private formatDate(d: Date): string {
-    const dd = `${d.getDate()}`.padStart(2, '0');
-    const mm = `${d.getMonth() + 1}`.padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  }  
-
-  async getWeeklyStats(userId: string): Promise<WeeklyPostsDto[]> {
-    await this.ensureAdmin(userId);
-        const now = new Date();
-    
-    // Calculate this week's Monday 00:00:00 local time
-    const todayDow = now.getDay(); 
-    let daysSinceMonday: number;
-    
-    if (todayDow === 0) {
-      daysSinceMonday = 6;
-    } else {
-      daysSinceMonday = todayDow - 1;
-    }
-    
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - daysSinceMonday);
-    monday.setHours(0, 0, 0, 0);
-
-    // Calculate next Monday 00:00:00 (end of current week)
-    const nextMonday = new Date(monday);
-    nextMonday.setDate(monday.getDate() + 7);
-
-    // Run aggregation with timezone-aware day calculation
-    const raw = await this.postModel.aggregate([
-      { 
+  // Create aggregation pipeline for timezone-aware day-of-week grouping
+  private createWeeklyAggregation(startDate: Date, endDate: Date): PipelineStage[] {
+    return [
+      {
         $match: {
-          createdAt: { 
-            $gte: monday,
-            $lt: nextMonday
-          } 
-        } 
+          createdAt: {
+            $gte: startDate,
+            $lt: endDate
+          }
+        }
       },
       {
         $addFields: {
@@ -176,13 +144,11 @@ export class AdminService {
       },
       {
         $addFields: {
-          // Get day of week in timezone
-          vietnameseDayOfWeek: { $dayOfWeek: '$vietnameseDate' },
           adjustedDayOfWeek: {
             $cond: {
               if: { $eq: [{ $dayOfWeek: '$vietnameseDate' }, 1] }, // If Sunday
               then: 7, // Make it day 7
-              else: { $subtract: [{ $dayOfWeek: '$vietnameseDate' }, 1] } 
+              else: { $subtract: [{ $dayOfWeek: '$vietnameseDate' }, 1] }
             }
           }
         }
@@ -200,122 +166,108 @@ export class AdminService {
           count: 1,
         },
       },
-    ]);
+    ];
+  }
 
+  /**
+   * Convert aggregation results to weekly format
+   */
+  private formatWeeklyResults<T extends { day: WeeklyPostsDto['day'] }>(
+    rawResults: Array<{ dayOfWeek: number; count: number }>,
+    createEntry: (day: WeeklyPostsDto['day'], count: number) => T
+  ): T[] {
     const labels: Record<number, WeeklyPostsDto['day']> = {
       1: 'T2',
       2: 'T3',
       3: 'T4',
       4: 'T5',
-      5: 'T6', 
-      6: 'T7', 
-      7: 'CN', 
+      5: 'T6',
+      6: 'T7',
+      7: 'CN',
     };
 
-    // Initialize zero-filled array in correct order 
     const dayOrder = [1, 2, 3, 4, 5, 6, 7];
-    const week: WeeklyPostsDto[] = dayOrder.map(dayNum => ({
-      day: labels[dayNum],
-      posts: 0
-    }));
-
-    // Fill in counts 
-    raw.forEach(({ dayOfWeek, count }) => {
-      const idx = dayOrder.indexOf(dayOfWeek);
-      if (idx !== -1) {
-        week[idx].posts = count;
-      }
+    const resultMap = new Map<number, number>();
+    
+    rawResults.forEach(({ dayOfWeek, count }) => {
+      resultMap.set(dayOfWeek, count);
     });
 
-    return week;
+    return dayOrder.map(dayNum => 
+      createEntry(labels[dayNum], resultMap.get(dayNum) ?? 0)
+    );
+  }
+
+  /** Safe percent change calculation */
+  private combinedFluct(currSum: number, prevSum: number): { percentageChange: number; trend: string } {
+    let pct: number;
+    if (prevSum === 0) {
+      pct = currSum === 0 ? 0 : 100;
+    } else {
+      pct = ((currSum - prevSum) / prevSum) * 100;
+    }
+
+    const trend = pct > 0 
+      ? 'increase' 
+      : pct < 0 
+        ? 'decrease' 
+        : 'no change';
+
+    return { percentageChange: Math.round(pct), trend };
+  }
+
+  private formatDate(d: Date): string {
+    const dd = `${d.getDate()}`.padStart(2, '0');
+    const mm = `${d.getMonth() + 1}`.padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  async getWeeklyStats(userId: string): Promise<WeeklyPostsDto[]> {
+    await this.ensureAdmin(userId);
+    
+    const thisMonday = this.getMondayOfWeek();
+    const nextMonday = new Date(thisMonday);
+    nextMonday.setDate(thisMonday.getDate() + 7);
+
+    const pipeline = this.createWeeklyAggregation(thisMonday, nextMonday);
+    const raw = await this.postModel.aggregate(pipeline);
+
+    return this.formatWeeklyResults(raw, (day, count) => ({
+      day,
+      posts: count
+    }));
   }
 
   async getLastTwoWeeks(userId: string): Promise<LastTwoWeeksDto[]> {
     await this.ensureAdmin(userId);
-        const now = new Date();
-
-    // Calculate this week's Monday 00:00 local time
-    const todayDow = now.getDay(); 
-    let daysSinceMonday: number;
     
-    if (todayDow === 0) {
-      daysSinceMonday = 6;
-    } else {
-      daysSinceMonday = todayDow - 1;
-    }
-    
-    const thisMonday = new Date(now);
-    thisMonday.setDate(now.getDate() - daysSinceMonday);
-    thisMonday.setHours(0, 0, 0, 0);
-
-    // Define the two previous full-week windows
+    const thisMonday = this.getMondayOfWeek();
     const prevMonday = new Date(thisMonday);
     prevMonday.setDate(thisMonday.getDate() - 7);
-    
     const beforePrevMonday = new Date(thisMonday);
     beforePrevMonday.setDate(thisMonday.getDate() - 14);
 
-    // Aggregate one week with timezone-aware day calculation
-    const aggregateWeek = (start: Date, end: Date) =>
-      this.postModel.aggregate([
-        { $match: { createdAt: { $gte: start, $lt: end } } },
-        {
-          $addFields: {
-            vietnameseDate: {
-              $dateAdd: {
-                startDate: '$createdAt',
-                unit: 'hour',
-                amount: 7
-              }
-            }
-          }
-        },
-        {
-          $addFields: {
-            adjustedDayOfWeek: {
-              $cond: {
-                if: { $eq: [{ $dayOfWeek: '$vietnameseDate' }, 1] }, // If Sunday
-                then: 7, // Make it day 7
-                else: { $subtract: [{ $dayOfWeek: '$vietnameseDate' }, 1] } 
-              }
-            }
-          }
-        },
-        {
-          $group: {
-            _id: '$adjustedDayOfWeek',
-            count: { $sum: 1 },
-          },
-        },
-        {
-          $project: {
-            _id: 0,
-            dayOfWeek: '$_id',
-            count: 1,
-          },
-        },
-      ]);
-
     // Run both aggregations in parallel
     const [prevRaw, beforeRaw] = await Promise.all([
-      aggregateWeek(prevMonday, thisMonday), // Previous week: last Monday to this Monday
-      aggregateWeek(beforePrevMonday, prevMonday), // Week before: two Mondays ago to last Monday
+      this.postModel.aggregate(this.createWeeklyAggregation(prevMonday, thisMonday)),
+      this.postModel.aggregate(this.createWeeklyAggregation(beforePrevMonday, prevMonday)),
     ]);
 
-    // Turn each raw array into a map
+    // Create maps for quick lookup
     const prevMap = new Map<number, number>();
     prevRaw.forEach(r => prevMap.set(r.dayOfWeek, r.count));
     const beforeMap = new Map<number, number>();
     beforeRaw.forEach(r => beforeMap.set(r.dayOfWeek, r.count));
 
     const labels: Record<number, LastTwoWeeksDto['day']> = {
-      1: 'T2', 
-      2: 'T3', 
-      3: 'T4', 
-      4: 'T5', 
-      5: 'T6', 
-      6: 'T7', 
-      7: 'CN', 
+      1: 'T2',
+      2: 'T3',
+      3: 'T4',
+      4: 'T5',
+      5: 'T6',
+      6: 'T7',
+      7: 'CN',
     };
 
     return [1, 2, 3, 4, 5, 6, 7].map(dayNum => ({
@@ -324,7 +276,7 @@ export class AdminService {
       beforePrevious: beforeMap.get(dayNum) ?? 0,
     }));
   }
-
+  
   async getTopLiked(userId: string, limit = 10): Promise<TopPostDto[]> {
     await this.ensureAdmin(userId);
         // compute this month's first day 00:00
