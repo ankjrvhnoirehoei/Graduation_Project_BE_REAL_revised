@@ -655,7 +655,7 @@ async compareLastSixMonths(userId: string) {
     currentTotalPosts: currentTotal,
     previousTotalPosts: previousTotal,
     percentageChange,
-    trend,
+    trend: trend === 'no change' ? 'no_change' : trend as 'increase' | 'decrease',
     start: startLabel,
     end: endLabel,
   };
@@ -804,7 +804,7 @@ async compareLastSixMonths(userId: string) {
     return {
       currentWindow: currSummary,
       percentageChange,
-      trend,
+      trend: trend as 'increase' | 'decrease' | 'no_change',
       start,
       end,
     };
@@ -911,285 +911,262 @@ async compareLastSixMonths(userId: string) {
     return docs as TopFollowerDto[];
   }
 
-  async getTodayStats(userId: string): Promise<{
-    newUsers: string;
-    newPosts: string;
-    newReports: string;
-  }> {
-    await this.ensureAdmin(userId);
-    const now = new Date();
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 1);
+async getTodayStats(userId: string): Promise<{
+  newUsers: string;
+  newPosts: string;
+  newReports: string;
+}> {
+  await this.ensureAdmin(userId);
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 1);
 
-    const [usersCount, postsCount] = await Promise.all([
-      this.userModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
-      this.postModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
-    ]);
+  const [usersCount, postsCount] = await Promise.all([
+    this.userModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+    this.postModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+  ]);
 
-    return {
-      newUsers: usersCount.toString(),
-      newPosts: postsCount.toString(),
-      newReports: '0', // TODO: build a reports collection and hookup here
-    };
+  return {
+    newUsers: usersCount.toString(),
+    newPosts: postsCount.toString(),
+    newReports: '0', // TODO: build a reports collection and hookup here
+  };
+}
+
+async getDailyNewAccounts(userId: string, month: number): Promise<{
+  month: string;
+  data: { day: number; count: number }[];
+  comparison: {
+    previousMonth: string;
+    currentTotal: number;
+    previousTotal: number;
+    percentageChange: number;
+    trend: 'increase' | 'decrease' | 'no_change';
+  };
+}> {
+  await this.ensureAdmin(userId);
+  if (month < 1 || month > 12) {
+    throw new BadRequestException('Month must be between 1 and 12');
   }
 
-  async getDailyNewAccounts(userId: string, month: number): Promise<{
-    month: string;
-    data: { day: number; count: number }[];
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const year = month <= currentMonth
+    ? now.getFullYear()
+    : now.getFullYear() - 1;
+
+  // Calculate previous month and year
+  let prevMonth: number;
+  let prevYear: number;
+  
+  if (month === 1) {
+    prevMonth = 12;
+    prevYear = year - 1;
+  } else {
+    prevMonth = month - 1;
+    prevYear = year;
+  }
+
+  // Current month date range
+  const start = new Date(year, month - 1, 1, 0, 0, 0);
+  const end = new Date(year, month, 1, 0, 0, 0);
+
+  // Previous month date range
+  const prevStart = new Date(prevYear, prevMonth - 1, 1, 0, 0, 0);
+  const prevEnd = new Date(prevYear, prevMonth, 1, 0, 0, 0);
+
+  // Get current month data
+  const raw = await this.userModel.aggregate<{ _id: number; count: number }>([
+    { $match: { createdAt: { $gte: start, $lt: end } } },
+    {
+      $group: {
+        _id: { $dayOfMonth: '$createdAt' },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { '_id': 1 } },
+  ]);
+
+  // Get previous month total
+  const prevMonthData = await this.userModel.aggregate<{ totalCount: number }>([
+    { $match: { createdAt: { $gte: prevStart, $lt: prevEnd } } },
+    {
+      $group: {
+        _id: null,
+        totalCount: { $sum: 1 },
+      },
+    },
+  ]);
+
+  // Calculate totals
+  const currentTotal = raw.reduce((sum, item) => sum + item.count, 0);
+  const previousTotal = prevMonthData[0]?.totalCount || 0;
+
+  // Use existing helper for percentage change & trend calculation
+  const { percentageChange, trend } = this.combinedFluct(currentTotal, previousTotal);
+
+  // Build full array with zeros where missing
+  const lastDay = new Date(year, month, 0).getDate();
+  const data = Array.from({ length: lastDay }, (_, i) => {
+    const dayNum = i + 1;
+    const found = raw.find(r => r._id === dayNum);
+    return { day: dayNum, count: found?.count ?? 0 };
+  });
+
+  return {
+    month: `${year}-${String(month).padStart(2, '0')}`,
+    data,
     comparison: {
-      previousMonth: string;
-      currentTotal: number;
-      previousTotal: number;
-      percentageChange: number;
-      trend: 'increase' | 'decrease' | 'no_change';
-    };
-  }> {
-    await this.ensureAdmin(userId);
-    if (month < 1 || month > 12) {
-      throw new BadRequestException('Month must be between 1 and 12');
-    }
+      previousMonth: `${prevYear}-${String(prevMonth).padStart(2, '0')}`,
+      currentTotal,
+      previousTotal,
+      percentageChange: Math.round(percentageChange * 100) / 100, 
+      trend: trend === 'no change' ? 'no_change' : trend as 'increase' | 'decrease',
+    },
+  };
+}
 
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    const year = month <= currentMonth
-      ? now.getFullYear()
-      : now.getFullYear() - 1;
+async getInteractionChartForUser(userId: Types.ObjectId) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth(); 
+  const start = new Date(year, month, 1);
+  const end = new Date(year, month + 1, 1);
 
-    // Calculate previous month and year
-    let prevMonth: number;
-    let prevYear: number;
-    
-    if (month === 1) {
-      prevMonth = 12;
-      prevYear = year - 1;
-    } else {
-      prevMonth = month - 1;
-      prevYear = year;
-    }
-
-    // Current month date range
-    const start = new Date(year, month - 1, 1, 0, 0, 0);
-    const end = new Date(year, month, 1, 0, 0, 0);
-
-    // Previous month date range
-    const prevStart = new Date(prevYear, prevMonth - 1, 1, 0, 0, 0);
-    const prevEnd = new Date(prevYear, prevMonth, 1, 0, 0, 0);
-
-    // Get current month data
-    const raw = await this.userModel.aggregate<{ _id: number; count: number }>([
-      { $match: { createdAt: { $gte: start, $lt: end } } },
-      {
-        $group: {
-          _id: { $dayOfMonth: '$createdAt' },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { '_id': 1 } },
-    ]);
-
-    // Get previous month total
-    const prevMonthData = await this.userModel.aggregate<{ totalCount: number }>([
-      { $match: { createdAt: { $gte: prevStart, $lt: prevEnd } } },
-      {
-        $group: {
-          _id: null,
-          totalCount: { $sum: 1 },
-        },
-      },
-    ]);
-
-    // Calculate totals
-    const currentTotal = raw.reduce((sum, item) => sum + item.count, 0);
-    const previousTotal = prevMonthData[0]?.totalCount || 0;
-
-    // Calculate percentage change
-    let percentageChange = 0;
-    let trend: 'increase' | 'decrease' | 'no_change' = 'no_change';
-
-    if (previousTotal === 0) {
-      // If previous month had 0 accounts, any current accounts represent infinite growth
-      percentageChange = currentTotal > 0 ? 100 : 0;
-      trend = currentTotal > 0 ? 'increase' : 'no_change';
-    } else {
-      percentageChange = ((currentTotal - previousTotal) / previousTotal) * 100;
-      if (percentageChange > 0) {
-        trend = 'increase';
-      } else if (percentageChange < 0) {
-        trend = 'decrease';
-      } else {
-        trend = 'no_change';
-      }
-    }
-
-    // Build full array with zeros where missing
-    const lastDay = new Date(year, month, 0).getDate();
-    const data = Array.from({ length: lastDay }, (_, i) => {
-      const dayNum = i + 1;
-      const found = raw.find(r => r._id === dayNum);
-      return { day: dayNum, count: found?.count ?? 0 };
-    });
-
-    return {
-      month: `${year}-${String(month).padStart(2, '0')}`,
-      data,
-      comparison: {
-        previousMonth: `${prevYear}-${String(prevMonth).padStart(2, '0')}`,
-        currentTotal,
-        previousTotal,
-        percentageChange: Math.round(percentageChange * 100) / 100, 
-        trend,
-      },
-    };
+  // Calculate previous month
+  let prevMonth: number;
+  let prevYear: number;
+  
+  if (month === 0) { // January (month 0)
+    prevMonth = 11; // December
+    prevYear = year - 1;
+  } else {
+    prevMonth = month - 1;
+    prevYear = year;
   }
 
-  async getInteractionChartForUser(userId: Types.ObjectId) {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth(); 
-    const start = new Date(year, month, 1);
-    const end   = new Date(year, month + 1, 1);
+  const prevStart = new Date(prevYear, prevMonth, 1);
+  const prevEnd = new Date(prevYear, prevMonth + 1, 1);
 
-    // Calculate previous month
-    let prevMonth: number;
-    let prevYear: number;
-    
-    if (month === 0) { // January (month 0)
-      prevMonth = 11; // December
-      prevYear = year - 1;
-    } else {
-      prevMonth = month - 1;
-      prevYear = year;
-    }
-
-    const prevStart = new Date(prevYear, prevMonth, 1);
-    const prevEnd = new Date(prevYear, prevMonth + 1, 1);
-
-    // aggregate daily counts for a model 
-    const aggregateDaily = async (
-      model: Model<any>,
-      typeMatch?: Record<string, any>
-    ): Promise<InteractionPoint[]> => {
-      const match: any = {
-        createdAt: { $gte: start, $lt: end },
-        ...(typeMatch || {}),
-      };
-      const raw = await model
-        .aggregate<{ _id: number; count: number }>([
-          { $match: match },
-          {
-            $group: {
-              _id: { $dayOfMonth: '$createdAt' },
-              count: { $sum: 1 },
-            },
+  // aggregate daily counts for a model 
+  const aggregateDaily = async (
+    model: Model<any>,
+    typeMatch?: Record<string, any>
+  ): Promise<InteractionPoint[]> => {
+    const match: any = {
+      createdAt: { $gte: start, $lt: end },
+      ...(typeMatch || {}),
+    };
+    const raw = await model
+      .aggregate<{ _id: number; count: number }>([
+        { $match: match },
+        {
+          $group: {
+            _id: { $dayOfMonth: '$createdAt' },
+            count: { $sum: 1 },
           },
-          { $sort: { '_id': 1 } },
-        ])
-        .exec();
-
-      return raw.map(r => ({ day: r._id, count: r.count }));
-    };
-
-    // aggregate total counts for previous month
-    const aggregateMonthTotal = async (
-      model: Model<any>,
-      typeMatch?: Record<string, any>
-    ): Promise<number> => {
-      const match: any = {
-        createdAt: { $gte: prevStart, $lt: prevEnd },
-        ...(typeMatch || {}),
-      };
-      const result = await model
-        .aggregate<{ totalCount: number }>([
-          { $match: match },
-          {
-            $group: {
-              _id: null,
-              totalCount: { $sum: 1 },
-            },
-          },
-        ])
-        .exec();
-
-      return result[0]?.totalCount || 0;
-    };
-
-    // get daily post counts (current month)
-    const rawPosts = await aggregateDaily(this.postModel, {
-      userID: userId,
-      type: { $in: ['post', 'reel'] },
-    });
-    
-    // get daily story counts (current month)
-    const rawStories = await aggregateDaily(this.storyModel, {
-      ownerId: userId,
-    });
-
-    // get previous month totals
-    const prevPostsTotal = await aggregateMonthTotal(this.postModel, {
-      userID: userId,
-      type: { $in: ['post', 'reel'] },
-    });
-    
-    const prevStoriesTotal = await aggregateMonthTotal(this.storyModel, {
-      ownerId: userId,
-    });
-
-    // calculate current month totals
-    const currentPostsTotal = rawPosts.reduce((sum, item) => sum + item.count, 0);
-    const currentStoriesTotal = rawStories.reduce((sum, item) => sum + item.count, 0);
-
-    // calculate percentage changes
-    const calculateChange = (current: number, previous: number) => {
-      if (previous === 0) {
-        return current > 0 ? 100 : 0;
-      }
-      return ((current - previous) / previous) * 100;
-    };
-
-    const postsPercentageChange = calculateChange(currentPostsTotal, prevPostsTotal);
-    const storiesPercentageChange = calculateChange(currentStoriesTotal, prevStoriesTotal);
-
-    // number of days in this month
-    const lastDay = new Date(year, month + 1, 0).getDate();
-
-    // bucket into 4 weeks
-    const weeks = Array.from({ length: 4 }, (_, i) => ({
-      week: `Week ${i+1}`,
-      post: 0,
-      story: 0,
-    }));
-
-    const accumulate = (raw: InteractionPoint[], field: 'post'|'story') =>
-      raw.forEach(({ day, count }) => {
-        const idx = Math.min(3, Math.floor((day - 1) / 7));
-        weeks[idx][field] += count;
-      });
-
-    accumulate(rawPosts,  'post');
-    accumulate(rawStories,'story');
-
-    return {
-      weeks,
-      comparison: {
-        currentMonth: `${year}-${String(month + 1).padStart(2, '0')}`,
-        previousMonth: `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}`,
-        posts: {
-          current: currentPostsTotal,
-          previous: prevPostsTotal,
-          percentageChange: Math.round(postsPercentageChange * 100) / 100,
-          trend: postsPercentageChange > 0 ? 'increase' : postsPercentageChange < 0 ? 'decrease' : 'no_change'
         },
-        stories: {
-          current: currentStoriesTotal,
-          previous: prevStoriesTotal,
-          percentageChange: Math.round(storiesPercentageChange * 100) / 100,
-          trend: storiesPercentageChange > 0 ? 'increase' : storiesPercentageChange < 0 ? 'decrease' : 'no_change'
-        }
-      }
+        { $sort: { '_id': 1 } },
+      ])
+      .exec();
+
+    return raw.map(r => ({ day: r._id, count: r.count }));
+  };
+
+  // aggregate total counts for previous month
+  const aggregateMonthTotal = async (
+    model: Model<any>,
+    typeMatch?: Record<string, any>
+  ): Promise<number> => {
+    const match: any = {
+      createdAt: { $gte: prevStart, $lt: prevEnd },
+      ...(typeMatch || {}),
     };
-  }
+    const result = await model
+      .aggregate<{ totalCount: number }>([
+        { $match: match },
+        {
+          $group: {
+            _id: null,
+            totalCount: { $sum: 1 },
+          },
+        },
+      ])
+      .exec();
+
+    return result[0]?.totalCount || 0;
+  };
+
+  // get daily post counts (current month)
+  const rawPosts = await aggregateDaily(this.postModel, {
+    userID: userId,
+    type: { $in: ['post', 'reel'] },
+  });
+  
+  // get daily story counts (current month)
+  const rawStories = await aggregateDaily(this.storyModel, {
+    ownerId: userId,
+  });
+
+  // get previous month totals
+  const prevPostsTotal = await aggregateMonthTotal(this.postModel, {
+    userID: userId,
+    type: { $in: ['post', 'reel'] },
+  });
+  
+  const prevStoriesTotal = await aggregateMonthTotal(this.storyModel, {
+    ownerId: userId,
+  });
+
+  // calculate current month totals
+  const currentPostsTotal = rawPosts.reduce((sum, item) => sum + item.count, 0);
+  const currentStoriesTotal = rawStories.reduce((sum, item) => sum + item.count, 0);
+
+  // Use existing helper for percentage changes
+  const postsComparison = this.combinedFluct(currentPostsTotal, prevPostsTotal);
+  const storiesComparison = this.combinedFluct(currentStoriesTotal, prevStoriesTotal);
+
+  // number of days in this month
+  const lastDay = new Date(year, month + 1, 0).getDate();
+
+  // bucket into 4 weeks
+  const weeks = Array.from({ length: 4 }, (_, i) => ({
+    week: `Week ${i+1}`,
+    post: 0,
+    story: 0,
+  }));
+
+  const accumulate = (raw: InteractionPoint[], field: 'post'|'story') =>
+    raw.forEach(({ day, count }) => {
+      const idx = Math.min(3, Math.floor((day - 1) / 7));
+      weeks[idx][field] += count;
+    });
+
+  accumulate(rawPosts,  'post');
+  accumulate(rawStories,'story');
+
+  return {
+    weeks,
+    comparison: {
+      currentMonth: `${year}-${String(month + 1).padStart(2, '0')}`,
+      previousMonth: `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}`,
+      posts: {
+        current: currentPostsTotal,
+        previous: prevPostsTotal,
+        percentageChange: Math.round(postsComparison.percentageChange * 100) / 100,
+        trend: postsComparison.trend
+      },
+      stories: {
+        current: currentStoriesTotal,
+        previous: prevStoriesTotal,
+        percentageChange: Math.round(storiesComparison.percentageChange * 100) / 100,
+        trend: storiesComparison.trend
+      }
+    }
+  };
+}
   
 async searchUsers(userId: string, handleName: string) {
     await this.ensureAdmin(userId);
@@ -1576,9 +1553,6 @@ async searchUsers(userId: string, handleName: string) {
     return { range, unit, from: this.formatDate(from), to: this.formatDate(to), data };
   }
 
-  /**
-   * 2) Content activity (posts, reels, stories)
-   */
   async getContentActivity(
     adminId: string,
     range: RangeKey,
@@ -1640,9 +1614,6 @@ async searchUsers(userId: string, handleName: string) {
     return { range, unit, from: this.formatDate(from), to: this.formatDate(to), data };
   }
 
-  /**
-   * 3) Engagement activity (likes, comments, follows)
-   */
   async getEngagementActivity(
     adminId: string,
     range: RangeKey,
