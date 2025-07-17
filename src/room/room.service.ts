@@ -268,12 +268,11 @@ export class RoomService {
 
     return room.user_ids.map((id: Types.ObjectId) => id.toString());
   }
-  
+
   async updateRoomType(roomId: string) {
-    const updated = await this.roomModel.updateOne(
-      { _id: roomId },
-      { type: 'accept' }
-    ).lean();
+    const updated = await this.roomModel
+      .updateOne({ _id: roomId }, { type: 'accept' })
+      .lean();
     return {
       message: 'success',
       data: updated.upsertedId,
@@ -294,9 +293,7 @@ export class RoomService {
       .exec();
   }
 
-  async getUsersInRoom(
-    roomId: string,
-  ): Promise<{
+  async getUsersInRoom(roomId: string): Promise<{
     count: number;
     users: {
       username: string;
@@ -319,7 +316,8 @@ export class RoomService {
     const users = (room.user_ids as any[]) || [];
     return {
       count: users.length,
-      users: users.map(u => ({
+      users: users.map((u) => ({
+        user_id: u._id,
         username: u.username,
         handleName: u.handleName,
         bio: u.bio,
