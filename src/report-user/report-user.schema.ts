@@ -34,6 +34,9 @@ export class ReportUser {
 
   @Prop({ default: false })
   isDismissed: boolean;
+
+  @Prop({ default: false})
+  isRead: boolean;
 }
 
 export const ReportUserSchema = SchemaFactory.createForClass(ReportUser);

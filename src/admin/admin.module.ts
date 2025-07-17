@@ -9,6 +9,7 @@ import { Post, PostSchema } from 'src/post/post.schema';
 import { Story, StorySchema } from 'src/story/schema/story.schema';
 import { RelationModule } from 'src/relation/relation.module';
 import { Relation, RelationSchema } from 'src/relation/relation.schema';
+import { ReportUserModule } from 'src/report-user/report-user.module';
 import { User } from 'src/user/user.schema';
 import { Comment, CommentSchema } from 'src/comment/comment.schema';
 import { CommentModule } from 'src/comment/comment.module';
@@ -23,10 +24,10 @@ import { PostLikeModule } from 'src/like_post/like_post.module';
     forwardRef(() => RelationModule),
     forwardRef(() => CommentModule),
     forwardRef(() => PostLikeModule),
+    forwardRef(() => ReportUserModule),
   ],
   controllers: [AdminController],
   providers: [AdminService],
   exports: [AdminService],
 })
 export class AdminModule {}
-
