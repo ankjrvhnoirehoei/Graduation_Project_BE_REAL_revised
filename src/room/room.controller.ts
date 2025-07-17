@@ -93,4 +93,9 @@ export class RoomController {
     }
     return room;
   }
+
+  @Get(':roomId/users')
+  async getUsersInRoom(@Param('roomId') roomId: string) {
+    return this.roomService.getUsersInRoom(roomId);
+  }
 }

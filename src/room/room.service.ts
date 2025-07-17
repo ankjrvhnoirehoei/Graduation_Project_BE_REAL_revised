@@ -293,4 +293,39 @@ export class RoomService {
       })
       .exec();
   }
+
+  async getUsersInRoom(
+    roomId: string,
+  ): Promise<{
+    count: number;
+    users: {
+      username: string;
+      handleName: string;
+      bio?: string;
+      gender?: string;
+      profilePic?: string;
+    }[];
+  }> {
+    const room = await this.roomModel
+      .findById(roomId)
+      .populate('user_ids', 'username handleName bio gender profilePic')
+      .lean()
+      .exec();
+
+    if (!room) {
+      throw new NotFoundException('Room not found');
+    }
+
+    const users = (room.user_ids as any[]) || [];
+    return {
+      count: users.length,
+      users: users.map(u => ({
+        username: u.username,
+        handleName: u.handleName,
+        bio: u.bio,
+        gender: u.gender,
+        profilePic: u.profilePic,
+      })),
+    };
+  }
 }
