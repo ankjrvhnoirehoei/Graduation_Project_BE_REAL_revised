@@ -9,13 +9,16 @@ import { TopFollowerDto } from 'src/user/dto/top-followers.dto';
 import { EditUserDto } from 'src/user/dto/update-user.dto';
 import { PostService } from 'src/post/post.service';
 import { UserService } from 'src/user/user.service';
+import { ReportUserService } from 'src/report-user/report-user.service';
 type RangeKey = 'default' | '7days' | '30days' | 'year';
 @Controller('admin')
 @UseGuards(JwtRefreshAuthGuard)
 export class AdminController {
   constructor(private readonly adminService: AdminService, 
     private readonly postService: PostService,
-    private readonly userService: UserService,) {}
+    private readonly userService: UserService,
+    private readonly reportUserService: ReportUserService,
+  ) {}
 
   // Post routes
   @Get('posts/weekly')
@@ -221,5 +224,205 @@ export class AdminController {
   ) {
     const result = await this.adminService.getCumulativeNewUsers(adminId, range);
     return { success: true, ...result };
+  }
+
+  @Get('reported')
+  async getRepeatedOffenders(
+    @CurrentUser('sub') adminId: string,
+    @Query('range', new DefaultValuePipe('7days'))
+    range: '7days' | '30days' | 'year',
+  ) {
+    const result = await this.reportUserService.getReportedUsersActivity(adminId, range);
+    return { success: true, ...result };
+  }
+
+  @Get('reason')
+  async getReportReason(
+    @CurrentUser('sub') adminId: string,
+    @Query('range', new DefaultValuePipe('7days'))
+    range: '7days' | '30days' | 'year',
+  ) {
+    const result = await this.reportUserService.getReportReasonsActivity(adminId, range);
+    return { success: true, ...result };
+  }
+
+  // Reports routes
+  @Get('reports')
+  async getAllReports(
+    @CurrentUser('sub') adminId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    
+    const reports = await this.reportUserService.getAllReports({ page, limit });
+    
+    // Populate reporter and target user details
+    const reportsWithUsers = await Promise.all(
+      reports.data.map(async (report) => {
+        const [reporter, target] = await Promise.all([
+          this.userService.findById(report.reporterId.toString()),
+          this.userService.findById(report.targetId.toString()),
+        ]);
+        
+        return {
+          ...report,
+          reporter,
+          target,
+        };
+      })
+    );
+    
+    return {
+      ...reports,
+      data: reportsWithUsers,
+    };
+  }
+
+  // Get unread reports with pagination
+  @Get('reports/unread')
+  async getUnreadReports(
+    @CurrentUser('sub') adminId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    
+    const reports = await this.reportUserService.getUnreadReports({ page, limit });
+    
+    // Populate reporter and target user details
+    const reportsWithUsers = await Promise.all(
+      reports.data.map(async (report) => {
+        const [reporter, target] = await Promise.all([
+          this.userService.findById(report.reporterId.toString()),
+          this.userService.findById(report.targetId.toString()),
+        ]);
+        
+        return {
+          ...report,
+          reporter,
+          target,
+        };
+      })
+    );
+    
+    return {
+      ...reports,
+      data: reportsWithUsers,
+    };
+  }
+
+  // Get unresolved reports with pagination
+  @Get('reports/unresolved')
+  async getUnresolvedReports(
+    @CurrentUser('sub') adminId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    
+    const reports = await this.reportUserService.getUnresolvedReports({ page, limit });
+    
+    // Populate reporter and target user details
+    const reportsWithUsers = await Promise.all(
+      reports.data.map(async (report) => {
+        const [reporter, target] = await Promise.all([
+          this.userService.findById(report.reporterId.toString()),
+          this.userService.findById(report.targetId.toString()),
+        ]);
+        
+        return {
+          ...report,
+          reporter,
+          target,
+        };
+      })
+    );
+    
+    return {
+      ...reports,
+      data: reportsWithUsers,
+    };
+  }
+
+  // Mark all reports as read
+  @Patch('reports/mark-all-read')
+  async markAllReportsAsRead(
+    @CurrentUser('sub') adminId: string,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    
+    const result = await this.reportUserService.markAllReportsAsRead();
+    
+    return {
+      message: 'Đã đánh dấu tất cả báo cáo là đã đọc',
+      modifiedCount: result.modifiedCount,
+    };
+  }
+
+  // Get reports by target user with pagination
+  @Get('reports/:targetId')
+  async getReportsByTarget(
+    @CurrentUser('sub') adminId: string,
+    @Param('targetId') targetId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    
+    const reports = await this.reportUserService.getReportsByTargetId(targetId, { page, limit });
+    const targetUser = await this.userService.findById(targetId);
+    
+    // Populate reporter details for each report
+    const reportsWithReporters = await Promise.all(
+      reports.data.map(async (report) => {
+        const reporter = await this.userService.findById(report.reporterId.toString());
+        
+        return {
+          ...report,
+          reporter,
+        };
+      })
+    );
+    
+    return {
+      user: targetUser,
+      reports: {
+        ...reports,
+        data: reportsWithReporters,
+      },
+    };
+  }
+
+  // Dismiss a report (mark as resolved and dismissed)
+  @Patch('reports/dismiss/:id')
+  async dismissReport(
+    @CurrentUser('sub') adminId: string,
+    @Param('id') reportId: string,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    
+    const report = await this.reportUserService.dismissReport(reportId);
+    
+    return {
+      message: 'Báo cáo đã được bỏ qua',
+      report,
+    };
+  }
+
+  // Resolve a report (mark as resolved only)
+  @Patch('reports/resolve/:id')
+  async resolveReport(
+    @CurrentUser('sub') adminId: string,
+    @Param('id') reportId: string,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    
+    const report = await this.reportUserService.resolveReport(reportId);
+    
+    return {
+      message: 'Báo cáo đã được giải quyết',
+      report,
+    };
   }
 }
