@@ -5,13 +5,13 @@ import { UserService } from './user.service';
 import { UserController } from './user.controller';
 import { AuthModule } from 'src/auth/auth.module';
 import { JwtModule } from '@nestjs/jwt';
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Relation, RelationSchema } from '../relation/relation.schema';
 import { RelationModule } from '../relation/relation.module';
 import { Post, PostSchema } from 'src/post/post.schema';
 import { PostModule } from 'src/post/post.module';
 import { Story, StorySchema } from 'src/story/schema/story.schema';
 import { StoryModule } from 'src/story/story.module';
+import { HttpModule } from '@nestjs/axios'; 
 
 @Module({
   imports: [
@@ -29,6 +29,7 @@ import { StoryModule } from 'src/story/story.module';
     forwardRef(() => RelationModule),
     forwardRef(() => PostModule),
     forwardRef(() => StoryModule),
+    HttpModule.register({ timeout: 5000 }), 
   ],
   providers: [UserService],
   controllers: [UserController],

@@ -13,8 +13,6 @@ import {
   ParseIntPipe,
   BadRequestException,
   Patch,
-  Res,
-  NotFoundException,
   ValidationPipe,
 } from '@nestjs/common';
 import { UserService } from './user.service';
@@ -312,8 +310,16 @@ export class UserController {
 
   @Post('forgot-password')
   async initiateForgotPassword(
-    @Body() dto: ForgotPasswordDto,
+    @Body() dto: ForgotPasswordDto
   ): Promise<{ token: string }> {
+    // enforce exactly one of email/phone
+    const hasEmail = !!dto.email;
+    const hasPhone = !!dto.phone;
+    if (hasEmail === hasPhone) {
+      // either both true or both false
+      throw new BadRequestException('Vui lòng chỉ nhập email hoặc số điện thoại, không cả hai và không bỏ trống.');
+    }
+
     return this.userService.initiatePasswordReset(dto);
   }
 
@@ -323,10 +329,10 @@ export class UserController {
   ): Promise<{ message: string; newPassword: string }> {
     const { newPassword } = await this.userService.confirmPasswordReset(dto);
     return {
-      message: 'Đặt lại mật khẩu thành công. Mật khẩu mới của bạn là: ',
+      message: 'Đặt lại mật khẩu thành công.',
       newPassword,
     };
-  }  
+  }
 
   @UseGuards(JwtRefreshAuthGuard)
   @Get('validate/:userId')

@@ -4,6 +4,8 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
@@ -20,9 +22,7 @@ import {
   ConfirmForgotPasswordDto,
 } from './dto/update-user.dto';
 import { JwtService } from '@nestjs/jwt';
-import { Relation, RelationDocument } from 'src/relation/relation.schema';
-import { Post, PostDocument } from 'src/post/post.schema';
-import { Story, StoryDocument } from 'src/story/schema/story.schema';
+import { Relation } from 'src/relation/relation.schema';
 
 @Injectable()
 export class UserService {
@@ -30,10 +30,7 @@ export class UserService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly jwtService: JwtService,
-    @InjectModel(Relation.name)
-    private readonly relationModel: Model<RelationDocument>,
-    @InjectModel(Post.name) private readonly postModel: Model<PostDocument>,
-    @InjectModel(Story.name) private storyModel: Model<StoryDocument>,
+    private readonly httpService: HttpService,
   ) {
     // configure your SMTP transport via environment variables
     this.mailer = nodemailer.createTransport({
@@ -556,22 +553,24 @@ export class UserService {
   }
   
   // Forgot password 1: write your email and new password
-  async initiatePasswordReset(
-    dto: ForgotPasswordDto,
-  ): Promise<{ token: string }> {
-    const { email, newPassword } = dto;
-    const user = await this.userModel.findOne({ email }).lean();
-    if (!user) {
-      throw new NotFoundException('Không tìm thấy tài khoản với email này.');
-    }
-    if (user.deletedAt) {
-      throw new BadRequestException('Tài khoản đã bị vô hiệu hoá.');
+  async initiatePasswordReset(dto: ForgotPasswordDto): Promise<{ token: string }> {
+    const { email, phone, newPassword } = dto;
+
+    // look up user by the right field
+    const user = email
+      ? await this.userModel.findOne({ email: email }).lean()
+      : await this.userModel.findOne({ phoneNumber: phone }).lean();
+
+    if (!user || user.deletedAt) {
+      throw new NotFoundException('Không tìm thấy tài khoản hợp lệ.');
     }
 
-    // confirmation code
+    // generate 6‑digit code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
 
-    await this.mailer.sendMail({
+    if (email) {
+      // mail flow
+      await this.mailer.sendMail({
       from: process.env.EMAIL_FROM,
       to: email,
       subject: 'Mã xác nhận đặt lại mật khẩu',
@@ -599,16 +598,30 @@ export class UserService {
             © Cirla
           </p>
         </div>
-      `
-    });
+      `});
+    } else {
+      // SMS flow 
+      const smsPayload = {
+        ApiKey: process.env.SMS_API_KEY,
+        SecretKey: process.env.SMS_SECRET_KEY,
+        Phone: phone,
+        Content: `${code} la ma xac minh dang ky Baotrixemay cua ban`,
+        Brandname: 'Baotrixemay',
+        SmsType: '2',
+      };
+      // HTTP call via HttpService
+      await firstValueFrom(
+        this.httpService.post(
+          'https://rest.esms.vn/MainService.svc/json/SendMultipleMessage_V4_post_json/',
+          smsPayload
+        )
+      );
+    }
 
     // email token
     const token = this.jwtService.sign(
-      { email, newPassword, code },
-      {
-        secret: process.env.JWT_ACCESS_SECRET,
-        expiresIn: '15m',
-      },
+      { email, phone, newPassword, code },
+      { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '15m' },
     );
 
     return { token };
@@ -618,12 +631,12 @@ export class UserService {
   async confirmPasswordReset(
     dto: ConfirmForgotPasswordDto,
   ): Promise<{ newPassword: string }> {
-    let payload: { email: string; newPassword: string; code: string };
+    let payload: { email?: string; phone?: string; newPassword: string; code: string };
     try {
       payload = this.jwtService.verify(dto.token, {
         secret: process.env.JWT_ACCESS_SECRET,
       });
-    } catch (err) {
+    } catch {
       throw new BadRequestException('Token không hợp lệ hoặc đã hết hạn.');
     }
 
@@ -631,13 +644,17 @@ export class UserService {
       throw new BadRequestException('Mã xác nhận không đúng.');
     }
 
-    const user = await this.userModel.findOne({ email: payload.email });
+    // fetch user again by email or phone
+    const lookup = payload.email
+      ? { email: payload.email }
+      : { phoneNumber: payload.phone };
+    const user = await this.userModel.findOne(lookup);
     if (!user || user.deletedAt) {
       throw new NotFoundException('Tài khoản không hợp lệ hoặc đã bị vô hiệu hoá.');
     }
 
-    const hashed = await bcrypt.hash(payload.newPassword, 10);
-    user.password = hashed;
+    // hash & save new password
+    user.password = await bcrypt.hash(payload.newPassword, 10);
     await user.save();
 
     return { newPassword: payload.newPassword };
