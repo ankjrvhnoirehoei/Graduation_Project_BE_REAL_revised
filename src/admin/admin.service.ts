@@ -14,6 +14,8 @@ import { InteractionPoint } from 'src/user/dto/search-user.dto';
 import { EditUserDto } from 'src/user/dto/update-user.dto';
 import { Comment, CommentDocument } from 'src/comment/comment.schema';
 import { PostLike, PostLikeDocument } from 'src/like_post/like_post.schema';
+import { ReportUser, ReportUserDocument } from 'src/report-user/report-user.schema';
+import { ReportContent, ReportContentDocument } from 'src/report-content/report-content.schema';
 
 type RangePair = { start: Date; end: Date };
 type RangeKey = '7days' | '30days' | 'year';
@@ -23,10 +25,12 @@ export class AdminService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     @InjectModel(Story.name) private storyModel: Model<StoryDocument>,
-    @InjectModel(Relation.name) private readonly relationModel: Model<RelationDocument>,
+    @InjectModel(Relation.name) private relationModel: Model<RelationDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Comment.name) private commentModel: Model<CommentDocument>,
     @InjectModel(PostLike.name) private likeModel: Model<PostLikeDocument>,
+    @InjectModel(ReportUser.name) private reportUserModel: Model<ReportUserDocument>,
+    @InjectModel(ReportContent.name) private reportContentModel: Model<ReportContentDocument>,
     private readonly userService: UserService,
   ) {}
 
@@ -387,7 +391,7 @@ export class AdminService {
             $map: {
               input: '$medias',
               as: 'm',
-              in: { $ifNull: ['$m.imageUrl', '$m.videoUrl'] }
+              in: { $ifNull: ['$$m.imageUrl', '$$m.videoUrl'] }
             }
           },
           caption: 1,
@@ -682,7 +686,7 @@ async compareLastSixMonths(userId: string) {
         createdAt: { $gte: from, $lt: to },
         isEnable: false,
       });
-      const resolved = 0; // TODO
+      const resolved = 0; // 
       return { total, reported, removed, resolved };
     };
 

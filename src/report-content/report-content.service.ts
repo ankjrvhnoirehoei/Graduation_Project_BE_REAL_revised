@@ -4,12 +4,29 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ReportContent, ReportContentDocument } from './report-content.schema';
 import { CreateReportUserDto } from '../report-user/dto/create-report.dto';
+import { UserService } from 'src/user/user.service';
+import { AdminService } from 'src/admin/admin.service';
+import { ReportReason } from './report-content.schema';
+interface PaginationOptions {
+  page: number;
+  limit: number;
+}
 
+interface PaginatedResponse<T> {
+  data: T[];
+  totalCount: number;
+  currentPage: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
 @Injectable()
 export class ReportContentService {
   constructor(
     @InjectModel(ReportContent.name)
     private readonly reportModel: Model<ReportContentDocument>,
+    private readonly userService: UserService,
+    private readonly adminService: AdminService,
   ) {}
 
 async createReport(
@@ -43,4 +60,275 @@ async createReport(
     const result = await this.reportModel.findByIdAndDelete(id).exec();
     if (!result) throw new NotFoundException('Không tìm thấy báo cáo!');
   }
+
+  // Admin-related
+  async getAllReports(options: PaginationOptions): Promise<PaginatedResponse<ReportContent>> {
+    const { page, limit } = options;
+    const skip = (page - 1) * limit;
+
+    const [data, totalCount] = await Promise.all([
+      this.reportModel
+        .find()
+        .lean()
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.reportModel.countDocuments().exec(),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return {
+      data,
+      totalCount,
+      currentPage: page,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    };
+  }
+
+  async getUnreadReports(options: PaginationOptions): Promise<PaginatedResponse<ReportContent>> {
+    const { page, limit } = options;
+    const skip = (page - 1) * limit;
+
+    const [data, totalCount] = await Promise.all([
+      this.reportModel
+        .find({ isRead: false })
+        .sort({ createdAt: -1 })
+        .lean()
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.reportModel.countDocuments({ isRead: false }).exec(),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return {
+      data,
+      totalCount,
+      currentPage: page,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    };
+  }
+
+  async getUnresolvedReports(options: PaginationOptions): Promise<PaginatedResponse<ReportContent>> {
+    const { page, limit } = options;
+    const skip = (page - 1) * limit;
+
+    const [data, totalCount] = await Promise.all([
+      this.reportModel
+        .find({ resolved: false })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .lean()
+        .limit(limit)
+        .exec(),
+      this.reportModel.countDocuments({ resolved: false }).exec(),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return {
+      data,
+      totalCount,
+      currentPage: page,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    };
+  }
+
+  async markAllReportsAsRead(): Promise<{ modifiedCount: number }> {
+    const result = await this.reportModel
+      .updateMany(
+        { isRead: false },
+        { $set: { isRead: true } }
+      )
+      .lean()
+      .exec();
+
+    return { modifiedCount: result.modifiedCount };
+  }
+
+  async getReportsByTargetId(targetId: string, options: PaginationOptions): Promise<PaginatedResponse<ReportContent>> {
+    const { page, limit } = options;
+    const skip = (page - 1) * limit;
+
+    const [data, totalCount] = await Promise.all([
+      this.reportModel
+        .find({ targetId: new Types.ObjectId(targetId) })
+        .sort({ createdAt: -1 })
+        .lean()
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.reportModel.countDocuments({ targetId: new Types.ObjectId(targetId) }).exec(),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return {
+      data,
+      totalCount,
+      currentPage: page,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    };
+  }
+
+  async dismissReport(id: string): Promise<ReportContent> {
+    const report = await this.reportModel
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            resolved: true,
+            isDismissed: true,
+            isRead: true,
+          },
+        },
+        { new: true }
+      )
+      .lean()
+      .exec();
+
+    if (!report) throw new NotFoundException('Không tìm thấy báo cáo!');
+    return report;
+  }
+
+  async resolveReport(id: string): Promise<ReportContent> {
+    const report = await this.reportModel
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            resolved: true,
+            isRead: true,
+          },
+        },
+        { new: true }
+      )
+      .lean()
+      .exec();
+
+    if (!report) throw new NotFoundException('Không tìm thấy báo cáo!');
+    return report;
+  }
+
+async getReportReasonsActivity(
+  adminId: string,
+  range: '7days' | '30days' | 'year',
+): Promise<{
+  success: boolean;
+  range: '7days' | '30days' | 'year';
+  unit: 'day' | 'month';
+  from: string;
+  to: string;
+  data: Array<{ 
+    period: string; 
+    HARASSMENT_AND_BULLYING: number;
+    HATE_SPEECH: number;
+    IMPERSONATION_FAKE_ACCOUNTS: number;
+    GRAPHIC_CONTENT: number;
+    THREATS_AND_VIOLENCE: number;
+    SCAMS_AND_FRAUD: number;
+    SENSITIVE_PERSONAL_INFO: number;
+    SELF_HARM: number;
+    OTHER: number;
+  }>;
+}> {
+  // Ensure admin access
+  await this.adminService.ensureAdmin(adminId);
+  
+  // Get range configuration using admin service helper
+  const { from, to, unit } = this.adminService.buildRange(range);
+
+  // Get aggregated data for each report reason
+  const [
+    harassmentRaw,
+    hateSpeechRaw,
+    impersonationRaw,
+    graphicContentRaw,
+    threatsRaw,
+    scamsRaw,
+    personalInfoRaw,
+    selfHarmRaw,
+    otherRaw
+  ] = await Promise.all([
+    this.reportModel.aggregate(
+      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HARASSMENT_AND_BULLYING })
+    ),
+    this.reportModel.aggregate(
+      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HATE_SPEECH })
+    ),
+    this.reportModel.aggregate(
+      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.IMPERSONATION_FAKE_ACCOUNTS })
+    ),
+    this.reportModel.aggregate(
+      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.GRAPHIC_CONTENT })
+    ),
+    this.reportModel.aggregate(
+      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.THREATS_AND_VIOLENCE })
+    ),
+    this.reportModel.aggregate(
+      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SCAMS_AND_FRAUD })
+    ),
+    this.reportModel.aggregate(
+      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SENSITIVE_PERSONAL_INFO })
+    ),
+    this.reportModel.aggregate(
+      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SELF_HARM })
+    ),
+    this.reportModel.aggregate(
+      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.OTHER })
+    ),
+  ]);
+
+  const dataMaps = [
+    new Map(harassmentRaw.map(d => [d._id, d.count])),
+    new Map(hateSpeechRaw.map(d => [d._id, d.count])),
+    new Map(impersonationRaw.map(d => [d._id, d.count])),
+    new Map(graphicContentRaw.map(d => [d._id, d.count])),
+    new Map(threatsRaw.map(d => [d._id, d.count])),
+    new Map(scamsRaw.map(d => [d._id, d.count])),
+    new Map(personalInfoRaw.map(d => [d._id, d.count])),
+    new Map(selfHarmRaw.map(d => [d._id, d.count])),
+    new Map(otherRaw.map(d => [d._id, d.count]))
+  ];
+
+  const dataKeys = [
+    'HARASSMENT_AND_BULLYING',
+    'HATE_SPEECH',
+    'IMPERSONATION_FAKE_ACCOUNTS',
+    'GRAPHIC_CONTENT',
+    'THREATS_AND_VIOLENCE',
+    'SCAMS_AND_FRAUD',
+    'SENSITIVE_PERSONAL_INFO',
+    'SELF_HARM',
+    'OTHER'
+  ];
+
+  const timeSeriesData = this.adminService.buildTimeSeriesData(
+    from,
+    to,
+    unit,
+    dataMaps,
+    dataKeys
+  );
+
+  return {
+    success: true,
+    range,
+    unit,
+    from: this.adminService.formatDate(from),
+    to: this.adminService.formatDate(to),
+    data: timeSeriesData
+  };
+}
 }

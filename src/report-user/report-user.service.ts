@@ -68,6 +68,7 @@ export class ReportUserService {
     if (!result) throw new NotFoundException('Không tìm thấy báo cáo!');
   }
 
+  // Admin-related
   async getAllReports(options: PaginationOptions): Promise<PaginatedResponse<ReportUser>> {
     const { page, limit } = options;
     const skip = (page - 1) * limit;
