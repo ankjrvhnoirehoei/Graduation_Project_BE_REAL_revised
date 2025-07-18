@@ -21,6 +21,7 @@ import { LikeCommentModule } from './like-comment/like-comment.module';
 import { NotificationModule } from './notification/notification.module';
 import { AdminModule } from './admin/admin.module';
 import { ReportUserModule } from './report-user/report-user.module';
+import { ReportContentModule } from './report-content/report-content.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { ReportUserModule } from './report-user/report-user.module';
     NotificationModule,
     AdminModule,
     ReportUserModule,
+    ReportContentModule,
   ],
   // providers: [
   //   {
