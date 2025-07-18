@@ -925,15 +925,17 @@ async getTodayStats(userId: string): Promise<{
   const end = new Date(start);
   end.setDate(start.getDate() + 1);
 
-  const [usersCount, postsCount] = await Promise.all([
+  const [usersCount, postsCount, userReports, contentReports] = await Promise.all([
     this.userModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
     this.postModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+    this.reportContentModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+    this.reportUserModel.countDocuments({ createdAt: { $gte: start, $lt: end } }) 
   ]);
 
   return {
     newUsers: usersCount.toString(),
     newPosts: postsCount.toString(),
-    newReports: '0', // TODO: build a reports collection and hookup here
+    newReports: (userReports + contentReports).toString(),
   };
 }
 
