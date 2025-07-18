@@ -15,6 +15,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { AddUserToRoomDto, CreateRoomDto } from './dto/room.dto';
 import { UpdateThemeRoomDto } from './dto/update-theme-room.dto';
 import { UpdateRoomNameDto } from './dto/update-room-name.dto';
+import { AddUsersDto } from './dto/add-users.dto';
 
 @Controller('rooms')
 @UseGuards(JwtRefreshAuthGuard)
@@ -100,5 +101,21 @@ export class RoomController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.roomService.getUsersInRoom(roomId, userId);
+  }
+
+  @Get(':roomId/available-friends')
+  getAvailableFriends(
+    @Param('roomId') roomId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.roomService.getAvailableFriends(roomId, userId);
+  }
+
+  @Post(':roomId/users/batch')
+  addUsersBatch(
+    @Param('roomId') roomId: string,
+    @Body() dto: AddUsersDto,
+  ) {
+    return this.roomService.addUsersToRoomBatch(roomId, dto.user_ids);
   }
 }

@@ -303,53 +303,59 @@ export class RoomService {
     roomId: string,
     currentUserId: string,
   ): Promise<{
-    count: number;
-    users: Array<{
-      user_id: string;
-      username: string;
-      handleName: string;
-      bio?: string;
-      gender?: string;
-      profilePic?: string;
-      isCreated: boolean;
-      isFollow: boolean;
-    }>;
+    /* ... */
   }> {
-    // 1) Lấy room + populate user_ids
+    // 1) Lấy room + userDocs như cũ…
     const room = await this.roomModel
       .findById(roomId)
       .populate('user_ids', 'username handleName bio gender profilePic')
       .lean()
       .exec();
-
-    if (!room) {
-      throw new NotFoundException('Room not found');
-    }
+    if (!room) throw new NotFoundException('Room not found');
 
     const userDocs = room.user_ids as any[];
-    const userIds = userDocs.map((u) => u._id.toString());
+    // ép tất cả userIds trong room thành ObjectId
+    const roomUserIds = userDocs.map(
+      (u) => new Types.ObjectId(u._id.toString()),
+    );
 
+    // ép currentUserId về ObjectId
+    const me = new Types.ObjectId(currentUserId);
+
+    // 2) Query relation “follow” hai chiều, dùng ObjectId cho cả hai bên
     const relations = await this.relationModel
       .find({
-        userOneID: new Types.ObjectId(currentUserId),
-        userTwoID: { $in: userIds.map((id) => new Types.ObjectId(id)) },
+        $or: [
+          {
+            userOneID: me,
+            userTwoID: { $in: roomUserIds },
+            relation: {
+              $in: [RelationType.FOLLOW_NULL, RelationType.FOLLOW_FOLLOW],
+            },
+          },
+          {
+            userTwoID: me,
+            userOneID: { $in: roomUserIds },
+            relation: {
+              $in: [RelationType.NULL_FOLLOW, RelationType.FOLLOW_FOLLOW],
+            },
+          },
+        ],
       })
       .lean();
 
-    // map để lookup nhanh
-    const relationMap = new Map<string, RelationType>();
+    // 3) Build set để lookup nhanh
+    const followSet = new Set<string>();
     relations.forEach((rel) => {
-      relationMap.set(rel.userTwoID.toString(), rel.relation);
+      const u1 = rel.userOneID.toString();
+      const u2 = rel.userTwoID.toString();
+      const other = u1 === currentUserId ? u2 : u1;
+      followSet.add(other);
     });
 
     // 4) Build kết quả
     const users = userDocs.map((u) => {
       const id = u._id.toString();
-      // isCreated nếu chính là creator
-      const isCreated = room.created_by.toString() === id;
-      const relType = relationMap.get(id);
-      const isFollow = relType ? relType.split('_')[0] === 'FOLLOW' : false;
-
       return {
         user_id: id,
         username: u.username,
@@ -357,8 +363,8 @@ export class RoomService {
         bio: u.bio,
         gender: u.gender,
         profilePic: u.profilePic,
-        isCreated,
-        isFollow,
+        isCreated: room.created_by.toString() === id,
+        isFollow: followSet.has(id),
       };
     });
 
@@ -366,5 +372,93 @@ export class RoomService {
       count: users.length,
       users,
     };
+  }
+
+  async getAvailableFriends(
+    roomId: string,
+    currentUserId: string,
+  ): Promise<
+    Array<{
+      user_id: string;
+      username: string;
+      handleName: string;
+      bio?: string;
+      gender?: string;
+      profilePic?: string;
+    }>
+  > {
+    // 1) Lấy room + user_ids
+    const room = await this.roomModel
+      .findById(roomId)
+      .select('user_ids')
+      .lean()
+      .exec();
+    if (!room) throw new NotFoundException('Room not found');
+
+    const roomUserIds = (room.user_ids as Types.ObjectId[]).map((id) =>
+      id.toString(),
+    );
+
+    // 2) Query tất cả follow‑follow dùng ObjectId
+    const me = new Types.ObjectId(currentUserId);
+    const rels = await this.relationModel
+      .find({
+        relation: RelationType.FOLLOW_FOLLOW,
+        $or: [{ userOneID: me }, { userTwoID: me }],
+      })
+      .populate('userOneID', 'username handleName bio gender profilePic')
+      .populate('userTwoID', 'username handleName bio gender profilePic')
+      .lean();
+
+    // 3) Map ra friend và lọc trùng + đã trong room
+    const available = rels
+      .map((rel) => {
+        const u1 = rel.userOneID as any;
+        const u2 = rel.userTwoID as any;
+        const friend = u1._id.toString() === currentUserId ? u2 : u1;
+        return {
+          user_id: friend._id.toString(),
+          username: friend.username,
+          handleName: friend.handleName,
+          bio: friend.bio,
+          gender: friend.gender,
+          profilePic: friend.profilePic,
+        };
+      })
+      // lọc bỏ những ai đã trong room
+      .filter((f) => !roomUserIds.includes(f.user_id))
+      // de‑dup
+      .filter(
+        (f, idx, arr) => arr.findIndex((x) => x.user_id === f.user_id) === idx,
+      );
+
+    return available;
+  }
+
+  async addUsersToRoomBatch(
+    roomId: string,
+    userIdsToAdd: string[],
+  ): Promise<Room> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) {
+      throw new NotFoundException('Room not found');
+    }
+
+    // convert và lọc những user chưa có trong room
+    const existingIds = room.user_ids.map(id => id.toString());
+    const toAdd = userIdsToAdd
+      .map(id => new Types.ObjectId(id))
+      .filter(oid => !existingIds.includes(oid.toString()));
+
+    if (toAdd.length) {
+      room.user_ids.push(...toAdd);
+      await room.save();
+    }
+
+    // populate trước khi trả về
+    return this.roomModel
+      .findById(roomId)
+      .populate('user_ids', '_id handleName profilePic')
+      .exec();
   }
 }
