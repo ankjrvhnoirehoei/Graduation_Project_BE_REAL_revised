@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
   ReportUser,
   ReportUserDocument,
 } from './report-user.schema';
-import { CreateReportUserDto } from './dto/create-report-user.dto';
+import { CreateReportUserDto } from './dto/create-report.dto';
 import { UserService } from 'src/user/user.service';
 import { AdminService } from 'src/admin/admin.service';
 import { ReportReason } from './report-user.schema'; 
@@ -37,6 +37,13 @@ export class ReportUserService {
     reporterId: string,
     dto: CreateReportUserDto,
   ): Promise<ReportUser> {
+    // prevent duplicate reports
+    const exists = await this.reportUserModel
+      .findOne({ reporterId, targetId: dto.targetId })
+      .exec();
+    if (exists) {
+      throw new ConflictException('Bạn đã report người dùng này.');
+    }
     const created = new this.reportUserModel({
       reporterId: new Types.ObjectId(reporterId),
       targetId: new Types.ObjectId(dto.targetId),
