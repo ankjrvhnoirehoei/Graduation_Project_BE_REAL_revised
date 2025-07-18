@@ -1,4 +1,4 @@
-import { Body, Controller, DefaultValuePipe, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, DefaultValuePipe, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -10,7 +10,9 @@ import { EditUserDto } from 'src/user/dto/update-user.dto';
 import { PostService } from 'src/post/post.service';
 import { UserService } from 'src/user/user.service';
 import { ReportUserService } from 'src/report-user/report-user.service';
+import { ReportContentService } from 'src/report-content/report-content.service';
 type RangeKey = 'default' | '7days' | '30days' | 'year';
+type ReportMode = 'user' | 'content';
 @Controller('admin')
 @UseGuards(JwtRefreshAuthGuard)
 export class AdminController {
@@ -18,7 +20,31 @@ export class AdminController {
     private readonly postService: PostService,
     private readonly userService: UserService,
     private readonly reportUserService: ReportUserService,
+    private readonly reportContentService: ReportContentService,
   ) {}
+
+  private getReportService(mode: ReportMode) {
+    return mode === 'user' ? this.reportUserService : this.reportContentService;
+  }
+
+  private async populateReportData(reports: any[], mode: ReportMode) {
+    return Promise.all(
+      reports.map(async (report) => {
+        const [reporter, target] = await Promise.all([
+          this.userService.findById(report.reporterId.toString()),
+          mode === 'user' 
+            ? this.userService.findById(report.targetId.toString())
+            : this.postService.getPostById(report.targetId.toString(), '682ac4f9f7612a80f6146b88')
+        ]);
+        
+        return {
+          ...report,
+          reporter,
+          target,
+        };
+      })
+    );
+  }
 
   // Post routes
   @Get('posts/weekly')
@@ -236,42 +262,43 @@ export class AdminController {
     return { success: true, ...result };
   }
 
-  @Get('reason')
+  // Get report reasons activity
+  @Get('reports/:mode/reasons')
   async getReportReason(
     @CurrentUser('sub') adminId: string,
+    @Param('mode') reportMode: ReportMode,
     @Query('range', new DefaultValuePipe('7days'))
     range: '7days' | '30days' | 'year',
   ) {
-    const result = await this.reportUserService.getReportReasonsActivity(adminId, range);
+    await this.adminService.ensureAdmin(adminId);
+    
+    if (!['user', 'content'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+    }
+
+    const reportService = this.getReportService(reportMode);
+    const result = await reportService.getReportReasonsActivity(adminId, range);
+    
     return { success: true, ...result };
   }
 
   // Reports routes
-  @Get('reports')
+  @Get('reports/:mode/all')
   async getAllReports(
     @CurrentUser('sub') adminId: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Param('mode') reportMode: ReportMode,
   ) {
     await this.adminService.ensureAdmin(adminId);
     
-    const reports = await this.reportUserService.getAllReports({ page, limit });
-    
-    // Populate reporter and target user details
-    const reportsWithUsers = await Promise.all(
-      reports.data.map(async (report) => {
-        const [reporter, target] = await Promise.all([
-          this.userService.findById(report.reporterId.toString()),
-          this.userService.findById(report.targetId.toString()),
-        ]);
-        
-        return {
-          ...report,
-          reporter,
-          target,
-        };
-      })
-    );
+    if (!['user', 'content'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+    }
+
+    const reportService = this.getReportService(reportMode);
+    const reports = await reportService.getAllReports({ page, limit });
+    const reportsWithUsers = await this.populateReportData(reports.data, reportMode);
     
     return {
       ...reports,
@@ -279,32 +306,23 @@ export class AdminController {
     };
   }
 
-  // Get unread reports with pagination
-  @Get('reports/unread')
+  // Get unread reports
+  @Get('reports/:mode/unread')
   async getUnreadReports(
     @CurrentUser('sub') adminId: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Param('mode') reportMode: ReportMode,
   ) {
     await this.adminService.ensureAdmin(adminId);
     
-    const reports = await this.reportUserService.getUnreadReports({ page, limit });
-    
-    // Populate reporter and target user details
-    const reportsWithUsers = await Promise.all(
-      reports.data.map(async (report) => {
-        const [reporter, target] = await Promise.all([
-          this.userService.findById(report.reporterId.toString()),
-          this.userService.findById(report.targetId.toString()),
-        ]);
-        
-        return {
-          ...report,
-          reporter,
-          target,
-        };
-      })
-    );
+    if (!['user', 'content'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+    }
+
+    const reportService = this.getReportService(reportMode);
+    const reports = await reportService.getUnreadReports({ page, limit });
+    const reportsWithUsers = await this.populateReportData(reports.data, reportMode);
     
     return {
       ...reports,
@@ -312,32 +330,23 @@ export class AdminController {
     };
   }
 
-  // Get unresolved reports with pagination
-  @Get('reports/unresolved')
+  // Get unresolved reports
+  @Get('reports/:mode/unresolved')
   async getUnresolvedReports(
     @CurrentUser('sub') adminId: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Param('mode') reportMode: ReportMode,
   ) {
     await this.adminService.ensureAdmin(adminId);
     
-    const reports = await this.reportUserService.getUnresolvedReports({ page, limit });
-    
-    // Populate reporter and target user details
-    const reportsWithUsers = await Promise.all(
-      reports.data.map(async (report) => {
-        const [reporter, target] = await Promise.all([
-          this.userService.findById(report.reporterId.toString()),
-          this.userService.findById(report.targetId.toString()),
-        ]);
-        
-        return {
-          ...report,
-          reporter,
-          target,
-        };
-      })
-    );
+    if (!['user', 'content'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+    }
+
+    const reportService = this.getReportService(reportMode);
+    const reports = await reportService.getUnresolvedReports({ page, limit });
+    const reportsWithUsers = await this.populateReportData(reports.data, reportMode);
     
     return {
       ...reports,
@@ -346,13 +355,19 @@ export class AdminController {
   }
 
   // Mark all reports as read
-  @Patch('reports/mark-all-read')
+  @Patch('reports/:mode/mark-all-read')
   async markAllReportsAsRead(
     @CurrentUser('sub') adminId: string,
+    @Param('mode') reportMode: ReportMode,
   ) {
     await this.adminService.ensureAdmin(adminId);
     
-    const result = await this.reportUserService.markAllReportsAsRead();
+    if (!['user', 'content'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+    }
+
+    const reportService = this.getReportService(reportMode);
+    const result = await reportService.markAllReportsAsRead();
     
     return {
       message: 'Đã đánh dấu tất cả báo cáo là đã đọc',
@@ -360,18 +375,28 @@ export class AdminController {
     };
   }
 
-  // Get reports by target user with pagination
-  @Get('reports/:targetId')
+  // Get reports by target (user or content)
+  @Get('reports/:mode/target/:targetId')
   async getReportsByTarget(
     @CurrentUser('sub') adminId: string,
+    @Param('mode') reportMode: ReportMode,
     @Param('targetId') targetId: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
   ) {
     await this.adminService.ensureAdmin(adminId);
     
-    const reports = await this.reportUserService.getReportsByTargetId(targetId, { page, limit });
-    const targetUser = await this.userService.findById(targetId);
+    if (!['user', 'content'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+    }
+
+    const reportService = this.getReportService(reportMode);
+    const reports = await reportService.getReportsByTargetId(targetId, { page, limit });
+    
+    // Get target details based on mode
+    const target = reportMode === 'user' 
+      ? await this.userService.findById(targetId)
+      : await this.postService.getPostById(targetId, '682ac4f9f7612a80f6146b88');
     
     // Populate reporter details for each report
     const reportsWithReporters = await Promise.all(
@@ -386,7 +411,7 @@ export class AdminController {
     );
     
     return {
-      user: targetUser,
+      target,
       reports: {
         ...reports,
         data: reportsWithReporters,
@@ -395,14 +420,20 @@ export class AdminController {
   }
 
   // Dismiss a report (mark as resolved and dismissed)
-  @Patch('reports/dismiss/:id')
+  @Patch('reports/:mode/dismiss/:id')
   async dismissReport(
     @CurrentUser('sub') adminId: string,
+    @Param('mode') reportMode: ReportMode,
     @Param('id') reportId: string,
   ) {
     await this.adminService.ensureAdmin(adminId);
     
-    const report = await this.reportUserService.dismissReport(reportId);
+    if (!['user', 'content'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+    }
+
+    const reportService = this.getReportService(reportMode);
+    const report = await reportService.dismissReport(reportId);
     
     return {
       message: 'Báo cáo đã được bỏ qua',
@@ -411,14 +442,20 @@ export class AdminController {
   }
 
   // Resolve a report (mark as resolved only)
-  @Patch('reports/resolve/:id')
+  @Patch('reports/:mode/resolve/:id')
   async resolveReport(
     @CurrentUser('sub') adminId: string,
+    @Param('mode') reportMode: ReportMode,
     @Param('id') reportId: string,
   ) {
     await this.adminService.ensureAdmin(adminId);
     
-    const report = await this.reportUserService.resolveReport(reportId);
+    if (!['user', 'content'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+    }
+
+    const reportService = this.getReportService(reportMode);
+    const report = await reportService.resolveReport(reportId);
     
     return {
       message: 'Báo cáo đã được giải quyết',

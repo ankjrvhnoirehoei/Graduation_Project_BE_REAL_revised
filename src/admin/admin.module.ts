@@ -15,16 +15,20 @@ import { Comment, CommentSchema } from 'src/comment/comment.schema';
 import { CommentModule } from 'src/comment/comment.module';
 import { PostLike, PostLikeSchema } from 'src/like_post/like_post.schema';
 import { PostLikeModule } from 'src/like_post/like_post.module';
+import { ReportUser, ReportUserSchema } from 'src/report-user/report-user.schema';
+import { ReportContent, ReportContentSchema } from 'src/report-content/report-content.schema';
+import { ReportContentModule } from 'src/report-content/report-content.module';
 
 @Module({
   imports: [
-    DatabaseModule.forFeature([{ name: Post.name, schema: PostSchema }, { name: Story.name, schema: StorySchema }, { name: Relation.name, schema: RelationSchema }, { name: User.name, schema: UserSchema }, { name: Comment.name, schema: CommentSchema }, { name: PostLike.name, schema: PostLikeSchema },]),
+    DatabaseModule.forFeature([{ name: Post.name, schema: PostSchema }, { name: Story.name, schema: StorySchema }, { name: Relation.name, schema: RelationSchema }, { name: User.name, schema: UserSchema }, { name: Comment.name, schema: CommentSchema }, { name: PostLike.name, schema: PostLikeSchema }, { name: ReportUser.name, schema: ReportUserSchema }, { name: ReportContent.name, schema: ReportContentSchema },]),
     forwardRef(() => UserModule),
     forwardRef(() => PostModule),
     forwardRef(() => RelationModule),
     forwardRef(() => CommentModule),
     forwardRef(() => PostLikeModule),
     forwardRef(() => ReportUserModule),
+    forwardRef(() => ReportContentModule),
   ],
   controllers: [AdminController],
   providers: [AdminService],
