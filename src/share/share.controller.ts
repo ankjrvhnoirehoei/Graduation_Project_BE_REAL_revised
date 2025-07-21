@@ -5,63 +5,37 @@ import { Response } from 'express';
 export class ShareController {
   @Get('share/:id')
   share(@Param('id') id: string, @Res() res: Response) {
-    this.renderFallback(res, `share/${id}`, `share/${id}`);
+    this.renderFallback(res, `share/${id}`);
   }
 
-  @Get('*')
-  fallback(@Res() res: Response) {
-    this.renderFallback(res, '', '');
+  @Get('profile/:id')
+  profile(@Param('id') id: string, @Res() res: Response) {
+    this.renderFallback(res, `profile/${id}`);
   }
 
-  private renderFallback(res: Response, schemePath: string, webPath: string) {
-    const schemeUri = `cirla://${schemePath}`;
-    const webUrl = webPath
-      ? `https://cirla.io.vn/${webPath}`
-      : 'https://cirla.io.vn/';
+  private renderFallback(res: Response, path: string) {
+    const schemeUri = `cirla://${path}`;
+    const webUrl    = `https://cirla.io.vn/${path}`;
 
     res.send(`
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Open in App</title>
-        <style>
-          body { font-family: sans-serif; text-align: center; padding: 2em; }
-          #openApp {
-            display: none;
-            padding: 0.75em 1.5em;
-            font-size: 1rem;
-            margin-top: 1em;
-            cursor: pointer;
-          }
-        </style>
-      </head>
-      <body>
+      <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width,initial-scale=1"/>
+      <title>Open in App</title>
+      <style>body{font-family:sans-serif;text-align:center;padding:2em}
+      #openApp{display:none;padding:.75em 1.5em;font-size:1rem;margin-top:1em;cursor:pointer;}
+      </style></head><body>
         <h1>Opening the App…</h1>
         <p>If nothing happens, tap the button below:</p>
         <button id="openApp">Open in App</button>
         <p>Or continue on <a href="${webUrl}">this page</a>.</p>
-
         <script>
-          const schemeUri = '${schemeUri}';
-          const fallbackButton = document.getElementById('openApp');
-
-          // 1) Thử mở app ngay khi load
-          window.location = schemeUri;
-
-          // 2) Nếu vẫn ở lại trang web sau 1.5s, show nút
-          setTimeout(() => {
-            fallbackButton.style.display = 'inline-block';
-          }, 1500);
-
-          // 3) Khi user bấm nút, thử mở app lại
-          fallbackButton.addEventListener('click', () => {
-            window.location = schemeUri;
-          });
+          const schemeUri='${schemeUri}';
+          const btn=document.getElementById('openApp');
+          window.location=schemeUri;
+          setTimeout(() => btn.style.display='inline-block',1500);
+          btn.addEventListener('click',()=>window.location=schemeUri);
         </script>
-      </body>
-      </html>
+      </body></html>
     `);
   }
 }
