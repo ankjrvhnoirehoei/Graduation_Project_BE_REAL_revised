@@ -521,6 +521,17 @@ export class BookmarkItemService {
     return count > 0;
   }
 
+  async markItemsDeletedByPlaylist(playlistId: string): Promise<number> {
+    if (!Types.ObjectId.isValid(playlistId)) {
+      throw new BadRequestException('Invalid playlist ID format.');
+    }
+    const result = await this.itemModel.updateMany(
+      { playlistID: new Types.ObjectId(playlistId), isDeleted: false },
+      { $set: { isDeleted: true } },
+    );
+    return result.modifiedCount;
+  }
+
   /** 
    * Remove a single post from whichever playlist it's in for this user. 
    * Then decrement that playlist's postCount by 1.
@@ -606,5 +617,53 @@ export class BookmarkItemService {
       notFoundCount: postIds.length - existingBookmarks.length,
       details
     };
+  }
+
+  async findAllByUser(
+    userId: string,
+    page = 1,
+    limit = 20,
+  ) {
+    const uid = new Types.ObjectId(userId);
+
+    // 1) pull all non-deleted bookmark records, sorted by bookmark timestamp
+    const raw = await this.itemModel
+      .find({ playlistID: { $in: await this.getPlaylistIds(uid) }, isDeleted: false })
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .select('itemID createdAt playlistID')
+      .lean({ getters: true, virtuals: false });
+
+    const total  = await this.itemModel.countDocuments({ playlistID: { $in: await this.getPlaylistIds(uid) }, isDeleted: false });
+    const ids    = raw.map((r) => r.itemID);
+
+    // 2) feed into your postService.runPagedAggregation
+    const { items, pagination } = await this.postService.runPagedAggregation(
+      { _userId: userId, _id: { $in: ids }, type: { $in: ['post','reel'] } },
+      page,
+      limit
+    );
+
+    // 3) merge in bookmark metadata
+    const byId = new Map(raw.map(r => [String(r.itemID), r]));
+    const data = items.map(i => ({
+      ...i,
+      bookmark: {
+        playlistID: byId.get(String(i._id))!.playlistID,
+        createdAtBookmark: byId.get(String(i._id))!.createdAt,
+      }
+    }));
+
+    return { data, total, pagination };
+  }
+
+  // helper to fetch all playlist IDs
+  private async getPlaylistIds(uid: Types.ObjectId) {
+    const pls = await this.playlistModel
+      .find({ userID: uid, isDeleted: false })
+      .select('_id')
+      .lean();
+    return pls.map(p => p._id);
   }
 }

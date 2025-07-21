@@ -16,6 +16,8 @@ export class BookmarkItem {
 
   @Prop({ default: false })
   isDeleted: boolean;
+
+  createdAt: TimeRanges;
 }
 
 export const BookmarkItemSchema = SchemaFactory.createForClass(BookmarkItem);

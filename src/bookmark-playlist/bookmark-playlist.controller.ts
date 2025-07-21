@@ -57,6 +57,21 @@ export class BookmarkPlaylistController {
     return this.playlistService.renamePlaylist(playlistId, userId, playlistName);
   }
 
+  @Delete('delete/:playlistId')
+  @UseGuards(JwtRefreshAuthGuard)
+  async delete(
+    @Param('playlistId') playlistId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    const result = await this.playlistService.deletePlaylist(userId, playlistId);
+
+    return {
+      message: 'Danh sách đã được xóa',
+      playlistDeleted: result.playlistDeleted,
+      itemsDeletedCount: result.itemsDeleted,
+    };
+  }
+
   // bookmark a post into a given playlist
   @UseGuards(JwtRefreshAuthGuard)
   @Post('add-bookmark')
@@ -178,7 +193,7 @@ export class BookmarkPlaylistController {
 
     // Validate all IDs are provided
     if (idsToProcess.some(id => !id || typeof id !== 'string')) {
-      throw new BadRequestException('Tất cả IDs phải là chuỗi hợp lệ.');
+      throw new BadRequestException('Tất cả bài đăng IDs phải là chuỗi hợp lệ.');
     }
 
     return this.playlistService.switchPostsPlaylist(userId, playlistId, idsToProcess);
