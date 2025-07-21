@@ -22,6 +22,9 @@ import { NotificationModule } from './notification/notification.module';
 import { AdminModule } from './admin/admin.module';
 import { ReportUserModule } from './report-user/report-user.module';
 import { ReportContentModule } from './report-content/report-content.module';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
+import { ShareController } from './share/share.controller';
 
 @Module({
   imports: [
@@ -29,6 +32,13 @@ import { ReportContentModule } from './report-content/report-content.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'public'),
+      serveRoot: '/', 
+      serveStaticOptions: {
+        dotfiles: 'allow',
+      },
     }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -65,6 +75,9 @@ import { ReportContentModule } from './report-content/report-content.module';
     AdminModule,
     ReportUserModule,
     ReportContentModule,
+  ],
+   controllers: [
+    ShareController, 
   ],
   // providers: [
   //   {
