@@ -80,4 +80,40 @@ export class BookmarkItemController {
       details: result.details
     };
   }
+
+  @Get('all-items')
+  @UseGuards(JwtRefreshAuthGuard)
+  async getAllBookmarked(
+    @CurrentUser('sub') userId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = parseInt(page || '1', 10);
+    const limitNum = parseInt(limit || '20', 10);
+
+    if (pageNum < 1) throw new BadRequestException('Page must be ≥ 1');
+    if (limitNum < 1 || limitNum > 50)
+      throw new BadRequestException('Limit must be between 1 and 50');
+
+    const { data, total } = await this.itemService.findAllByUser(
+      userId,
+      pageNum,
+      limitNum,
+    );
+
+    const totalPages = Math.max(Math.ceil(total / limitNum), 1);
+
+    return {
+      message: 'All bookmarked items retrieved successfully',
+      data,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalCount: total,
+        limit: limitNum,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1,
+      },
+    };
+  }
 }

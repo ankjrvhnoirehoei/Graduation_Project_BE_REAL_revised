@@ -22,8 +22,6 @@ export class PostService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
-    @InjectModel(Music.name) private musicModel: Model<any>,
-    @InjectModel(Media.name) private mediaModel: Model<any>,
 
     private readonly likePostService: PostLikeService,
     private readonly userService: UserService,

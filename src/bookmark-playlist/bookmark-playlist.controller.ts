@@ -57,6 +57,21 @@ export class BookmarkPlaylistController {
     return this.playlistService.renamePlaylist(playlistId, userId, playlistName);
   }
 
+  @Delete('delete/:playlistId')
+  @UseGuards(JwtRefreshAuthGuard)
+  async delete(
+    @Param('playlistId') playlistId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    const result = await this.playlistService.deletePlaylist(userId, playlistId);
+
+    return {
+      message: 'Danh sách đã được xóa',
+      playlistDeleted: result.playlistDeleted,
+      itemsDeletedCount: result.itemsDeleted,
+    };
+  }
+
   // bookmark a post into a given playlist
   @UseGuards(JwtRefreshAuthGuard)
   @Post('add-bookmark')
