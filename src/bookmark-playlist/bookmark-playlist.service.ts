@@ -13,7 +13,7 @@ import { Music, MusicDocument } from 'src/music/music.schema';
 
 @Injectable()
 export class BookmarkPlaylistService {
-  private readonly PROTECTED = ['Tất cả', 'Âm nhạc'];
+  private readonly PROTECTED = ['Tất cả bài đăng', 'Âm nhạc'];
   constructor(
     @InjectModel(BookmarkPlaylist.name)
     private readonly playlistModel: Model<BookmarkPlaylistDocument>,
@@ -46,7 +46,7 @@ export class BookmarkPlaylistService {
     // 2) if none exist, insert defaults and reload
     if (playlists.length === 0) {
       const defaults = [
-        { userID: uid, playlistName: 'Tất cả' },
+        { userID: uid, playlistName: 'Tất cả bài đăng' },
         { userID: uid, playlistName: 'Âm nhạc' },
       ];
       await this.playlistModel.insertMany(defaults);
@@ -344,7 +344,7 @@ export class BookmarkPlaylistService {
 
     const playlist = await this.playlistModel.findOne({
       userID: uid,
-      playlistName: { $in: ['All posts', 'Tất cả'] },
+      playlistName: { $in: ['All posts', 'Tất cả bài đăng'] },
       isDeleted: false,
     }).exec();
 

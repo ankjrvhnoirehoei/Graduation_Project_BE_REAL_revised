@@ -193,7 +193,7 @@ export class BookmarkPlaylistController {
 
     // Validate all IDs are provided
     if (idsToProcess.some(id => !id || typeof id !== 'string')) {
-      throw new BadRequestException('Tất cả IDs phải là chuỗi hợp lệ.');
+      throw new BadRequestException('Tất cả bài đăng IDs phải là chuỗi hợp lệ.');
     }
 
     return this.playlistService.switchPostsPlaylist(userId, playlistId, idsToProcess);
