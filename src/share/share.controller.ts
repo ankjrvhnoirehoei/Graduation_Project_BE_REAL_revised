@@ -4,9 +4,20 @@ import { Response } from 'express';
 @Controller()
 export class ShareController {
   @Get('share/:id')
-  fallback(@Param('id') id: string, @Res() res: Response) {
-    const schemeUri = `cirla://share/${id}`;
-    const webUrl    = `https://cirla.io.vn/share/${id}`;
+  share(@Param('id') id: string, @Res() res: Response) {
+    this.renderFallback(res, `share/${id}`, `share/${id}`);
+  }
+
+  @Get('*')
+  fallback(@Res() res: Response) {
+    this.renderFallback(res, '', '');
+  }
+
+  private renderFallback(res: Response, schemePath: string, webPath: string) {
+    const schemeUri = `cirla://${schemePath}`;
+    const webUrl = webPath
+      ? `https://cirla.io.vn/${webPath}`
+      : 'https://cirla.io.vn/';
 
     res.send(`
       <!DOCTYPE html>
@@ -22,6 +33,7 @@ export class ShareController {
             padding: 0.75em 1.5em;
             font-size: 1rem;
             margin-top: 1em;
+            cursor: pointer;
           }
         </style>
       </head>
@@ -35,15 +47,15 @@ export class ShareController {
           const schemeUri = '${schemeUri}';
           const fallbackButton = document.getElementById('openApp');
 
-          // 1) Ngay khi load, cố mở app
+          // 1) Thử mở app ngay khi load
           window.location = schemeUri;
 
-          // 2) Nếu browser vẫn ở lại sau 1.5s, hiện nút
+          // 2) Nếu vẫn ở lại trang web sau 1.5s, show nút
           setTimeout(() => {
             fallbackButton.style.display = 'inline-block';
           }, 1500);
 
-          // 3) Khi user bấm nút, thử mở lại
+          // 3) Khi user bấm nút, thử mở app lại
           fallbackButton.addEventListener('click', () => {
             window.location = schemeUri;
           });
