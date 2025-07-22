@@ -9,7 +9,6 @@ import { CreatePostDto } from './dto/post.dto';
 import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
-import { Music } from 'src/music/music.schema';
 import { Media } from 'src/media/media.schema';
 import { UserService } from 'src/user/user.service';
 import { PostLikeService } from 'src/like_post/like_post.service';
@@ -22,7 +21,6 @@ export class PostService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
-
     private readonly likePostService: PostLikeService,
     private readonly userService: UserService,
     private readonly commentService: CommentService,
@@ -166,124 +164,149 @@ export class PostService {
       {
         $lookup: {
           from: 'relations',
-          let: {
-            pu: '$userID',
-            cu: currentUser,
-          },
+          let: { pu: '$userID', cu: currentUser },
           pipeline: [
             {
-              // normalize ordering between cu and pu
-              $addFields: {
-                pair: {
-                  $cond: [
-                    { $lt: ['$$cu', '$$pu'] },
-                    { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
-                    { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false },
-                  ],
-                },
-              },
-            },
-            {
-              // find the single document for that ordered pair
               $match: {
                 $expr: {
                   $and: [
-                    { $eq: ['$userOneID', '$pair.u1'] },
-                    { $eq: ['$userTwoID', '$pair.u2'] },
+                    { $eq: ['$userOneID', '$$cu'] },
+                    { $eq: ['$userTwoID', '$$pu'] },
                   ],
                 },
               },
             },
-            {
-              // keep only the relation string and the bool for which side to inspect
-              $project: {
-                _id: 0,
-                relation: 1,
-                userOneIsCurrent: '$pair.userOneIsCurrent',
-              },
-            },
+            { $project: { _id: 0, relCurToAuth: '$relation' } },
           ],
-          as: 'relationLookup',
+          as: 'relCurToAuthArr',
         },
       },
-
       {
-        // turn that lookup into a simple Boolean
         $addFields: {
-          isFollow: {
-            $let: {
-              vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
-              in: {
-                $cond: [
-                  // if no document -> not following
-                  { $eq: ['$$rel', null] },
-                  false,
-                  // otherwise split "FOLLOW_NULL" -> [one, two] and check the correct half
-                  {
-                    $switch: {
-                      branches: [
-                        {
-                          case: { $eq: ['$$rel.userOneIsCurrent', true] },
-                          then: {
-                            $eq: [
-                              {
-                                $arrayElemAt: [
-                                  { $split: ['$$rel.relation', '_'] },
-                                  0,
-                                ],
-                              },
-                              'FOLLOW',
-                            ],
-                          },
-                        },
-                        {
-                          case: { $eq: ['$$rel.userOneIsCurrent', false] },
-                          then: {
-                            $eq: [
-                              {
-                                $arrayElemAt: [
-                                  { $split: ['$$rel.relation', '_'] },
-                                  1,
-                                ],
-                              },
-                              'FOLLOW',
-                            ],
-                          },
-                        },
-                      ],
-                      default: false,
-                    },
-                  },
-                ],
-              },
-            },
+          relCurToAuth: {
+            $ifNull: [
+              { $arrayElemAt: ['$relCurToAuthArr.relCurToAuth', 0] },
+              '',
+            ],
           },
         },
       },
 
-      // finally, prune out the temporary `relationLookup` array
+      //
+      // 2) lookup where postAuthor -> currentUser
       {
-        $project: {
-          relationLookup: 0,
+        $lookup: {
+          from: 'relations',
+          let: { pu: '$userID', cu: currentUser },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userOneID', '$$pu'] },
+                    { $eq: ['$userTwoID', '$$cu'] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 0, relAuthToCur: '$relation' } },
+          ],
+          as: 'relAuthToCurArr',
         },
       },
+      {
+        $addFields: {
+          relAuthToCur: {
+            $ifNull: [
+              { $arrayElemAt: ['$relAuthToCurArr.relAuthToCur', 0] },
+              '',
+            ],
+          },
+        },
+      },
+
+      // 3) compute isFollow and isBlocked via regex
+      {
+        $addFields: {
+          isFollow: {
+            $or: [
+              // current->author “FOLLOW_*”
+              {
+                $regexMatch: {
+                  input: '$relCurToAuth',
+                  regex: '^FOLLOW_',
+                },
+              },
+              // author->current “*_FOLLOW”
+              {
+                $regexMatch: {
+                  input: '$relAuthToCur',
+                  regex: '_FOLLOW$',
+                },
+              },
+            ],
+          },
+          isBlocked: {
+            $or: [
+              // current->author “BLOCK_*”
+              {
+                $regexMatch: {
+                  input: '$relCurToAuth',
+                  regex: '^BLOCK_',
+                },
+              },
+              // author->current “*_BLOCK”
+              {
+                $regexMatch: {
+                  input: '$relAuthToCur',
+                  regex: '_BLOCK$',
+                },
+              },
+            ],
+          },
+        },
+      },
+
+      // 4) drop temporary fields
+      {
+        $project: {
+          relCurToAuthArr: 0,
+          relAuthToCurArr: 0,
+          relCurToAuth: 0,
+          relAuthToCur: 0,
+        },
+      },
+
+      // 5) filter out blocked authors
+      {
+        $match: {
+          $expr: {
+            $not: [
+              {
+                $and: [
+                  { $ne: ['$userID', currentUser] },
+                  { $eq: ['$isBlocked', true] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+
       {
         $addFields: {
           isFollow: {
             $cond: [
               { $eq: ['$userID', currentUser] },
-              '$$REMOVE', // completely drop this field if post.owner == currentUser
-              '$isFollow', // otherwise keep what we just computed
+              '$$REMOVE',   // remove field on your own posts
+              '$isFollow',  // otherwise keep it
             ],
           },
         },
       },
-      { $project: { relationLookup: 0 } },
       {
-        $addFields: {
-          isFollow: {
-            $cond: [{ $eq: ['$userID', currentUser] }, '$$REMOVE', '$isFollow'],
-          },
+        $project: {
+          isBlocked: 0,
         },
       },
 
@@ -463,8 +486,10 @@ export class PostService {
           'musicInfo.author': 1,
           'user._id': 1,
           'user.handleName': 1,
+          'user.username': 1,
           'user.profilePic': 1,
           isFollow: 1,
+          isBlocked:     1,
           isBookmarked: 1,
         },
       },
@@ -1014,263 +1039,6 @@ export class PostService {
     return aggResults.map((r) => r.tag);
   }
 
-  // returns up to 20 'reel'‐type documents that have a music subdocument
-  async findReelsWithMusic(userId: string): Promise<any[]> {
-    const userObjectId = new Types.ObjectId(userId);
-
-    return this.postModel.aggregate<PipelineStage[]>([
-      {
-        $lookup: {
-          from: 'relations',
-          let: { pu: '$userID', cu: userObjectId },
-          pipeline: [
-            {
-              $addFields: {
-                pair: {
-                  $cond: [
-                    { $lt: ['$$cu', '$$pu'] },
-                    { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
-                    { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false },
-                  ],
-                },
-              },
-            },
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$userOneID', '$pair.u1'] },
-                    { $eq: ['$userTwoID', '$pair.u2'] },
-                  ],
-                },
-              },
-            },
-            {
-              $project: {
-                _id: 0,
-                relation: 1,
-                userOneIsCurrent: '$pair.userOneIsCurrent',
-              },
-            },
-          ],
-          as: 'relationLookup',
-        },
-      },
-      {
-        $addFields: {
-          isFollow: {
-            $let: {
-              vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
-              in: {
-                $cond: [
-                  { $eq: ['$$rel', null] },
-                  false,
-                  {
-                    $switch: {
-                      branches: [
-                        {
-                          case: { $eq: ['$$rel.userOneIsCurrent', true] },
-                          then: {
-                            $eq: [
-                              {
-                                $arrayElemAt: [
-                                  { $split: ['$$rel.relation', '_'] },
-                                  0,
-                                ],
-                              },
-                              'FOLLOW',
-                            ],
-                          },
-                        },
-                        {
-                          case: { $eq: ['$$rel.userOneIsCurrent', false] },
-                          then: {
-                            $eq: [
-                              {
-                                $arrayElemAt: [
-                                  { $split: ['$$rel.relation', '_'] },
-                                  1,
-                                ],
-                              },
-                              'FOLLOW',
-                            ],
-                          },
-                        },
-                      ],
-                      default: false,
-                    },
-                  },
-                ],
-              },
-            },
-          },
-        },
-      },
-      { $project: { relationLookup: 0 } },
-      // exclude any posts this user has hidden
-      {
-        $lookup: {
-          from: 'hiddenposts',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'hidden',
-        },
-      },
-      {
-        $match: {
-          'hidden.userId': { $ne: userObjectId },
-        },
-      },
-
-      // exclude any reels from users this user has blocked
-      {
-        $lookup: {
-          from: 'userblocks',
-          let: { ownerId: '$userID' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$blockedUserId', '$$ownerId'] },
-                    { $eq: ['$userId', userObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'blocked',
-        },
-      },
-      {
-        $match: { 'blocked.0': { $exists: false } },
-      },
-
-      // only reels that actually have a music subdocument
-      {
-        $match: {
-          type: 'reel',
-          isEnable: true,
-          nsfw: false,
-          music: { $exists: true, $ne: null },
-        },
-      },
-
-      // get the latest 50, then pick 20 at random
-      { $sort: { createdAt: -1 } },
-      { $limit: 50 },
-      { $sample: { size: 20 } },
-
-      // join media
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        },
-      },
-
-      // populate user info
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: '$user' },
-
-      // join likes and comments to compute counts
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes',
-        },
-      },
-      {
-        $addFields: { likeCount: { $size: '$likes' } },
-      },
-      {
-        $lookup: {
-          from: 'comments',
-          let: { pid: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$pid'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'comments',
-        },
-      },
-      {
-        $addFields: { commentCount: { $size: '$comments' } },
-      },
-
-      // check if current user liked each post
-      {
-        $lookup: {
-          from: 'postlikes',
-          let: { pid: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postId', '$$pid'] },
-                    { $eq: ['$userId', userObjectId] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'userLikeEntry',
-        },
-      },
-      {
-        $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } },
-      },
-
-      // final projection
-      {
-        $project: {
-          _id: 1,
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          location: 1,
-          isArchived: 1,
-          viewCount: 1,
-          share: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          media: 1,
-          music: 1,
-          'user._id': 1,
-          'user.handleName': 1,
-          'user.profilePic': 1,
-          likeCount: 1,
-          commentCount: 1,
-          isLike: 1,
-          isFollow: 1,
-        },
-      },
-    ]);
-  }
-
   /**
    * Fetches another user's posts/reels, with full lookups for
    * isFollow, media, bookmarks, likes, comments, music, etc.
@@ -1496,7 +1264,7 @@ export class PostService {
       },
       { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
 
-      // 6) Likes -> likeCount
+      // 6) likeCount
       {
         $lookup: {
           from: 'postlikes',
@@ -1529,7 +1297,7 @@ export class PostService {
       },
       { $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } } },
 
-      // 8) Comments -> commentCount
+      // 8) commentCount
       {
         $lookup: {
           from: 'comments',
@@ -1678,7 +1446,7 @@ export class PostService {
       },
       { $unwind: '$owner' },
 
-      // 3) comments -> commentCount
+      // 3) commentCount
       {
         $lookup: {
           from: 'comments',
@@ -1711,7 +1479,7 @@ export class PostService {
       },
       { $addFields: { likeCount: { $size: '$likes' } } },
 
-      // 5) shareCount from share field
+      // 5) shareCount 
       { $addFields: { shareCount: '$share' } },
 
       // 6) musicInfo
@@ -1758,7 +1526,6 @@ export class PostService {
         $addFields: {
           media: {
             // mediaId: '$mediaObj._id',
-            // choose videoUrl if present, otherwise imageUrl
             videoUrl: {
               $cond: [
                 { $gt: ['$$ROOT.mediaObj.videoUrl', null] },

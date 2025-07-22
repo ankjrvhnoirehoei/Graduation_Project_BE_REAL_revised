@@ -92,13 +92,6 @@ export class PostController {
     return this.postService.findReelsWithMedia(userId, page, limit);
   }
 
-  @Get('get-all-reel-with-music')
-  async getAllReelWithMusic(
-    @CurrentUser('sub') userId: string,
-  ) {
-    return this.postService.findReelsWithMusic(userId);
-  }
-
   @Get(':postId') 
   async getPostDetail(@Param('postId') postId: string, @CurrentUser('sub') userId: string,) {
     const post = await this.postService.getPostById(postId, userId);
