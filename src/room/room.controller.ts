@@ -118,4 +118,23 @@ export class RoomController {
   ) {
     return this.roomService.addUsersToRoomBatch(roomId, dto.user_ids);
   }
+
+  @Delete(':id/leave')
+  async leaveRoom(@Param('id') roomId: string, @CurrentUser('sub') userId: string) {
+    const result = await this.roomService.leaveRoom(roomId, userId);
+    if (result.deleted) {
+      return { message: 'Bạn là người cuối cùng trong nhóm, nhóm đã bị xóa.' };
+    }
+    return { message: 'Bạn đã rời khỏi nhóm thành công.' };
+  }
+
+  @Delete(':id/users/:memberId')
+  async removeMember(
+    @Param('id') roomId: string,
+    @Param('memberId') memberId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    await this.roomService.removeMember(roomId, userId, memberId);
+    return { message: 'Xóa thành viên thành công.' };
+  }
 }

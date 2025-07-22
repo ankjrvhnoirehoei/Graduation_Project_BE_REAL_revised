@@ -445,10 +445,10 @@ export class RoomService {
     }
 
     // convert và lọc những user chưa có trong room
-    const existingIds = room.user_ids.map(id => id.toString());
+    const existingIds = room.user_ids.map((id) => id.toString());
     const toAdd = userIdsToAdd
-      .map(id => new Types.ObjectId(id))
-      .filter(oid => !existingIds.includes(oid.toString()));
+      .map((id) => new Types.ObjectId(id))
+      .filter((oid) => !existingIds.includes(oid.toString()));
 
     if (toAdd.length) {
       room.user_ids.push(...toAdd);
@@ -460,5 +460,64 @@ export class RoomService {
       .findById(roomId)
       .populate('user_ids', '_id handleName profilePic')
       .exec();
+  }
+
+  async leaveRoom(
+    roomId: string,
+    userId: string,
+  ): Promise<{ deleted: boolean }> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) {
+      throw new NotFoundException('Không tìm thấy nhóm.');
+    }
+
+    const uid = new Types.ObjectId(userId);
+    const isMember = room.user_ids.some((id) => id.equals(uid));
+    if (!isMember) {
+      throw new ForbiddenException('Bạn không thuộc nhóm này.');
+    }
+
+    // 1. Remove user khỏi mảng
+    room.user_ids = room.user_ids.filter((id) => !id.equals(uid));
+
+    // 2. Nếu mảng rỗng → xóa nhóm
+    if (room.user_ids.length === 0) {
+      await this.roomModel.findByIdAndDelete(roomId);
+      return { deleted: true };
+    }
+
+    // 3. Nếu người leave là creator và vẫn còn members → chọn creator mới
+    if (room.created_by.equals(uid)) {
+      room.created_by = room.user_ids[0]; // hoặc logic pick khác
+    }
+
+    await room.save();
+    return { deleted: false };
+  }
+
+  async removeMember(
+    roomId: string,
+    leaderId: string,
+    memberId: string,
+  ): Promise<void> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) {
+      throw new NotFoundException('Không tìm thấy nhóm.');
+    }
+
+    const leaderObjId = new Types.ObjectId(leaderId);
+    if (!room.created_by.equals(leaderObjId)) {
+      throw new ForbiddenException('Chỉ nhóm trưởng mới được xóa thành viên.');
+    }
+
+    const targetObjId = new Types.ObjectId(memberId);
+    const isMember = room.user_ids.some(id => id.equals(targetObjId));
+    if (!isMember) {
+      throw new NotFoundException('Thành viên này không có trong nhóm.');
+    }
+
+    // Lọc ra member
+    room.user_ids = room.user_ids.filter(id => !id.equals(targetObjId));
+    await room.save();
   }
 }
