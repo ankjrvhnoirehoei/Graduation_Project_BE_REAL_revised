@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -17,6 +17,7 @@ export class BookmarkPlaylistService {
   constructor(
     @InjectModel(BookmarkPlaylist.name)
     private readonly playlistModel: Model<BookmarkPlaylistDocument>,
+    @Inject(forwardRef(() => BookmarkItemService))
     private readonly bookmarkItemService: BookmarkItemService,
     @InjectModel(BookmarkItem.name) 
     private readonly bookmarkItemModel: Model<BookmarkItemDocument>,

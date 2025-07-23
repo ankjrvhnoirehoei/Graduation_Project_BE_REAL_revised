@@ -8,7 +8,6 @@ import {
   Query,
   BadRequestException,
   Param,
-  Req,
 } from '@nestjs/common';
 import { RelationService } from './relation.service';
 import { RelationType } from './relation.schema';
@@ -34,9 +33,6 @@ export class RelationController {
   /**
    * PUT /relations/relation-action
    * body: { targetId: string, action: 'follow'|'unfollow'|'block'|'unblock' }
-   *
-   * Uses JwtRefreshAuthGuard (access token), and pulls the acting user's ID
-   * from @CurrentUser('sub').
    */
   @UseGuards(JwtRefreshAuthGuard)
   @Put('relation-action')
@@ -62,9 +58,7 @@ export class RelationController {
 
   /**
    * GET /relations/get-relation?filter=followers|following|blockers|blocking
-   *
    * Returns all relation‐records matching “filter” for the currently logged‐in user.
-   * Uses JwtRefreshAuthGuard and @CurrentUser('sub') to get userId.
    */
   @UseGuards(JwtRefreshAuthGuard)
   @Get('get-relation')
@@ -166,7 +160,6 @@ export class RelationController {
    * body: { userId: string }
    *
    * Returns an array of "who userId is blocking."
-   * Also protected by JwtRefreshAuthGuard.
    */
   @UseGuards(JwtRefreshAuthGuard)
   @Post('blocking')

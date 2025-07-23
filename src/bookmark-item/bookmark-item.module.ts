@@ -9,15 +9,17 @@ import {
 } from 'src/bookmark-playlist/bookmark-playlist.schema';
 import { BookmarkPlaylistModule } from 'src/bookmark-playlist/bookmark-playlist.module';
 import { PostModule } from 'src/post/post.module';
+import { MusicModule } from 'src/music/music.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: BookmarkItem.name, schema: BookmarkItemSchema },
-      { name: BookmarkPlaylist.name, schema: BookmarkPlaylistSchema }, // Add this
+      { name: BookmarkPlaylist.name, schema: BookmarkPlaylistSchema },
     ]),
-    PostModule,
+    forwardRef(() => PostModule),
     forwardRef(() => BookmarkPlaylistModule),
+    forwardRef(() => MusicModule),
   ],
   providers: [BookmarkItemService],
   controllers: [BookmarkItemController],
@@ -25,7 +27,7 @@ import { PostModule } from 'src/post/post.module';
     BookmarkItemService,
     MongooseModule.forFeature([
       { name: BookmarkItem.name, schema: BookmarkItemSchema },
-    ]), // Export BookmarkItemModel too
+    ]),
   ],
 })
 export class BookmarkItemModule {}
