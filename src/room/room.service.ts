@@ -109,19 +109,25 @@ export class RoomService {
   }
 
   async getRoomsOfUser(userId: string): Promise<any[]> {
+    // Gắn kiểu cho lean để TS biết có field createdAt
     const rooms = await this.roomModel
       .find({ user_ids: new Types.ObjectId(userId), type: 'accept' })
       .populate('user_ids', '_id handleName profilePic')
-      .lean();
+      .lean<{
+        map(arg0: (room: any) => any): unknown;
+        _id: Types.ObjectId;
+        name: string;
+        theme?: string;
+        type: string;
+        user_ids: Types.ObjectId[];
+        created_by: Types.ObjectId;
+        createdAt: Date;
+      }>();
 
     const stringRoomIds = rooms.map((room) => room._id.toString());
 
     const messages = await this.messageModel.aggregate([
-      {
-        $match: {
-          roomId: { $in: stringRoomIds },
-        },
-      },
+      { $match: { roomId: { $in: stringRoomIds } } },
       { $sort: { createdAt: -1 } },
       {
         $group: {
@@ -136,35 +142,42 @@ export class RoomService {
     ]);
 
     const latestMessageMap = new Map<string, any>();
-    messages.forEach((msg) => {
+    for (const msg of messages) {
       latestMessageMap.set(msg._id, msg);
-    });
+    }
 
-    const roomsWithMessages = rooms.map((room) => {
-      const latestMessage = latestMessageMap.get(room._id.toString()) ?? null;
+    // Ghép room với latestMessage, giữ nguyên createdAt để sort
+    const roomsWithMessages: any = rooms.map((room) => ({
+      _id: room._id,
+      name: room.name,
+      theme: room.theme,
+      type: room.type,
+      user_ids: room.user_ids,
+      created_by: room.created_by,
+      createdAt: room.createdAt,
+      latestMessage: latestMessageMap.get(room._id.toString()) ?? null,
+    }));
 
-      return {
-        _id: room._id,
-        name: room.name,
-        theme: room.theme,
-        type: room.type,
-        user_ids: room.user_ids,
-        created_by: room.created_by,
-        latestMessage,
-      };
-    });
-
+    // Sort: so sánh max giữa thời điểm tạo room và thời điểm tin nhắn mới nhất
     roomsWithMessages.sort((a, b) => {
-      const aTime = a.latestMessage?.createdAt
+      const aRoomTime = a.createdAt.getTime();
+      const bRoomTime = b.createdAt.getTime();
+
+      const aMsgTime = a.latestMessage?.createdAt
         ? new Date(a.latestMessage.createdAt).getTime()
         : 0;
-      const bTime = b.latestMessage?.createdAt
+      const bMsgTime = b.latestMessage?.createdAt
         ? new Date(b.latestMessage.createdAt).getTime()
         : 0;
+
+      const aTime = Math.max(aRoomTime, aMsgTime);
+      const bTime = Math.max(bRoomTime, bMsgTime);
+
       return bTime - aTime;
     });
 
-    return roomsWithMessages;
+    // Trả về đúng structure ban đầu (bỏ createdAt tạm)
+    return roomsWithMessages.map(({ createdAt, ...rest }) => rest);
   }
 
   async getWaitingRoomsOfUser(userId: string): Promise<any[]> {
@@ -445,10 +458,10 @@ export class RoomService {
     }
 
     // convert và lọc những user chưa có trong room
-    const existingIds = room.user_ids.map(id => id.toString());
+    const existingIds = room.user_ids.map((id) => id.toString());
     const toAdd = userIdsToAdd
-      .map(id => new Types.ObjectId(id))
-      .filter(oid => !existingIds.includes(oid.toString()));
+      .map((id) => new Types.ObjectId(id))
+      .filter((oid) => !existingIds.includes(oid.toString()));
 
     if (toAdd.length) {
       room.user_ids.push(...toAdd);
@@ -460,5 +473,64 @@ export class RoomService {
       .findById(roomId)
       .populate('user_ids', '_id handleName profilePic')
       .exec();
+  }
+
+  async leaveRoom(
+    roomId: string,
+    userId: string,
+  ): Promise<{ deleted: boolean }> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) {
+      throw new NotFoundException('Không tìm thấy nhóm.');
+    }
+
+    const uid = new Types.ObjectId(userId);
+    const isMember = room.user_ids.some((id) => id.equals(uid));
+    if (!isMember) {
+      throw new ForbiddenException('Bạn không thuộc nhóm này.');
+    }
+
+    // 1. Remove user khỏi mảng
+    room.user_ids = room.user_ids.filter((id) => !id.equals(uid));
+
+    // 2. Nếu mảng rỗng → xóa nhóm
+    if (room.user_ids.length === 0) {
+      await this.roomModel.findByIdAndDelete(roomId);
+      return { deleted: true };
+    }
+
+    // 3. Nếu người leave là creator và vẫn còn members → chọn creator mới
+    if (room.created_by.equals(uid)) {
+      room.created_by = room.user_ids[0]; // hoặc logic pick khác
+    }
+
+    await room.save();
+    return { deleted: false };
+  }
+
+  async removeMember(
+    roomId: string,
+    leaderId: string,
+    memberId: string,
+  ): Promise<void> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) {
+      throw new NotFoundException('Không tìm thấy nhóm.');
+    }
+
+    const leaderObjId = new Types.ObjectId(leaderId);
+    if (!room.created_by.equals(leaderObjId)) {
+      throw new ForbiddenException('Chỉ nhóm trưởng mới được xóa thành viên.');
+    }
+
+    const targetObjId = new Types.ObjectId(memberId);
+    const isMember = room.user_ids.some((id) => id.equals(targetObjId));
+    if (!isMember) {
+      throw new NotFoundException('Thành viên này không có trong nhóm.');
+    }
+
+    // Lọc ra member
+    room.user_ids = room.user_ids.filter((id) => !id.equals(targetObjId));
+    await room.save();
   }
 }
