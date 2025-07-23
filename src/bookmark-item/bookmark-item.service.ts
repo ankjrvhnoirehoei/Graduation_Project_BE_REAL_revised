@@ -49,13 +49,13 @@ export class BookmarkItemService {
       hasPrevPage: boolean;
     };
   }> {
-    // 1) fetch + validate playlist
+    // fetch + validate playlist
     const playlist = await this.playlistService.findByIdAndUser(
       playlistId,
       userId,
     );
 
-    // 2) find all non‑deleted bookmark entries for this playlist
+    // find all non‑deleted bookmark entries for this playlist
     const allEntries = await this.itemModel
       .find(
         { playlistID: playlist._id, isDeleted: false },
@@ -67,9 +67,8 @@ export class BookmarkItemService {
     const allIds = allEntries.map((e) => e.itemID);
     const total = allEntries.length;
 
-    // 3a) if this is the “Âm nhạc” playlist, return music items
+    // if this is the “Âm nhạc” playlist, return music items
     if (playlist.playlistName === 'Âm nhạc') {
-      // reuse your old music‑lookup pipeline, but paged manually
       const start = (page - 1) * limit;
       const slice = allIds.slice(start, start + limit);
 
@@ -90,7 +89,6 @@ export class BookmarkItemService {
       };
     }
 
-    // 3b) otherwise, use your post pipeline for post/reel items
     const result = await this.postService.runPagedAggregation(
       {
         _userId: userId,
@@ -217,7 +215,7 @@ export class BookmarkItemService {
     return modifiedCount;
   }
 
-  // add or readd a music item to a playlist
+  // add or read a music item to a playlist
   async createMusic(
     playlistId: string,
     musicId: string,
@@ -403,7 +401,6 @@ export class BookmarkItemService {
   ) {
     const uid = new Types.ObjectId(userId);
 
-    // 1) pull all non-deleted bookmark records, sorted by bookmark timestamp
     const raw = await this.itemModel
       .find({ playlistID: { $in: await this.getPlaylistIds(uid) }, isDeleted: false })
       .sort({ createdAt: -1 })
@@ -415,14 +412,12 @@ export class BookmarkItemService {
     const total  = await this.itemModel.countDocuments({ playlistID: { $in: await this.getPlaylistIds(uid) }, isDeleted: false });
     const ids    = raw.map((r) => r.itemID);
 
-    // 2) feed into your postService.runPagedAggregation
     const { items, pagination } = await this.postService.runPagedAggregation(
       { _userId: userId, _id: { $in: ids }, type: { $in: ['post','reel'] } },
       page,
       limit
     );
 
-    // 3) merge in bookmark metadata
     const byId = new Map(raw.map(r => [String(r.itemID), r]));
     const data = items.map(i => ({
       ...i,

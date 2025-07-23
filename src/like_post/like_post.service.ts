@@ -6,17 +6,18 @@ import { Post, PostDocument } from 'src/post/post.schema';
 import { User, UserDocument } from 'src/user/user.schema'; 
 import { RelationService } from 'src/relation/relation.service';
 import { PostService } from 'src/post/post.service';
+
 export enum TimeRange {
   TODAY = 'today',
-  THIS_MONTH = 'this_month',
-  THIS_YEAR = 'this_year'
+  LAST_WEEK = 'last_week',
+  LAST_MONTH = 'last_month',
+  LAST_YEAR = 'last_year'
 }
 
 export enum SortOrder {
   ASC = 'asc',
   DESC = 'desc'
 }
-
 @Injectable()
 export class PostLikeService {
   constructor(
@@ -44,6 +45,62 @@ export class PostLikeService {
     await this.postLikeModel.deleteOne({ postId, userId });
   }
   
+  private getVietnameseTimeBounds(timeRange: TimeRange): { start: Date; end: Date } {
+    // Get current time in Vietnamese timezone (UTC+7)
+    const now = new Date();
+    const vietnamOffset = 7 * 60; // Vietnam is UTC+7 (420 minutes)
+    const localOffset = now.getTimezoneOffset(); // Local timezone offset in minutes (negative for UTC+)
+    
+    // Calculate Vietnam time
+    const vietnamTime = new Date(now.getTime() + (vietnamOffset + localOffset) * 60 * 1000);
+    
+    let start: Date;
+    let end: Date;
+
+    switch (timeRange) {
+      case TimeRange.TODAY:
+        // Start of today in Vietnam time
+        start = new Date(vietnamTime.getFullYear(), vietnamTime.getMonth(), vietnamTime.getDate());
+        // End of today in Vietnam time
+        end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+        break;
+
+      case TimeRange.LAST_WEEK:
+        // Start of 7 days ago in Vietnam time
+        const sevenDaysAgo = new Date(vietnamTime.getTime() - 7 * 24 * 60 * 60 * 1000);
+        start = new Date(sevenDaysAgo.getFullYear(), sevenDaysAgo.getMonth(), sevenDaysAgo.getDate());
+        // End is start of today
+        end = new Date(vietnamTime.getFullYear(), vietnamTime.getMonth(), vietnamTime.getDate());
+        break;
+
+      case TimeRange.LAST_MONTH:
+        // Start of last month in Vietnam time
+        const lastMonth = vietnamTime.getMonth() === 0 ? 11 : vietnamTime.getMonth() - 1;
+        const lastMonthYear = vietnamTime.getMonth() === 0 ? vietnamTime.getFullYear() - 1 : vietnamTime.getFullYear();
+        start = new Date(lastMonthYear, lastMonth, 1);
+        // End of last month
+        end = new Date(vietnamTime.getFullYear(), vietnamTime.getMonth(), 1);
+        break;
+
+      case TimeRange.LAST_YEAR:
+        // Start of last year in Vietnam time
+        const lastYear = vietnamTime.getFullYear() - 1;
+        start = new Date(lastYear, 0, 1);
+        // End of last year (start of current year)
+        end = new Date(vietnamTime.getFullYear(), 0, 1);
+        break;
+
+      default:
+        throw new Error('Invalid time range');
+    }
+
+    // Convert back to UTC for MongoDB query
+    const utcStart = new Date(start.getTime() - vietnamOffset * 60 * 1000);
+    const utcEnd = new Date(end.getTime() - vietnamOffset * 60 * 1000);
+
+    return { start: utcStart, end: utcEnd };
+  }
+  
   async getLikedPosts(
     userId: string, 
     page: number = 1, 
@@ -56,55 +113,26 @@ export class PostLikeService {
     // Build time range filter
     let timeFilter: any = {};
     if (timeRange) {
-      const now = new Date();
-      
-      switch (timeRange) {
-        case TimeRange.TODAY:
-          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
-          timeFilter = {
-            createdAt: {
-              $gte: startOfToday,
-              $lt: endOfToday
-            }
-          };
-          break;
-          
-        case TimeRange.THIS_MONTH:
-          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-          const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-          timeFilter = {
-            createdAt: {
-              $gte: startOfMonth,
-              $lt: endOfMonth
-            }
-          };
-          break;
-          
-        case TimeRange.THIS_YEAR:
-          const startOfYear = new Date(now.getFullYear(), 0, 1);
-          const endOfYear = new Date(now.getFullYear() + 1, 0, 1);
-          timeFilter = {
-            createdAt: {
-              $gte: startOfYear,
-              $lt: endOfYear
-            }
-          };
-          break;
-      }
+      const { start, end } = this.getVietnameseTimeBounds(timeRange);
+      timeFilter = {
+        createdAt: {
+          $gte: start,
+          $lt: end
+        }
+      };
     }
     
     // Build query with time filter
     const query = { userId, ...timeFilter };
     
-    // Build sort order
+    // Build sort order (sorting by when the post was liked)
     const sortDirection: 1 | -1 = sortOrder === SortOrder.ASC ? 1 : -1;
     const sortQuery: { [key: string]: 1 | -1 } = { createdAt: sortDirection };
     
-    // Get paginated liked post records
+    // Get paginated liked post records, sorted by like time
     const likedPostRecords = await this.postLikeModel
       .find(query)
-      .select('postId')
+      .select('postId createdAt')
       .sort(sortQuery)
       .skip(skip)
       .limit(limit)
@@ -132,11 +160,11 @@ export class PostLikeService {
     const posts = await this.postModel
       .aggregate([
         ...this.postService.buildBasePipeline(currentUser, baseMatch),
-        // Don't sort here since we want to maintain the like order
       ])
       .exec();
 
     // Maintain the like order based on the sorted likedPostIds
+    // This preserves the chronological order of when posts were liked
     const postsOrderedByLikeTime = likedPostIds.map(likedId => 
       posts.find(post => post._id.toString() === likedId.toString())
     ).filter(Boolean);
