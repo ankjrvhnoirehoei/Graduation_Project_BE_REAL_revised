@@ -25,6 +25,7 @@ import { ReportContentModule } from './report-content/report-content.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { ShareController } from './share/share.controller';
+import { ReportStoryModule } from './report-story/report-story.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { ShareController } from './share/share.controller';
     AdminModule,
     ReportUserModule,
     ReportContentModule,
+    ReportStoryModule,
   ],
    controllers: [
     ShareController, 
