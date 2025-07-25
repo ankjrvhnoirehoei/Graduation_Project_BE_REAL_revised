@@ -3,9 +3,20 @@ import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { Types, Document } from "mongoose";
 import { User } from "src/user/user.schema";
 import { Story } from "src/story/schema/story.schema";
-import { ReportReason } from 'src/report-content/report-content.schema';
 
 export type ReportStoryDocument = ReportStory & Document;
+
+export enum ReportReason {
+  HARASSMENT_AND_BULLYING = 'HARASSMENT_AND_BULLYING',
+  HATE_SPEECH = 'HATE_SPEECH',
+  IMPERSONATION_FAKE_ACCOUNTS = 'IMPERSONATION_FAKE_ACCOUNTS',
+  GRAPHIC_CONTENT = 'GRAPHIC_CONTENT',
+  THREATS_AND_VIOLENCE = 'THREATS_AND_VIOLENCE',
+  SCAMS_AND_FRAUD = 'SCAMS_AND_FRAUD',
+  SENSITIVE_PERSONAL_INFO = 'SENSITIVE_PERSONAL_INFO',
+  SELF_HARM = 'SELF_HARM',
+  OTHER = 'OTHER',
+}
 
 export enum ReportStatus {
   PENDING = 'pending',
@@ -43,7 +54,7 @@ export class ReportStory extends AbstractDocument {
   targetId: Types.ObjectId;
 
   @Prop({ 
-    enum: Object.values(ReportReason), 
+    enum: Object.values(ReportReason),
     required: true,
     index: true
   })
