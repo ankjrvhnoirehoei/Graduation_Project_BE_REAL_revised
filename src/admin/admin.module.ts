@@ -18,6 +18,7 @@ import { PostLikeModule } from 'src/like_post/like_post.module';
 import { ReportUser, ReportUserSchema } from 'src/report-user/report-user.schema';
 import { ReportContent, ReportContentSchema } from 'src/report-content/report-content.schema';
 import { ReportContentModule } from 'src/report-content/report-content.module';
+import { CommonUtilsModule } from './helpers/helpers.module'
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { ReportContentModule } from 'src/report-content/report-content.module';
     forwardRef(() => PostLikeModule),
     forwardRef(() => ReportUserModule),
     forwardRef(() => ReportContentModule),
+    CommonUtilsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

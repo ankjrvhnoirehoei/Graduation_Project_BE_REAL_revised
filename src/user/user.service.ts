@@ -481,7 +481,7 @@ export class UserService {
     };
   }> {
     // Build base filter
-    const filter = { createdAt: { $gte: from, $lte: to } };
+    const filter = { createdAt: { $gte: from, $lte: to }, role: { $ne: 'admin' }, };
 
     // Count total
     const totalCount = await this.userModel.countDocuments(filter);

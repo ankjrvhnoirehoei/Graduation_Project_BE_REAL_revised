@@ -5,8 +5,8 @@ import { ReportUserService } from './report-user.service';
 import { ReportUserController } from './report-user.controller';
 import { User, UserSchema } from 'src/user/user.schema';
 import { UserModule } from 'src/user/user.module';
-import { AdminModule } from 'src/admin/admin.module'; 
-
+import { CommonUtilsModule } from 'src/admin/helpers/helpers.module';
+import { AdminModule } from 'src/admin/admin.module';
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -14,6 +14,7 @@ import { AdminModule } from 'src/admin/admin.module';
       { name: User.name, schema: UserSchema },
     ]),
     UserModule,
+    CommonUtilsModule,
     forwardRef(() => AdminModule),
   ],
   providers: [ReportUserService],
