@@ -22,18 +22,30 @@ export class PostLikeController {
     return { message: 'Unliked successfully' };
   }
 
+
   /**
+   * Get liked posts 
+   * 
    * # Get first page (default 20 posts)
-    GET /post-like/liked-posts
-
-    # Get first page with custom limit
-    GET /post-like/liked-posts?limit=10
-
-    # Get specific page
-    GET /post-like/liked-posts?page=2&limit=15
-
-    # Get third page with 5 posts
-    GET /post-like/liked-posts?page=3&limit=5
+   * GET /post-like/liked-posts
+   *
+   * # Get posts liked today
+   * GET /post-like/liked-posts?timeRange=today
+   *
+   * # Get posts liked last week
+   * GET /post-like/liked-posts?timeRange=last_week
+   *
+   * # Get posts liked last month
+   * GET /post-like/liked-posts?timeRange=last_month
+   *
+   * # Get posts liked last year
+   * GET /post-like/liked-posts?timeRange=last_year
+   *
+   * # Sort by oldest liked first
+   * GET /post-like/liked-posts?sortOrder=asc
+   *
+   * # Combine filters
+   * GET /post-like/liked-posts?timeRange=today&sortOrder=asc&page=1&limit=10
    */
   @Get('liked-posts')
   @UseGuards(JwtRefreshAuthGuard)
@@ -68,7 +80,7 @@ export class PostLikeController {
     }
 
     // Validate sort order parameter
-    let validSortOrder: SortOrder = SortOrder.DESC; // Default to descending
+    let validSortOrder: SortOrder = SortOrder.DESC; // Default to descending (newest likes first)
     if (sortOrder) {
       const validSortOrders = Object.values(SortOrder);
       if (!validSortOrders.includes(sortOrder as SortOrder)) {
@@ -97,6 +109,12 @@ export class PostLikeController {
         limit: limitNum,
         hasNextPage: result.currentPage < result.totalPages,
         hasPrevPage: result.currentPage > 1
+      },
+      // Include filter info in response for clarity
+      filters: {
+        timeRange: validTimeRange || 'all_time',
+        sortOrder: validSortOrder,
+        timezone: 'Asia/Ho_Chi_Minh (UTC+7)'
       }
     };
   }

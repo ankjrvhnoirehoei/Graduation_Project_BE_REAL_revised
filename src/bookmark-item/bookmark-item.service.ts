@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
 import { BookmarkItem, BookmarkItemDocument } from './bookmark-item.schema';
@@ -7,6 +7,8 @@ import {
   BookmarkPlaylistDocument,
 } from 'src/bookmark-playlist/bookmark-playlist.schema';
 import { PostService } from 'src/post/post.service';
+import { MusicService } from 'src/music/music.service';
+import { BookmarkPlaylistService } from 'src/bookmark-playlist/bookmark-playlist.service';
 interface RemovalResult {
   deletedCount: number;
   notFoundCount: number;
@@ -25,306 +27,79 @@ export class BookmarkItemService {
     @InjectModel(BookmarkPlaylist.name)
     private readonly playlistModel: Model<BookmarkPlaylistDocument>,
     private readonly postService: PostService,
+    private readonly musicService: MusicService, 
+    @Inject(forwardRef(() => BookmarkPlaylistService))
+    private readonly playlistService: BookmarkPlaylistService,
   ) {}
 
   // returns all non-deleted items in a given playlist
   async findAllByPlaylist(
     playlistId: string,
     userId: string,
-    page: number = 1,
-    limit: number = 20,
-  ): Promise<{ data: any[]; total: number }> {
-    if (!Types.ObjectId.isValid(playlistId)) {
-      throw new BadRequestException('Invalid playlist ID format.');
+    page = 1,
+    limit = 20,
+  ): Promise<{
+    items: any[];
+    pagination: {
+      currentPage: number;
+      totalPages: number;
+      totalCount: number;
+      limit: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
+  }> {
+    // fetch + validate playlist
+    const playlist = await this.playlistService.findByIdAndUser(
+      playlistId,
+      userId,
+    );
+
+    // find all non‑deleted bookmark entries for this playlist
+    const allEntries = await this.itemModel
+      .find(
+        { playlistID: playlist._id, isDeleted: false },
+        { itemID: 1 },          // project only the itemID
+      )
+      .sort({ createdAt: -1 })  // bookmark order
+      .exec();
+
+    const allIds = allEntries.map((e) => e.itemID);
+    const total = allEntries.length;
+
+    // if this is the “Âm nhạc” playlist, return music items
+    if (playlist.playlistName === 'Âm nhạc') {
+      const start = (page - 1) * limit;
+      const slice = allIds.slice(start, start + limit);
+
+      const data = await this.musicService.findManyByIds(slice);
+      // assume findManyByIds returns the same enriched shape for musics
+
+      const totalPages = Math.max(Math.ceil(total / limit), 1);
+      return {
+        items: data,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalCount: total,
+          limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
+        },
+      };
     }
 
-    const skip = (page - 1) * limit;
-    const playlistObjectId = new Types.ObjectId(playlistId);
-    const currentUser = new Types.ObjectId(userId);
-    // count total matching bookmark‑items
-    const total = await this.itemModel.countDocuments({
-      playlistID: playlistObjectId,
-      isDeleted: false,
-    });
-
-    // aggregate pipeline to join posts/reels
-    const pipeline: PipelineStage[] = [
-      // 1) match & paginate bookmark‑items
-      { $match: { playlistID: playlistObjectId, isDeleted: false } },
-      { $sort: { createdAt: -1 } },
-      { $skip: skip },
-      { $limit: limit },
-
-      // 2) join into posts and musics collections
+    const result = await this.postService.runPagedAggregation(
       {
-        $lookup: {
-          from: 'posts',
-          let: { id: '$itemID' },
-          pipeline: [
-            { $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$_id', '$$id'] },
-                    { $in: ['$type', ['post', 'reel']] }
-                  ]
-                }
-              }
-            }
-          ],
-          as: 'postDoc'
-        }
+        _userId: userId,
+        type: { $in: ['post', 'reel'] },
+        _id: { $in: allIds },
       },
-      { $unwind: { path: '$postDoc', preserveNullAndEmptyArrays: true } },
+      page,
+      limit,
+    );
 
-      {
-        $lookup: {
-          from: 'musics',
-          let: { id: '$itemID' },
-          pipeline: [
-            { $match: {
-                $expr: { $eq: ['$_id', '$$id'] }
-              }
-            }
-          ],
-          as: 'musicDoc'
-        }
-      },
-      { $unwind: { path: '$musicDoc', preserveNullAndEmptyArrays: true } },
-
-      // 3) UNIFY FIELDS
-      {
-        $addFields: {
-          // if postDoc exists, pull from it; otherwise pull from musicDoc, or fall back to defaults:
-          _id:        { $ifNull: ['$postDoc._id', '$musicDoc._id'] },
-          userID:     { $ifNull: ['$postDoc.userID', ''] },
-          type:       { $ifNull: ['$postDoc.type', '$itemType'] },
-          caption:    { $ifNull: ['$postDoc.caption', ''] },
-          isFlagged:  { $ifNull: ['$postDoc.isFlagged', false] },
-          nsfw:       { $ifNull: ['$postDoc.nsfw', false] },
-          isEnable:   { $ifNull: ['$postDoc.isEnable', false] },
-          viewCount:  { $ifNull: ['$postDoc.viewCount', 0] },
-
-          // music-specific fields (will be empty on posts)
-          song:      { $ifNull: ['$musicDoc.song', ''] },
-          link:      { $ifNull: ['$musicDoc.link', ''] },
-          author:    { $ifNull: ['$musicDoc.author', ''] },
-          coverImg:  { $ifNull: ['$musicDoc.coverImg', ''] },
-
-          // carry through bookmark timestamps
-          createdAtBookmark: '$createdAt',
-          updatedAtBookmark: '$updatedAt',
-        }
-      },
-
-      // 4) existing “relations -> isFollow” logic, but wired against _id and userID
-      {
-        $lookup: {
-          from: 'relations',
-          let: { pu: '$userID', cu: currentUser },
-          pipeline: [
-            { $addFields: {
-                pair: {
-                  $cond: [
-                    { $lt: ['$$cu','$$pu'] },
-                    { u1:'$$cu', u2:'$$pu', userOneIsCurrent:true },
-                    { u1:'$$pu', u2:'$$cu', userOneIsCurrent:false }
-                  ]
-                }
-              }
-            },
-            { $match: {
-                $expr: {
-                  $and: [
-                    { $eq:['$userOneID','$pair.u1'] },
-                    { $eq:['$userTwoID','$pair.u2'] }
-                  ]
-                }
-              }
-            },
-            { $project: { _id:0, relation:1,userOneIsCurrent:'$pair.userOneIsCurrent' } }
-          ],
-          as: 'relationLookup'
-        }
-      },
-      {
-        $addFields: {
-          isFollow: {
-            $let: {
-              vars: { rel: { $arrayElemAt: ['$relationLookup',0] } },
-              in: {
-                $cond:[
-                  { $eq:['$$rel', null] }, false,
-                  {
-                    $switch:{
-                      branches:[
-                        {
-                          case:{ $eq:['$$rel.userOneIsCurrent',true] },
-                          then:{
-                            $eq:[
-                              { $arrayElemAt:[{ $split:['$$rel.relation','_'] },0] },
-                              'FOLLOW'
-                            ]
-                          }
-                        },
-                        {
-                          case:{ $eq:['$$rel.userOneIsCurrent',false] },
-                          then:{
-                            $eq:[
-                              { $arrayElemAt:[{ $split:['$$rel.relation','_'] },1] },
-                              'FOLLOW'
-                            ]
-                          }
-                        }
-                      ],
-                      default:false
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        }
-      },
-      { $project: { relationLookup:0 } },
-      {
-        $addFields: {
-          isFollow: {
-            $cond:[
-              { $eq:['$userID', currentUser] },
-              '$$REMOVE',
-              '$isFollow'
-            ]
-          }
-        }
-      },
-
-      // 5) media lookup
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        }
-      },
-
-      // 6) author lookup
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user'
-        }
-      },
-      // allow music‑type items through
-      { 
-        $unwind: { 
-          path: '$user', 
-          preserveNullAndEmptyArrays: true 
-        } 
-      },
-      // default-inject an empty user if none was found
-      {
-        $addFields: {
-          user: {
-            _id:         { $ifNull: ['$user._id', ''] },
-            handleName:  { $ifNull: ['$user.handleName', ''] },
-            profilePic:  { $ifNull: ['$user.profilePic', ''] },
-          }
-        }
-      },
-
-      // 7) likes & comments
-      { $lookup: { from:'postlikes', localField:'_id', foreignField:'postId', as:'likes' } },
-      {
-        $lookup: {
-          from: 'comments',
-          let: { pid: '$_id' },
-          pipeline: [
-            { $match: {
-                $expr: { $and:[
-                  { $eq:['$postID','$$pid'] },
-                  { $eq:['$isDeleted', false] }
-                ]}
-              }
-            }
-          ],
-          as: 'comments'
-        }
-      },
-      {
-        $addFields: {
-          likeCount:    { $size:'$likes' },
-          commentCount: { $size:'$comments' }
-        }
-      },
-
-      // 8) isLike for current user
-      {
-        $lookup: {
-          from: 'postlikes',
-          let: { pid:'$_id' },
-          pipeline: [
-            { $match: {
-                $expr: { $and:[
-                  { $eq:['$postId','$$pid'] },
-                  { $eq:['$userId', currentUser] }
-                ]}
-              }
-            }
-          ],
-          as: 'userLikeEntry'
-        }
-      },
-      {
-        $addFields: {
-          isLike: { $gt:[ { $size:'$userLikeEntry' }, 0 ] }
-        }
-      },
-
-      // 9) final projection: rename fields, pick bookmark timestamps + enriched post shape
-      {
-        $project: {
-          // bookmark fields
-          _id: 1,               // the post/reel _id
-          playlistID: 1,
-          itemID: 1,
-          itemType: 1,
-          isDeleted: 1,
-          createdAt: '$createdAtBookmark',  
-          updatedAt: '$updatedAtBookmark', 
-
-          // enriched post shape
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          viewCount: 1,
-
-          // music-specific fields 
-          song: 1,
-          link: 1,
-          author: 1,
-          coverImg: 1,
-
-          // lookups
-          media: 1,
-          'user._id': 1,
-          'user.handleName': 1,
-          'user.profilePic': 1,
-          commentCount: 1,
-          likeCount: 1,
-          isLike: 1,
-          isFollow: 1,
-        }
-      }
-    ];
-
-    const data = await this.itemModel.aggregate(pipeline).exec();
-    return { data, total };
+    return result;
   }
   
   // validate that a playlist belongs to the given user, used to create or delete
@@ -440,7 +215,7 @@ export class BookmarkItemService {
     return modifiedCount;
   }
 
-  // add or readd a music item to a playlist
+  // add or read a music item to a playlist
   async createMusic(
     playlistId: string,
     musicId: string,
@@ -519,6 +294,17 @@ export class BookmarkItemService {
       isDeleted: false,
     });
     return count > 0;
+  }
+
+  async markItemsDeletedByPlaylist(playlistId: string): Promise<number> {
+    if (!Types.ObjectId.isValid(playlistId)) {
+      throw new BadRequestException('Invalid playlist ID format.');
+    }
+    const result = await this.itemModel.updateMany(
+      { playlistID: new Types.ObjectId(playlistId), isDeleted: false },
+      { $set: { isDeleted: true } },
+    );
+    return result.modifiedCount;
   }
 
   /** 
@@ -606,5 +392,50 @@ export class BookmarkItemService {
       notFoundCount: postIds.length - existingBookmarks.length,
       details
     };
+  }
+
+  async findAllByUser(
+    userId: string,
+    page = 1,
+    limit = 20,
+  ) {
+    const uid = new Types.ObjectId(userId);
+
+    const raw = await this.itemModel
+      .find({ playlistID: { $in: await this.getPlaylistIds(uid) }, isDeleted: false })
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .select('itemID createdAt playlistID')
+      .lean({ getters: true, virtuals: false });
+
+    const total  = await this.itemModel.countDocuments({ playlistID: { $in: await this.getPlaylistIds(uid) }, isDeleted: false });
+    const ids    = raw.map((r) => r.itemID);
+
+    const { items, pagination } = await this.postService.runPagedAggregation(
+      { _userId: userId, _id: { $in: ids }, type: { $in: ['post','reel'] } },
+      page,
+      limit
+    );
+
+    const byId = new Map(raw.map(r => [String(r.itemID), r]));
+    const data = items.map(i => ({
+      ...i,
+      bookmark: {
+        playlistID: byId.get(String(i._id))!.playlistID,
+        createdAtBookmark: byId.get(String(i._id))!.createdAt,
+      }
+    }));
+
+    return { data, total, pagination };
+  }
+
+  // helper to fetch all playlist IDs
+  private async getPlaylistIds(uid: Types.ObjectId) {
+    const pls = await this.playlistModel
+      .find({ userID: uid, isDeleted: false })
+      .select('_id')
+      .lean();
+    return pls.map(p => p._id);
   }
 }

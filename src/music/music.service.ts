@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { MusicDto } from './dto/music.dto';
-import { Music } from './music.schema';
+import { Music, MusicDocument } from './music.schema';
 
 @Injectable()
 export class MusicService {
@@ -25,6 +25,35 @@ export class MusicService {
       throw new Error('Music not found');
     }
     return music;
+  }
+
+  async findManyByIds(
+    ids: Types.ObjectId[],
+  ): Promise<Array<{
+    _id: Types.ObjectId;
+    type: 'music';
+    song: string;
+    link: string;
+    author: string;
+    coverImg: string;
+  }>> {
+    if (!Array.isArray(ids) || ids.some((id) => !Types.ObjectId.isValid(id))) {
+      throw new BadRequestException('Invalid music ID(s) provided');
+    }
+
+    const docs = await this.musicModel
+      .find({ _id: { $in: ids } })
+      .lean<Array<Music & { _id: Types.ObjectId }>>()  
+      .exec();
+
+    return docs.map((m) => ({
+      _id:      m._id,
+      type:     'music' as const,
+      song:     m.song,
+      link:     m.link,
+      author:   m.author,
+      coverImg: m.coverImg,
+    }));
   }
 
   async findAll(userId: string): Promise<

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -13,9 +13,11 @@ import { Music, MusicDocument } from 'src/music/music.schema';
 
 @Injectable()
 export class BookmarkPlaylistService {
+  private readonly PROTECTED = ['Tất cả bài đăng', 'Âm nhạc'];
   constructor(
     @InjectModel(BookmarkPlaylist.name)
     private readonly playlistModel: Model<BookmarkPlaylistDocument>,
+    @Inject(forwardRef(() => BookmarkItemService))
     private readonly bookmarkItemService: BookmarkItemService,
     @InjectModel(BookmarkItem.name) 
     private readonly bookmarkItemModel: Model<BookmarkItemDocument>,
@@ -45,7 +47,7 @@ export class BookmarkPlaylistService {
     // 2) if none exist, insert defaults and reload
     if (playlists.length === 0) {
       const defaults = [
-        { userID: uid, playlistName: 'Tất cả' },
+        { userID: uid, playlistName: 'Tất cả bài đăng' },
         { userID: uid, playlistName: 'Âm nhạc' },
       ];
       await this.playlistModel.insertMany(defaults);
@@ -192,11 +194,6 @@ export class BookmarkPlaylistService {
     return created.save();
   }
 
-  /**
-   * renames (and/or updates coverImg of) an existing playlist.
-   * - Ensures the playlist belongs to the user and is not deleted.
-   * - Ensures the new name is not exactly the same as another non-deleted playlist.
-   */
   async renamePlaylist(
     playlistId: string,
     userId: string,
@@ -210,7 +207,7 @@ export class BookmarkPlaylistService {
       throw new BadRequestException('Invalid user ID format.');
     }
     if (!newName || typeof newName !== 'string') {
-      throw new BadRequestException('new playlistName is required and must be a string.');
+      throw new BadRequestException('Cần có tên danh sách mới.');
     }
 
     // fetch and validate ownership
@@ -224,7 +221,7 @@ export class BookmarkPlaylistService {
       _id: { $ne: (playlist as Document)._id }, 
     });
     if (duplicate) {
-      throw new BadRequestException('You already have a playlist with that exact name.');
+      throw new BadRequestException('Bạn đã có 1 danh sách với tên này.');
     }
 
     // update fields
@@ -233,6 +230,46 @@ export class BookmarkPlaylistService {
       playlist.coverImg = coverImg;
     }
     return playlist.save();
+  }
+
+  async deletePlaylist(userId: string, playlistId: string): Promise<{
+    playlistDeleted: boolean;
+    itemsDeleted: number;
+  }> {
+    if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(playlistId)) {
+      throw new BadRequestException('Invalid ID format.');
+    }
+    const uid = new Types.ObjectId(userId);
+    const pid = new Types.ObjectId(playlistId);
+
+    // 1) fetch & validate ownership
+    const playlist = await this.playlistModel.findOne({
+      _id: pid,
+      userID: uid,
+      isDeleted: false,
+    });
+    if (!playlist) {
+      throw new NotFoundException('Không tìm thấy danh sách.');
+    }
+
+    // 2) protect special playlists
+    if (this.PROTECTED.includes(playlist.playlistName)) {
+      throw new BadRequestException(`Không được xóa danh sách '${playlist.playlistName}'.`);
+    }
+
+    // 3) soft-delete the playlist
+    const plUpdate = await this.playlistModel.updateOne(
+      { _id: pid },
+      { $set: { isDeleted: true } },
+    );
+
+    // 4) soft-delete all its items
+    const itemsDeleted = await this.bookmarkItemService.markItemsDeletedByPlaylist(playlistId);
+
+    return {
+      playlistDeleted: plUpdate.modifiedCount === 1,
+      itemsDeleted,
+    };
   }
 
   /**
@@ -308,7 +345,7 @@ export class BookmarkPlaylistService {
 
     const playlist = await this.playlistModel.findOne({
       userID: uid,
-      playlistName: { $in: ['All posts', 'Tất cả'] },
+      playlistName: { $in: ['All posts', 'Tất cả bài đăng'] },
       isDeleted: false,
     }).exec();
 

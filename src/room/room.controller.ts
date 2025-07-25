@@ -15,6 +15,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { AddUserToRoomDto, CreateRoomDto } from './dto/room.dto';
 import { UpdateThemeRoomDto } from './dto/update-theme-room.dto';
 import { UpdateRoomNameDto } from './dto/update-room-name.dto';
+import { AddUsersDto } from './dto/add-users.dto';
 
 @Controller('rooms')
 @UseGuards(JwtRefreshAuthGuard)
@@ -100,5 +101,40 @@ export class RoomController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.roomService.getUsersInRoom(roomId, userId);
+  }
+
+  @Get(':roomId/available-friends')
+  getAvailableFriends(
+    @Param('roomId') roomId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.roomService.getAvailableFriends(roomId, userId);
+  }
+
+  @Post(':roomId/users/batch')
+  addUsersBatch(
+    @Param('roomId') roomId: string,
+    @Body() dto: AddUsersDto,
+  ) {
+    return this.roomService.addUsersToRoomBatch(roomId, dto.user_ids);
+  }
+
+  @Delete(':id/leave')
+  async leaveRoom(@Param('id') roomId: string, @CurrentUser('sub') userId: string) {
+    const result = await this.roomService.leaveRoom(roomId, userId);
+    if (result.deleted) {
+      return { message: 'Bạn là người cuối cùng trong nhóm, nhóm đã bị xóa.' };
+    }
+    return { message: 'Bạn đã rời khỏi nhóm thành công.' };
+  }
+
+  @Delete(':id/users/:memberId')
+  async removeMember(
+    @Param('id') roomId: string,
+    @Param('memberId') memberId: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    await this.roomService.removeMember(roomId, userId, memberId);
+    return { message: 'Xóa thành viên thành công.' };
   }
 }

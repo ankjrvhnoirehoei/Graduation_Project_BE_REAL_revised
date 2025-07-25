@@ -372,15 +372,22 @@ export class RelationService {
   }
 
   async getRelationShip(fromUserId: string, toUserId: string) {
-    const relation = await this.relationModel.exists({
-      userOneID: new Types.ObjectId(fromUserId),
-      userTwoID: new Types.ObjectId(toUserId),
-      relation: { $regex: '^FOLLOW' },
+    const relation = await this.relationModel.findOne({
+      $or: [
+        {
+          userOneID: new Types.ObjectId(fromUserId),
+          userTwoID: new Types.ObjectId(toUserId),
+        },
+        {
+          userOneID: new Types.ObjectId(toUserId),
+          userTwoID: new Types.ObjectId(fromUserId),
+        }
+      ]
     }).lean();
-    console.log(relation);
+
     return {
       message: 'Success',
-      data: relation !== null,
+      data: relation?.relation === RelationType.FOLLOW_FOLLOW,
     };
   }
 }

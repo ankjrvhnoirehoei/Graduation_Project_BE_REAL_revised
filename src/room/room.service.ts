@@ -109,19 +109,25 @@ export class RoomService {
   }
 
   async getRoomsOfUser(userId: string): Promise<any[]> {
+    // Gắn kiểu cho lean để TS biết có field createdAt
     const rooms = await this.roomModel
       .find({ user_ids: new Types.ObjectId(userId), type: 'accept' })
       .populate('user_ids', '_id handleName profilePic')
-      .lean();
+      .lean<{
+        map(arg0: (room: any) => any): unknown;
+        _id: Types.ObjectId;
+        name: string;
+        theme?: string;
+        type: string;
+        user_ids: Types.ObjectId[];
+        created_by: Types.ObjectId;
+        createdAt: Date;
+      }>();
 
     const stringRoomIds = rooms.map((room) => room._id.toString());
 
     const messages = await this.messageModel.aggregate([
-      {
-        $match: {
-          roomId: { $in: stringRoomIds },
-        },
-      },
+      { $match: { roomId: { $in: stringRoomIds } } },
       { $sort: { createdAt: -1 } },
       {
         $group: {
@@ -136,35 +142,42 @@ export class RoomService {
     ]);
 
     const latestMessageMap = new Map<string, any>();
-    messages.forEach((msg) => {
+    for (const msg of messages) {
       latestMessageMap.set(msg._id, msg);
-    });
+    }
 
-    const roomsWithMessages = rooms.map((room) => {
-      const latestMessage = latestMessageMap.get(room._id.toString()) ?? null;
+    // Ghép room với latestMessage, giữ nguyên createdAt để sort
+    const roomsWithMessages: any = rooms.map((room) => ({
+      _id: room._id,
+      name: room.name,
+      theme: room.theme,
+      type: room.type,
+      user_ids: room.user_ids,
+      created_by: room.created_by,
+      createdAt: room.createdAt,
+      latestMessage: latestMessageMap.get(room._id.toString()) ?? null,
+    }));
 
-      return {
-        _id: room._id,
-        name: room.name,
-        theme: room.theme,
-        type: room.type,
-        user_ids: room.user_ids,
-        created_by: room.created_by,
-        latestMessage,
-      };
-    });
-
+    // Sort: so sánh max giữa thời điểm tạo room và thời điểm tin nhắn mới nhất
     roomsWithMessages.sort((a, b) => {
-      const aTime = a.latestMessage?.createdAt
+      const aRoomTime = a.createdAt.getTime();
+      const bRoomTime = b.createdAt.getTime();
+
+      const aMsgTime = a.latestMessage?.createdAt
         ? new Date(a.latestMessage.createdAt).getTime()
         : 0;
-      const bTime = b.latestMessage?.createdAt
+      const bMsgTime = b.latestMessage?.createdAt
         ? new Date(b.latestMessage.createdAt).getTime()
         : 0;
+
+      const aTime = Math.max(aRoomTime, aMsgTime);
+      const bTime = Math.max(bRoomTime, bMsgTime);
+
       return bTime - aTime;
     });
 
-    return roomsWithMessages;
+    // Trả về đúng structure ban đầu (bỏ createdAt tạm)
+    return roomsWithMessages.map(({ createdAt, ...rest }) => rest);
   }
 
   async getWaitingRoomsOfUser(userId: string): Promise<any[]> {
@@ -303,53 +316,59 @@ export class RoomService {
     roomId: string,
     currentUserId: string,
   ): Promise<{
-    count: number;
-    users: Array<{
-      user_id: string;
-      username: string;
-      handleName: string;
-      bio?: string;
-      gender?: string;
-      profilePic?: string;
-      isCreated: boolean;
-      isFollow: boolean;
-    }>;
+    /* ... */
   }> {
-    // 1) Lấy room + populate user_ids
+    // 1) Lấy room + userDocs như cũ…
     const room = await this.roomModel
       .findById(roomId)
       .populate('user_ids', 'username handleName bio gender profilePic')
       .lean()
       .exec();
-
-    if (!room) {
-      throw new NotFoundException('Room not found');
-    }
+    if (!room) throw new NotFoundException('Room not found');
 
     const userDocs = room.user_ids as any[];
-    const userIds = userDocs.map((u) => u._id.toString());
+    // ép tất cả userIds trong room thành ObjectId
+    const roomUserIds = userDocs.map(
+      (u) => new Types.ObjectId(u._id.toString()),
+    );
 
+    // ép currentUserId về ObjectId
+    const me = new Types.ObjectId(currentUserId);
+
+    // 2) Query relation “follow” hai chiều, dùng ObjectId cho cả hai bên
     const relations = await this.relationModel
       .find({
-        userOneID: new Types.ObjectId(currentUserId),
-        userTwoID: { $in: userIds.map((id) => new Types.ObjectId(id)) },
+        $or: [
+          {
+            userOneID: me,
+            userTwoID: { $in: roomUserIds },
+            relation: {
+              $in: [RelationType.FOLLOW_NULL, RelationType.FOLLOW_FOLLOW],
+            },
+          },
+          {
+            userTwoID: me,
+            userOneID: { $in: roomUserIds },
+            relation: {
+              $in: [RelationType.NULL_FOLLOW, RelationType.FOLLOW_FOLLOW],
+            },
+          },
+        ],
       })
       .lean();
 
-    // map để lookup nhanh
-    const relationMap = new Map<string, RelationType>();
+    // 3) Build set để lookup nhanh
+    const followSet = new Set<string>();
     relations.forEach((rel) => {
-      relationMap.set(rel.userTwoID.toString(), rel.relation);
+      const u1 = rel.userOneID.toString();
+      const u2 = rel.userTwoID.toString();
+      const other = u1 === currentUserId ? u2 : u1;
+      followSet.add(other);
     });
 
     // 4) Build kết quả
     const users = userDocs.map((u) => {
       const id = u._id.toString();
-      // isCreated nếu chính là creator
-      const isCreated = room.created_by.toString() === id;
-      const relType = relationMap.get(id);
-      const isFollow = relType ? relType.split('_')[0] === 'FOLLOW' : false;
-
       return {
         user_id: id,
         username: u.username,
@@ -357,8 +376,8 @@ export class RoomService {
         bio: u.bio,
         gender: u.gender,
         profilePic: u.profilePic,
-        isCreated,
-        isFollow,
+        isCreated: room.created_by.toString() === id,
+        isFollow: followSet.has(id),
       };
     });
 
@@ -366,5 +385,152 @@ export class RoomService {
       count: users.length,
       users,
     };
+  }
+
+  async getAvailableFriends(
+    roomId: string,
+    currentUserId: string,
+  ): Promise<
+    Array<{
+      user_id: string;
+      username: string;
+      handleName: string;
+      bio?: string;
+      gender?: string;
+      profilePic?: string;
+    }>
+  > {
+    // 1) Lấy room + user_ids
+    const room = await this.roomModel
+      .findById(roomId)
+      .select('user_ids')
+      .lean()
+      .exec();
+    if (!room) throw new NotFoundException('Room not found');
+
+    const roomUserIds = (room.user_ids as Types.ObjectId[]).map((id) =>
+      id.toString(),
+    );
+
+    // 2) Query tất cả follow‑follow dùng ObjectId
+    const me = new Types.ObjectId(currentUserId);
+    const rels = await this.relationModel
+      .find({
+        relation: RelationType.FOLLOW_FOLLOW,
+        $or: [{ userOneID: me }, { userTwoID: me }],
+      })
+      .populate('userOneID', 'username handleName bio gender profilePic')
+      .populate('userTwoID', 'username handleName bio gender profilePic')
+      .lean();
+
+    // 3) Map ra friend và lọc trùng + đã trong room
+    const available = rels
+      .map((rel) => {
+        const u1 = rel.userOneID as any;
+        const u2 = rel.userTwoID as any;
+        const friend = u1._id.toString() === currentUserId ? u2 : u1;
+        return {
+          user_id: friend._id.toString(),
+          username: friend.username,
+          handleName: friend.handleName,
+          bio: friend.bio,
+          gender: friend.gender,
+          profilePic: friend.profilePic,
+        };
+      })
+      // lọc bỏ những ai đã trong room
+      .filter((f) => !roomUserIds.includes(f.user_id))
+      // de‑dup
+      .filter(
+        (f, idx, arr) => arr.findIndex((x) => x.user_id === f.user_id) === idx,
+      );
+
+    return available;
+  }
+
+  async addUsersToRoomBatch(
+    roomId: string,
+    userIdsToAdd: string[],
+  ): Promise<Room> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) {
+      throw new NotFoundException('Room not found');
+    }
+
+    // convert và lọc những user chưa có trong room
+    const existingIds = room.user_ids.map((id) => id.toString());
+    const toAdd = userIdsToAdd
+      .map((id) => new Types.ObjectId(id))
+      .filter((oid) => !existingIds.includes(oid.toString()));
+
+    if (toAdd.length) {
+      room.user_ids.push(...toAdd);
+      await room.save();
+    }
+
+    // populate trước khi trả về
+    return this.roomModel
+      .findById(roomId)
+      .populate('user_ids', '_id handleName profilePic')
+      .exec();
+  }
+
+  async leaveRoom(
+    roomId: string,
+    userId: string,
+  ): Promise<{ deleted: boolean }> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) {
+      throw new NotFoundException('Không tìm thấy nhóm.');
+    }
+
+    const uid = new Types.ObjectId(userId);
+    const isMember = room.user_ids.some((id) => id.equals(uid));
+    if (!isMember) {
+      throw new ForbiddenException('Bạn không thuộc nhóm này.');
+    }
+
+    // 1. Remove user khỏi mảng
+    room.user_ids = room.user_ids.filter((id) => !id.equals(uid));
+
+    // 2. Nếu mảng rỗng → xóa nhóm
+    if (room.user_ids.length === 0) {
+      await this.roomModel.findByIdAndDelete(roomId);
+      return { deleted: true };
+    }
+
+    // 3. Nếu người leave là creator và vẫn còn members → chọn creator mới
+    if (room.created_by.equals(uid)) {
+      room.created_by = room.user_ids[0]; // hoặc logic pick khác
+    }
+
+    await room.save();
+    return { deleted: false };
+  }
+
+  async removeMember(
+    roomId: string,
+    leaderId: string,
+    memberId: string,
+  ): Promise<void> {
+    const room = await this.roomModel.findById(roomId);
+    if (!room) {
+      throw new NotFoundException('Không tìm thấy nhóm.');
+    }
+
+    const leaderObjId = new Types.ObjectId(leaderId);
+    if (!room.created_by.equals(leaderObjId)) {
+      throw new ForbiddenException('Chỉ nhóm trưởng mới được xóa thành viên.');
+    }
+
+    const targetObjId = new Types.ObjectId(memberId);
+    const isMember = room.user_ids.some((id) => id.equals(targetObjId));
+    if (!isMember) {
+      throw new NotFoundException('Thành viên này không có trong nhóm.');
+    }
+
+    // Lọc ra member
+    room.user_ids = room.user_ids.filter((id) => !id.equals(targetObjId));
+    await room.save();
   }
 }
