@@ -493,7 +493,7 @@ export class UserService {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .select('-password -refreshToken -fcmToken')
+      .select('-password -refreshToken -fcmToken -isVip -wantNotified')
       .lean()
       .exec();
 
