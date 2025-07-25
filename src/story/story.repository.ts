@@ -121,4 +121,70 @@ export class StoryRepository extends AbstractRepository<StoryDocument> {
   async deleteStory(storyId: Types.ObjectId) {
     return this.findOneAndDelete({ _id: storyId });
   }
+
+  // Admin methods
+  async updateViewCount(storyId: Types.ObjectId) {
+    return this.findOneAndUpdate(
+      { _id: storyId },
+      { $inc: { viewCount: 1 } }
+    );
+  }
+
+  async flagStory(storyId: Types.ObjectId, isFlagged: boolean = true) {
+    return this.findOneAndUpdate(
+      { _id: storyId },
+      { isFlagged }
+    );
+  }
+
+  async enableDisableStory(storyId: Types.ObjectId, isEnable: boolean) {
+    return this.findOneAndUpdate(
+      { _id: storyId },
+      { isEnable }
+    );
+  }
+
+  async getStoriesWithPagination(
+    filter: any = {},
+    page: number = 1,
+    limit: number = 10,
+    sort: any = { createdAt: -1 }
+  ) {
+    const skip = (page - 1) * limit;
+    
+    const [stories, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .populate('ownerId', 'username handleName profilePic')
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.model.countDocuments(filter)
+    ]);
+
+    return {
+      data: stories,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit,
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPrevPage: page > 1
+      }
+    };
+  }
+
+  async searchStories(keyword: string, page: number = 1, limit: number = 10) {
+    const filter = {
+      $or: [
+        { 'content.text': { $regex: keyword, $options: 'i' } },
+        { collectionName: { $regex: keyword, $options: 'i' } }
+      ]
+    };
+
+    return this.getStoriesWithPagination(filter, page, limit);
+  }
 }
