@@ -160,4 +160,193 @@ export class ReportStoryService {
       data: statistics,
     };
   }
+
+  // Admin methods to match interface
+  async getReportReasonsActivity(adminId: string, range: '7days' | '30days' | 'year') {
+    // Implementation for report reasons activity
+    const now = new Date();
+    let startDate: Date;
+    
+    switch (range) {
+      case '7days':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '30days':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case 'year':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+    }
+
+    const reasonStats = await this.reportStoryRepo.model.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: now }
+        }
+      },
+      {
+        $group: {
+          _id: '$reason',
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      }
+    ]);
+
+    return { data: reasonStats };
+  }
+
+  async getAllReports(query: { page: number; limit: number }) {
+    const { page, limit } = query;
+    const skip = (page - 1) * limit;
+
+    const [reports, total] = await Promise.all([
+      this.reportStoryRepo.model
+        .find({})
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.reportStoryRepo.model.countDocuments({})
+    ]);
+
+    return {
+      data: reports,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit
+      }
+    };
+  }
+
+  async getUnreadReports(query: { page: number; limit: number }) {
+    const { page, limit } = query;
+    const skip = (page - 1) * limit;
+
+    const [reports, total] = await Promise.all([
+      this.reportStoryRepo.model
+        .find({ isRead: { $ne: true } })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.reportStoryRepo.model.countDocuments({ isRead: { $ne: true } })
+    ]);
+
+    return {
+      data: reports,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit
+      }
+    };
+  }
+
+  async getUnresolvedReports(query: { page: number; limit: number }) {
+    const { page, limit } = query;
+    const skip = (page - 1) * limit;
+
+    const [reports, total] = await Promise.all([
+      this.reportStoryRepo.model
+        .find({ 
+          status: { $in: ['pending', 'in_progress'] }
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.reportStoryRepo.model.countDocuments({ 
+        status: { $in: ['pending', 'in_progress'] }
+      })
+    ]);
+
+    return {
+      data: reports,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit
+      }
+    };
+  }
+
+  async markAllReportsAsRead() {
+    const result = await this.reportStoryRepo.model.updateMany(
+      { isRead: { $ne: true } },
+      { $set: { isRead: true } }
+    );
+
+    return { modifiedCount: result.modifiedCount };
+  }
+
+  async getReportsByTargetId(targetId: string, query: { page: number; limit: number }) {
+    const { page, limit } = query;
+    const skip = (page - 1) * limit;
+
+    const [reports, total] = await Promise.all([
+      this.reportStoryRepo.model
+        .find({ targetId: new Types.ObjectId(targetId) })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.reportStoryRepo.model.countDocuments({ targetId: new Types.ObjectId(targetId) })
+    ]);
+
+    return {
+      data: reports,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit
+      }
+    };
+  }
+
+  async dismissReport(reportId: string) {
+    const updatedReport = await this.reportStoryRepo.findOneAndUpdate(
+      { _id: new Types.ObjectId(reportId) },
+      { 
+        status: 'dismissed',
+        isRead: true,
+        reviewedAt: new Date()
+      }
+    );
+
+    if (!updatedReport) {
+      throw new NotFoundException('Report not found');
+    }
+
+    return updatedReport;
+  }
+
+  async resolveReport(reportId: string) {
+    const updatedReport = await this.reportStoryRepo.findOneAndUpdate(
+      { _id: new Types.ObjectId(reportId) },
+      { 
+        status: 'resolved',
+        isRead: true,
+        reviewedAt: new Date()
+      }
+    );
+
+    if (!updatedReport) {
+      throw new NotFoundException('Report not found');
+    }
+
+    return updatedReport;
+  }
 }

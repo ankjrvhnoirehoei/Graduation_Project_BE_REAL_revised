@@ -2,8 +2,7 @@ import { AbstractRepository } from "@app/common";
 import { Injectable, Logger } from "@nestjs/common";
 import { Model, Types } from "mongoose";
 import { InjectModel } from "@nestjs/mongoose";
-import { ReportStory as ReportStoryDocument, ReportStatus } from "./schema/report-story.schema";
-import { ReportReason } from 'src/report-content/report-content.schema';
+import { ReportStory as ReportStoryDocument, ReportStatus, ReportReason } from "./schema/report-story.schema";
 
 @Injectable()
 export class ReportStoryRepository extends AbstractRepository<ReportStoryDocument> {

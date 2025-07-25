@@ -101,6 +101,13 @@ export class ReportStory extends AbstractDocument {
   })
   priority: ReportPriority;
 
+  @Prop({ 
+    type: Boolean,
+    default: false,
+    index: true
+  })
+  isRead?: boolean;
+
   @Prop({
     type: Object,
     default: {}

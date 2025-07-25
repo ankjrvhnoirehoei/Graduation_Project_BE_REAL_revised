@@ -11,20 +11,28 @@ import { PostService } from 'src/post/post.service';
 import { UserService } from 'src/user/user.service';
 import { ReportUserService } from 'src/report-user/report-user.service';
 import { ReportContentService } from 'src/report-content/report-content.service';
+import { ReportStoryService } from 'src/report-story/report-story.service';
+import { StoryService } from 'src/story/story.service';
 type RangeKey = 'default' | '7days' | '30days' | 'year';
-type ReportMode = 'user' | 'content';
+type ReportMode = 'user' | 'content' | 'story';
 @Controller('admin')
 @UseGuards(JwtRefreshAuthGuard)
 export class AdminController {
-  constructor(private readonly adminService: AdminService, 
+  constructor(private readonly adminService: AdminService,
     private readonly postService: PostService,
     private readonly userService: UserService,
     private readonly reportUserService: ReportUserService,
     private readonly reportContentService: ReportContentService,
-  ) {}
+    private readonly reportStoryService: ReportStoryService,
+    private readonly storyService: StoryService,
+  ) { }
 
   private getReportService(mode: ReportMode) {
-    return mode === 'user' ? this.reportUserService : this.reportContentService;
+    return mode === 'user'
+      ? this.reportUserService
+      : mode === 'content'
+        ? this.reportContentService
+        : this.reportStoryService;
   }
 
   private async populateReportData(reports: any[], mode: ReportMode) {
@@ -32,11 +40,13 @@ export class AdminController {
       reports.map(async (report) => {
         const [reporter, target] = await Promise.all([
           this.userService.findById(report.reporterId.toString()),
-          mode === 'user' 
+          mode === 'user'
             ? this.userService.findById(report.targetId.toString())
-            : this.postService.getPostById(report.targetId.toString(), '682ac4f9f7612a80f6146b88')
+            : mode === 'content'
+              ? this.postService.getPostById(report.targetId.toString(), '682ac4f9f7612a80f6146b88')
+              : this.getStoryById(report.targetId.toString()) // For story reports
         ]);
-        
+
         return {
           ...report,
           reporter,
@@ -44,6 +54,17 @@ export class AdminController {
         };
       })
     );
+  }
+
+  private async getStoryById(storyId: string) {
+    try {
+      // Use the story service to get story details
+      const result = await this.storyService.findStoryById([storyId], 'admin');
+      return result.data && result.data.length > 0 ? result.data[0] : { id: storyId, content: 'Story not found', mediaUrl: null };
+    } catch (error) {
+      // Return basic info if story not found
+      return { id: storyId, content: 'Story not found', mediaUrl: null };
+    }
   }
 
   // Post routes
@@ -98,10 +119,10 @@ export class AdminController {
 
     switch (range) {
       case '7days':
-        from = new Date(todayStart.getTime() - 6 * 24*60*60*1000);
+        from = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
         break;
       case '30days':
-        from = new Date(todayStart.getTime() - 29 * 24*60*60*1000);
+        from = new Date(todayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
         break;
       case 'year':
         from = new Date(now.getFullYear(), 0, 1);
@@ -161,7 +182,7 @@ export class AdminController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
     return this.adminService.getRecommendedUsers(userId, page, limit);
-  }  
+  }
 
   @Patch('users/disable/:id')
   async disableUser(
@@ -271,14 +292,14 @@ export class AdminController {
     range: '7days' | '30days' | 'year',
   ) {
     await this.adminService.ensureAdmin(adminId);
-    
-    if (!['user', 'content'].includes(reportMode)) {
-      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+
+    if (!['user', 'content', 'story'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user", "content", or "story"');
     }
 
     const reportService = this.getReportService(reportMode);
     const result = await reportService.getReportReasonsActivity(adminId, range);
-    
+
     return { success: true, ...result };
   }
 
@@ -291,15 +312,15 @@ export class AdminController {
     @Param('mode') reportMode: ReportMode,
   ) {
     await this.adminService.ensureAdmin(adminId);
-    
-    if (!['user', 'content'].includes(reportMode)) {
-      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+
+    if (!['user', 'content', 'story'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user", "content", or "story"');
     }
 
     const reportService = this.getReportService(reportMode);
     const reports = await reportService.getAllReports({ page, limit });
     const reportsWithUsers = await this.populateReportData(reports.data, reportMode);
-    
+
     return {
       ...reports,
       data: reportsWithUsers,
@@ -315,15 +336,15 @@ export class AdminController {
     @Param('mode') reportMode: ReportMode,
   ) {
     await this.adminService.ensureAdmin(adminId);
-    
-    if (!['user', 'content'].includes(reportMode)) {
-      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+
+    if (!['user', 'content', 'story'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user", "content", or "story"');
     }
 
     const reportService = this.getReportService(reportMode);
     const reports = await reportService.getUnreadReports({ page, limit });
     const reportsWithUsers = await this.populateReportData(reports.data, reportMode);
-    
+
     return {
       ...reports,
       data: reportsWithUsers,
@@ -339,15 +360,15 @@ export class AdminController {
     @Param('mode') reportMode: ReportMode,
   ) {
     await this.adminService.ensureAdmin(adminId);
-    
-    if (!['user', 'content'].includes(reportMode)) {
-      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+
+    if (!['user', 'content', 'story'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user", "content", or "story"');
     }
 
     const reportService = this.getReportService(reportMode);
     const reports = await reportService.getUnresolvedReports({ page, limit });
     const reportsWithUsers = await this.populateReportData(reports.data, reportMode);
-    
+
     return {
       ...reports,
       data: reportsWithUsers,
@@ -361,21 +382,21 @@ export class AdminController {
     @Param('mode') reportMode: ReportMode,
   ) {
     await this.adminService.ensureAdmin(adminId);
-    
-    if (!['user', 'content'].includes(reportMode)) {
-      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+
+    if (!['user', 'content', 'story'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user", "content", or "story"');
     }
 
     const reportService = this.getReportService(reportMode);
     const result = await reportService.markAllReportsAsRead();
-    
+
     return {
       message: 'Đã đánh dấu tất cả báo cáo là đã đọc',
       modifiedCount: result.modifiedCount,
     };
   }
 
-  // Get reports by target (user or content)
+  // Get reports by target (user, content, or story)
   @Get('reports/:mode/target/:targetId')
   async getReportsByTarget(
     @CurrentUser('sub') adminId: string,
@@ -385,31 +406,33 @@ export class AdminController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
   ) {
     await this.adminService.ensureAdmin(adminId);
-    
-    if (!['user', 'content'].includes(reportMode)) {
-      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+
+    if (!['user', 'content', 'story'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user", "content", or "story"');
     }
 
     const reportService = this.getReportService(reportMode);
     const reports = await reportService.getReportsByTargetId(targetId, { page, limit });
-    
+
     // Get target details based on mode
-    const target = reportMode === 'user' 
+    const target = reportMode === 'user'
       ? await this.userService.findById(targetId)
-      : await this.postService.getPostById(targetId, '682ac4f9f7612a80f6146b88');
-    
+      : reportMode === 'content'
+        ? await this.postService.getPostById(targetId, '682ac4f9f7612a80f6146b88')
+        : await this.getStoryById(targetId);
+
     // Populate reporter details for each report
     const reportsWithReporters = await Promise.all(
       reports.data.map(async (report) => {
         const reporter = await this.userService.findById(report.reporterId.toString());
-        
+
         return {
           ...report,
           reporter,
         };
       })
     );
-    
+
     return {
       target,
       reports: {
@@ -427,14 +450,14 @@ export class AdminController {
     @Param('id') reportId: string,
   ) {
     await this.adminService.ensureAdmin(adminId);
-    
-    if (!['user', 'content'].includes(reportMode)) {
-      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+
+    if (!['user', 'content', 'story'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user", "content", or "story"');
     }
 
     const reportService = this.getReportService(reportMode);
     const report = await reportService.dismissReport(reportId);
-    
+
     return {
       message: 'Báo cáo đã được bỏ qua',
       report,
@@ -449,17 +472,140 @@ export class AdminController {
     @Param('id') reportId: string,
   ) {
     await this.adminService.ensureAdmin(adminId);
-    
-    if (!['user', 'content'].includes(reportMode)) {
-      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+
+    if (!['user', 'content', 'story'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user", "content", or "story"');
     }
 
     const reportService = this.getReportService(reportMode);
     const report = await reportService.resolveReport(reportId);
-    
+
     return {
       message: 'Báo cáo đã được giải quyết',
       report,
     };
+  }
+
+  // Story Analytics & Statistics
+  @Get('stories/activity')
+  async getStoryActivity(
+    @CurrentUser('sub') adminId: string,
+    @Query('range', new DefaultValuePipe('7days'))
+    range: '7days' | '30days' | 'year',
+  ) {
+    return this.adminService.getStoryActivity(adminId, range);
+  }
+
+  @Get('stories/engagement')
+  async getStoryEngagement(
+    @CurrentUser('sub') adminId: string,
+    @Query('range', new DefaultValuePipe('7days'))
+    range: '7days' | '30days' | 'year',
+  ) {
+    return this.adminService.getStoryEngagement(adminId, range);
+  }
+
+  @Get('stories/summary')
+  async getStorySummary(@CurrentUser('sub') adminId: string) {
+    return this.adminService.getStorySummary(adminId);
+  }
+
+  @Get('stories/summary-stories')
+  async getStorySummaryWithTrends(@CurrentUser('sub') adminId: string) {
+    return this.adminService.getStorySummaryWithTrends(adminId);
+  }
+
+  // Story Management
+  @Get('stories/new')
+  async getNewStories(
+    @CurrentUser('sub') adminId: string,
+    @Query('range', new DefaultValuePipe('default')) range: 'default' | '7days' | '30days' | 'year',
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let from: Date, to: Date = now;
+
+    switch (range) {
+      case '7days':
+        from = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
+        break;
+      case '30days':
+        from = new Date(todayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
+        break;
+      case 'year':
+        from = new Date(now.getFullYear(), 0, 1);
+        break;
+      default:
+        from = todayStart;
+    }
+
+    return this.adminService.getNewStoriesByDate(adminId, from, to, page, limit);
+  }
+
+  @Patch('stories/disable/:id')
+  async disableStory(
+    @CurrentUser('sub') adminId: string,
+    @Param('id') storyId: string,
+  ) {
+    return this.adminService.disableStory(adminId, storyId);
+  }
+
+  // Additional Story Endpoints
+  @Get('stories/search')
+  async searchStories(
+    @CurrentUser('sub') adminId: string,
+    @Query('keyword') keyword: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+
+    if (!keyword || keyword.trim() === '') {
+      throw new NotFoundException('Keyword is required');
+    }
+
+    const result = await this.storyService.searchStories(keyword.trim(), page, limit);
+    return { success: true, ...result };
+  }
+
+  @Get('stories/:id')
+  async getStoryDetails(
+    @CurrentUser('sub') adminId: string,
+    @Param('id') storyId: string,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+
+    const result = await this.storyService.findStoryById([storyId], adminId);
+    if (!result.data || result.data.length === 0) {
+      throw new NotFoundException('Story not found');
+    }
+
+    return { success: true, data: result.data[0] };
+  }
+
+  @Patch('stories/bulk-disable')
+  async bulkDisableStories(
+    @CurrentUser('sub') adminId: string,
+    @Body('storyIds') storyIds: string[],
+  ) {
+    if (!storyIds || storyIds.length === 0) {
+      throw new NotFoundException('Story IDs are required');
+    }
+
+    return this.adminService.bulkDisableStories(adminId, storyIds);
+  }
+
+  @Patch('stories/bulk-enable')
+  async bulkEnableStories(
+    @CurrentUser('sub') adminId: string,
+    @Body('storyIds') storyIds: string[],
+  ) {
+    if (!storyIds || storyIds.length === 0) {
+      throw new NotFoundException('Story IDs are required');
+    }
+
+    return this.adminService.bulkEnableStories(adminId, storyIds);
   }
 }

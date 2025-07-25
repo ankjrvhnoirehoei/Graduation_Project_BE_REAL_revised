@@ -16,6 +16,7 @@ import { Comment, CommentDocument } from 'src/comment/comment.schema';
 import { PostLike, PostLikeDocument } from 'src/like_post/like_post.schema';
 import { ReportUser, ReportUserDocument } from 'src/report-user/report-user.schema';
 import { ReportContent, ReportContentDocument } from 'src/report-content/report-content.schema';
+import { ReportStory, ReportStoryDocument } from 'src/report-story/schema/report-story.schema';
 
 type RangePair = { start: Date; end: Date };
 type RangeKey = '7days' | '30days' | 'year';
@@ -31,8 +32,9 @@ export class AdminService {
     @InjectModel(PostLike.name) private likeModel: Model<PostLikeDocument>,
     @InjectModel(ReportUser.name) private reportUserModel: Model<ReportUserDocument>,
     @InjectModel(ReportContent.name) private reportContentModel: Model<ReportContentDocument>,
+    @InjectModel(ReportStory.name) private reportStoryModel: Model<ReportStoryDocument>,
     private readonly userService: UserService,
-  ) {}
+  ) { }
 
   public async ensureAdmin(userId: string) {
     const user = await this.userService.findById(userId);
@@ -49,7 +51,7 @@ export class AdminService {
     const now = new Date();
     // Get today's start in local timezone
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
+
     let currStart: Date, prevStart: Date, prevEnd: Date;
 
     if (key === 'default') {
@@ -87,7 +89,7 @@ export class AdminService {
     const now = new Date();
     // Get today's start in local timezone
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
+
     let from: Date;
     let unit: 'day' | 'month';
 
@@ -114,11 +116,11 @@ export class AdminService {
   public getMondayOfWeek(date: Date = new Date()): Date {
     const todayDow = date.getDay();
     const daysSinceMonday = todayDow === 0 ? 6 : todayDow - 1;
-    
+
     const monday = new Date(date);
     monday.setDate(date.getDate() - daysSinceMonday);
     monday.setHours(0, 0, 0, 0);
-    
+
     return monday;
   }
 
@@ -134,7 +136,7 @@ export class AdminService {
     const now = new Date();
     const currentYear = now.getFullYear();
     const startYear = currentYear - yearsBack;
-    
+
     return {
       startDate: new Date(startYear, 0, 1), // Jan 1 of start year
       endDate: new Date(currentYear + 1, 0, 1) // Jan 1 of next year
@@ -182,7 +184,7 @@ export class AdminService {
     }
 
     return pipeline;
-  }  
+  }
 
   // Create aggregation pipeline for timezone-aware day-of-week grouping
   public createWeeklyAggregation(startDate: Date, endDate: Date): PipelineStage[] {
@@ -250,12 +252,12 @@ export class AdminService {
 
     const dayOrder = [1, 2, 3, 4, 5, 6, 7];
     const resultMap = new Map<number, number>();
-    
+
     rawResults.forEach(({ dayOfWeek, count }) => {
       resultMap.set(dayOfWeek, count);
     });
 
-    return dayOrder.map(dayNum => 
+    return dayOrder.map(dayNum =>
       createEntry(labels[dayNum], resultMap.get(dayNum) ?? 0)
     );
   }
@@ -269,10 +271,10 @@ export class AdminService {
       pct = ((currSum - prevSum) / prevSum) * 100;
     }
 
-    const trend = pct > 0 
-      ? 'increase' 
-      : pct < 0 
-        ? 'decrease' 
+    const trend = pct > 0
+      ? 'increase'
+      : pct < 0
+        ? 'decrease'
         : 'no change';
 
     return { percentageChange: Math.round(pct), trend };
@@ -287,7 +289,7 @@ export class AdminService {
 
   async getWeeklyStats(userId: string): Promise<WeeklyPostsDto[]> {
     await this.ensureAdmin(userId);
-    
+
     const thisMonday = this.getMondayOfWeek();
     const nextMonday = new Date(thisMonday);
     nextMonday.setDate(thisMonday.getDate() + 7);
@@ -303,7 +305,7 @@ export class AdminService {
 
   async getLastTwoWeeks(userId: string): Promise<LastTwoWeeksDto[]> {
     await this.ensureAdmin(userId);
-    
+
     const thisMonday = this.getMondayOfWeek();
     const prevMonday = new Date(thisMonday);
     prevMonday.setDate(thisMonday.getDate() - 7);
@@ -341,7 +343,7 @@ export class AdminService {
 
   async getTopLiked(userId: string, limit = 10): Promise<TopPostDto[]> {
     await this.ensureAdmin(userId);
-    
+
     const firstDayOfMonth = this.getFirstDayOfMonth();
 
     const docs = await this.postModel.aggregate([
@@ -413,7 +415,7 @@ export class AdminService {
 
   async getContentDistribution(userId: string): Promise<{ type: string; value: number }[]> {
     await this.ensureAdmin(userId);
-    
+
     const [postCount, reelCount, storyCount] = await Promise.all([
       this.postModel.countDocuments({ type: 'post' }),
       this.postModel.countDocuments({ type: 'reel' }),
@@ -429,7 +431,7 @@ export class AdminService {
 
   async getTwoYearStats(userId: string) {
     await this.ensureAdmin(userId);
-    
+
     const now = new Date();
     const currentYear = now.getFullYear();
     const lastYear = currentYear - 1;
@@ -460,8 +462,8 @@ export class AdminService {
     // fill posts & reels
     for (const { _id: { year, month, type }, count } of postRaw) {
       const arr = year === lastYear ? lastYearStats
-                : year === currentYear ? currentYearStats
-                : null;
+        : year === currentYear ? currentYearStats
+          : null;
       if (!arr) continue;
       const idx = month - 1;
       if (type === 'post') arr[idx].posts = count;
@@ -471,8 +473,8 @@ export class AdminService {
     // fill stories
     for (const { _id: { year, month }, count } of storyRaw) {
       const arr = year === lastYear ? lastYearStats
-                : year === currentYear ? currentYearStats
-                : null;
+        : year === currentYear ? currentYearStats
+          : null;
       if (!arr) continue;
       arr[month - 1].stories = count;
     }
@@ -496,10 +498,10 @@ export class AdminService {
     const { percentageChange, trend } = this.combinedFluct(totalCur, totalLast);
 
     const comparison = [
-      { 
-        currentYear, 
-        lastYear, 
-        percentageChange, 
+      {
+        currentYear,
+        lastYear,
+        percentageChange,
         trend: trend === 'no change' ? 'no_change' : trend as 'increase' | 'decrease'
       },
     ];
@@ -511,168 +513,168 @@ export class AdminService {
     };
   }
 
-async getLastSixMonths(userId: string) {
-  await this.ensureAdmin(userId);
-  
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth(); // 0-based; Jan = 0
+  async getLastSixMonths(userId: string) {
+    await this.ensureAdmin(userId);
 
-  // build the 6-month window
-  const months: { date: Date; label: string; key: string }[] = [];
-  for (let offset = -5; offset <= 0; offset++) {
-    const d = new Date(currentYear, currentMonth + offset, 1);
-    const yyyy = d.getFullYear();
-    const mm = d.getMonth() + 1;     
-    const label = d.toLocaleString('en-US', { month: 'short' });
-    const key = `${yyyy}-${mm}`;
-    months.push({ date: d, label, key });
-  }
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-based; Jan = 0
 
-  const startDate = months[0].date;
-  const endDate = new Date(currentYear, currentMonth + 1, 1); // first day of next month
+    // build the 6-month window
+    const months: { date: Date; label: string; key: string }[] = [];
+    for (let offset = -5; offset <= 0; offset++) {
+      const d = new Date(currentYear, currentMonth + offset, 1);
+      const yyyy = d.getFullYear();
+      const mm = d.getMonth() + 1;
+      const label = d.toLocaleString('en-US', { month: 'short' });
+      const key = `${yyyy}-${mm}`;
+      months.push({ date: d, label, key });
+    }
 
-  const postRaw = await this.postModel.aggregate(
-    this.createYearlyAggregation(startDate, endDate, true)
-  );
+    const startDate = months[0].date;
+    const endDate = new Date(currentYear, currentMonth + 1, 1); // first day of next month
 
-  const storyRaw = await this.storyModel.aggregate(
-    this.createYearlyAggregation(startDate, endDate, false)
-  );
+    const postRaw = await this.postModel.aggregate(
+      this.createYearlyAggregation(startDate, endDate, true)
+    );
 
-  // build a map for quick lookup
-  type CountTriple = { posts: number; reels: number; stories: number };
-  const countsMap: Record<string, CountTriple> = {};
+    const storyRaw = await this.storyModel.aggregate(
+      this.createYearlyAggregation(startDate, endDate, false)
+    );
 
-  for (const { _id, count } of postRaw) {
-    const key = `${_id.year}-${_id.month}`;
-    if (!countsMap[key]) countsMap[key] = { posts: 0, reels: 0, stories: 0 };
-    if (_id.type === 'post') countsMap[key].posts = count;
-    else if (_id.type === 'reel') countsMap[key].reels = count;
-  }
+    // build a map for quick lookup
+    type CountTriple = { posts: number; reels: number; stories: number };
+    const countsMap: Record<string, CountTriple> = {};
 
-  for (const { _id, count } of storyRaw) {
-    const key = `${_id.year}-${_id.month}`;
-    if (!countsMap[key]) countsMap[key] = { posts: 0, reels: 0, stories: 0 };
-    countsMap[key].stories = count;
-  }
+    for (const { _id, count } of postRaw) {
+      const key = `${_id.year}-${_id.month}`;
+      if (!countsMap[key]) countsMap[key] = { posts: 0, reels: 0, stories: 0 };
+      if (_id.type === 'post') countsMap[key].posts = count;
+      else if (_id.type === 'reel') countsMap[key].reels = count;
+    }
 
-  // assemble the array of month-slots
-  const yearlyStats = months.map(({ date, label, key }) => {
-    const c = countsMap[key] || { posts: 0, reels: 0, stories: 0 };
-    return { month: label, posts: c.posts, reels: c.reels, stories: c.stories };
-  });
+    for (const { _id, count } of storyRaw) {
+      const key = `${_id.year}-${_id.month}`;
+      if (!countsMap[key]) countsMap[key] = { posts: 0, reels: 0, stories: 0 };
+      countsMap[key].stories = count;
+    }
 
-  // human‐readable start/end
-  const start = months[0].date.toLocaleString('en-US', {
-    month: 'short', year: 'numeric'
-  });
-  const end = months[months.length - 1].date.toLocaleString('en-US', {
-    month: 'short', year: 'numeric'
-  });
-
-  // compute totals including stories
-  const totals = yearlyStats.map(s => s.posts + s.reels + s.stories);
-
-  // trend detection
-  const deltas = totals.slice(1).map((v, i) => v - totals[i]);
-  const allNonNeg = deltas.every(d => d >= 0);
-  const allNonPos = deltas.every(d => d <= 0);
-  const anyPos = deltas.some(d => d > 0);
-  const anyNeg = deltas.some(d => d < 0);
-  const allEqual = totals.every(v => v === totals[0]);
-
-  let comparison: string;
-  if (allEqual) {
-    comparison = 'no_change';
-  } else if (allNonNeg && anyPos) {
-    comparison = 'stable_growth';
-  } else if (allNonPos && anyNeg) {
-    comparison = 'stable_decline';
-  } else {
-    const first = totals[0], last = totals[totals.length - 1];
-    const middleSpike = totals
-      .slice(1, -1)
-      .some(v => v >= 2 * Math.max(first, last));
-    comparison = middleSpike ? 'spike_middle' : 'volatile';
-  }
-
-  return { yearlyStats, start, end, comparison };
-}
-
-async compareLastSixMonths(userId: string) {
-  await this.ensureAdmin(userId);
-  
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-based; Jan = 0
-
-  // current window: 6 full months before this month
-  const currStart = new Date(year, month - 5, 1);
-  const currEnd = new Date(year, month + 1, 1);
-
-  // previous window: the six months before that
-  const prevStart = new Date(year, month - 11, 1);
-  const prevEnd = new Date(year, month - 5, 1);
-
-  const countPostsAndReels = (from: Date, to: Date) =>
-    this.postModel.countDocuments({
-      createdAt: { $gte: from, $lt: to },
+    // assemble the array of month-slots
+    const yearlyStats = months.map(({ date, label, key }) => {
+      const c = countsMap[key] || { posts: 0, reels: 0, stories: 0 };
+      return { month: label, posts: c.posts, reels: c.reels, stories: c.stories };
     });
 
-  const countStories = (from: Date, to: Date) =>
-    this.storyModel.countDocuments({
-      createdAt: { $gte: from, $lt: to },
+    // human‐readable start/end
+    const start = months[0].date.toLocaleString('en-US', {
+      month: 'short', year: 'numeric'
+    });
+    const end = months[months.length - 1].date.toLocaleString('en-US', {
+      month: 'short', year: 'numeric'
     });
 
-  const [
-    rawCurrPR, 
-    rawPrevPR,
-    rawCurrStories, 
-    rawPrevStories,
-  ] = await Promise.all([
-    countPostsAndReels(currStart, currEnd),
-    countPostsAndReels(prevStart, prevEnd),
-    countStories(currStart, currEnd),
-    countStories(prevStart, prevEnd),
-  ]);
+    // compute totals including stories
+    const totals = yearlyStats.map(s => s.posts + s.reels + s.stories);
 
-  const currentTotal = rawCurrPR + rawCurrStories;
-  const previousTotal = rawPrevPR + rawPrevStories;
+    // trend detection
+    const deltas = totals.slice(1).map((v, i) => v - totals[i]);
+    const allNonNeg = deltas.every(d => d >= 0);
+    const allNonPos = deltas.every(d => d <= 0);
+    const anyPos = deltas.some(d => d > 0);
+    const anyNeg = deltas.some(d => d < 0);
+    const allEqual = totals.every(v => v === totals[0]);
 
-  const { percentageChange, trend } = this.combinedFluct(currentTotal, previousTotal);
+    let comparison: string;
+    if (allEqual) {
+      comparison = 'no_change';
+    } else if (allNonNeg && anyPos) {
+      comparison = 'stable_growth';
+    } else if (allNonPos && anyNeg) {
+      comparison = 'stable_decline';
+    } else {
+      const first = totals[0], last = totals[totals.length - 1];
+      const middleSpike = totals
+        .slice(1, -1)
+        .some(v => v >= 2 * Math.max(first, last));
+      comparison = middleSpike ? 'spike_middle' : 'volatile';
+    }
 
-  // start & end labels
-  const startLabel = currStart.toLocaleString('en-US', {
-    month: 'short',
-    year: 'numeric',
-  });
-  const endMonthDate = new Date(currEnd.getFullYear(), currEnd.getMonth() - 1, 1);
-  const endLabel = endMonthDate.toLocaleString('en-US', {
-    month: 'short',
-    year: 'numeric',
-  });
+    return { yearlyStats, start, end, comparison };
+  }
 
-  return {
-    currentTotalPosts: currentTotal,
-    previousTotalPosts: previousTotal,
-    percentageChange,
-    trend: trend === 'no change' ? 'no_change' : trend as 'increase' | 'decrease',
-    start: startLabel,
-    end: endLabel,
-  };
-}
+  async compareLastSixMonths(userId: string) {
+    await this.ensureAdmin(userId);
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth(); // 0-based; Jan = 0
+
+    // current window: 6 full months before this month
+    const currStart = new Date(year, month - 5, 1);
+    const currEnd = new Date(year, month + 1, 1);
+
+    // previous window: the six months before that
+    const prevStart = new Date(year, month - 11, 1);
+    const prevEnd = new Date(year, month - 5, 1);
+
+    const countPostsAndReels = (from: Date, to: Date) =>
+      this.postModel.countDocuments({
+        createdAt: { $gte: from, $lt: to },
+      });
+
+    const countStories = (from: Date, to: Date) =>
+      this.storyModel.countDocuments({
+        createdAt: { $gte: from, $lt: to },
+      });
+
+    const [
+      rawCurrPR,
+      rawPrevPR,
+      rawCurrStories,
+      rawPrevStories,
+    ] = await Promise.all([
+      countPostsAndReels(currStart, currEnd),
+      countPostsAndReels(prevStart, prevEnd),
+      countStories(currStart, currEnd),
+      countStories(prevStart, prevEnd),
+    ]);
+
+    const currentTotal = rawCurrPR + rawCurrStories;
+    const previousTotal = rawPrevPR + rawPrevStories;
+
+    const { percentageChange, trend } = this.combinedFluct(currentTotal, previousTotal);
+
+    // start & end labels
+    const startLabel = currStart.toLocaleString('en-US', {
+      month: 'short',
+      year: 'numeric',
+    });
+    const endMonthDate = new Date(currEnd.getFullYear(), currEnd.getMonth() - 1, 1);
+    const endLabel = endMonthDate.toLocaleString('en-US', {
+      month: 'short',
+      year: 'numeric',
+    });
+
+    return {
+      currentTotalPosts: currentTotal,
+      previousTotalPosts: previousTotal,
+      percentageChange,
+      trend: trend === 'no change' ? 'no_change' : trend as 'increase' | 'decrease',
+      start: startLabel,
+      end: endLabel,
+    };
+  }
 
   async getPostsSummary(userId: string) {
     await this.ensureAdmin(userId);
-        const now = new Date();
+    const now = new Date();
     const year = now.getFullYear();
-    const month = now.getMonth(); 
+    const month = now.getMonth();
 
     const currStart = new Date(year, month - 5, 1);
-    const currEnd   = new Date(year, month + 1, 1);
+    const currEnd = new Date(year, month + 1, 1);
     const prevStart = new Date(year, month - 11, 1);
-    const prevEnd   = new Date(year, month - 5, 1);
+    const prevEnd = new Date(year, month - 5, 1);
 
     const countWindow = async (from: Date, to: Date) => {
       const total = await this.postModel.countDocuments({
@@ -719,7 +721,7 @@ async compareLastSixMonths(userId: string) {
           // compute counts
           {
             $addFields: {
-              likeCount:    { $size: '$likes' },
+              likeCount: { $size: '$likes' },
               commentCount: { $size: '$comments' },
             },
           },
@@ -727,7 +729,7 @@ async compareLastSixMonths(userId: string) {
           {
             $match: {
               $or: [
-                { likeCount:    { $gte: threshold } },
+                { likeCount: { $gte: threshold } },
                 { commentCount: { $gte: threshold } },
               ],
             },
@@ -760,17 +762,17 @@ async compareLastSixMonths(userId: string) {
 
     // Combine into summaries
     const currSummary = {
-      total:    currBasic.total,
-      hot:      currHot,
+      total: currBasic.total,
+      hot: currHot,
       reported: currBasic.reported,
-      removed:  currBasic.removed,
+      removed: currBasic.removed,
       resolved: currBasic.resolved,
     };
     const prevSummary = {
-      total:    prevBasic.total,
-      hot:      prevHot,
+      total: prevBasic.total,
+      hot: prevHot,
       reported: prevBasic.reported,
-      removed:  prevBasic.removed,
+      removed: prevBasic.removed,
       resolved: prevBasic.resolved,
     };
 
@@ -797,7 +799,7 @@ async compareLastSixMonths(userId: string) {
     // Human labels
     const start = currStart.toLocaleString('en-US', {
       month: 'short', year: 'numeric'
-    }); 
+    });
     const endMonthDate = new Date(currEnd.getFullYear(), currEnd.getMonth() - 1, 1);
     const end = endMonthDate.toLocaleString('en-US', {
       month: 'short', year: 'numeric'
@@ -814,19 +816,19 @@ async compareLastSixMonths(userId: string) {
 
   async getTopFollowers(userId: string, limit = 3): Promise<TopFollowerDto[]> {
     await this.ensureAdmin(userId);
-        console.log('=== Starting corrected getTopFollowers ===');
-    
+    console.log('=== Starting corrected getTopFollowers ===');
+
     const docs = await this.relationModel.aggregate([
       // Match all relations that contain follow relationships
       {
         $match: {
           $or: [
             { relation: { $regex: /^FOLLOW_/ } },
-            { relation: { $regex: /_FOLLOW$/ } } 
+            { relation: { $regex: /_FOLLOW$/ } }
           ]
         }
       },
-      
+
       // for mutual follows (FOLLOW_FOLLOW)
       {
         $facet: {
@@ -843,7 +845,7 @@ async compareLastSixMonths(userId: string) {
               }
             }
           ],
-          
+
           // Case 2: userTwo follows userOne (*_FOLLOW patterns) 
           userTwoFollows: [
             {
@@ -859,7 +861,7 @@ async compareLastSixMonths(userId: string) {
           ]
         }
       },
-      
+
       // Combine both arrays
       {
         $project: {
@@ -868,13 +870,13 @@ async compareLastSixMonths(userId: string) {
           }
         }
       },
-      
+
       // Unwind to get individual follow relationships
       { $unwind: '$allFollows' },
-      
+
       // Replace root with the follow data
       { $replaceRoot: { newRoot: '$allFollows' } },
-      
+
       // Group by followed user and count
       {
         $group: {
@@ -882,10 +884,10 @@ async compareLastSixMonths(userId: string) {
           followerCount: { $sum: 1 }
         }
       },
-      
+
       { $sort: { followerCount: -1 } },
       { $limit: limit },
-      
+
       {
         $lookup: {
           from: 'users',
@@ -895,7 +897,7 @@ async compareLastSixMonths(userId: string) {
         }
       },
       { $unwind: '$userDetails' },
-      
+
       {
         $project: {
           _id: 0,
@@ -907,270 +909,270 @@ async compareLastSixMonths(userId: string) {
         }
       }
     ]);
-    
+
     console.log('Corrected result:', JSON.stringify(docs, null, 2));
-    
+
     return docs as TopFollowerDto[];
   }
 
-async getTodayStats(userId: string): Promise<{
-  newUsers: string;
-  newPosts: string;
-  newReports: string;
-}> {
-  await this.ensureAdmin(userId);
-  const now = new Date();
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 1);
+  async getTodayStats(userId: string): Promise<{
+    newUsers: string;
+    newPosts: string;
+    newReports: string;
+  }> {
+    await this.ensureAdmin(userId);
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
 
-  const [usersCount, postsCount] = await Promise.all([
-    this.userModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
-    this.postModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
-  ]);
+    const [usersCount, postsCount] = await Promise.all([
+      this.userModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+      this.postModel.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+    ]);
 
-  return {
-    newUsers: usersCount.toString(),
-    newPosts: postsCount.toString(),
-    newReports: '0', // TODO: build a reports collection and hookup here
-  };
-}
-
-async getDailyNewAccounts(userId: string, month: number): Promise<{
-  month: string;
-  data: { day: number; count: number }[];
-  comparison: {
-    previousMonth: string;
-    currentTotal: number;
-    previousTotal: number;
-    percentageChange: number;
-    trend: 'increase' | 'decrease' | 'no_change';
-  };
-}> {
-  await this.ensureAdmin(userId);
-  if (month < 1 || month > 12) {
-    throw new BadRequestException('Month must be between 1 and 12');
+    return {
+      newUsers: usersCount.toString(),
+      newPosts: postsCount.toString(),
+      newReports: '0', // TODO: build a reports collection and hookup here
+    };
   }
 
-  const now = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const year = month <= currentMonth
-    ? now.getFullYear()
-    : now.getFullYear() - 1;
-
-  // Calculate previous month and year
-  let prevMonth: number;
-  let prevYear: number;
-  
-  if (month === 1) {
-    prevMonth = 12;
-    prevYear = year - 1;
-  } else {
-    prevMonth = month - 1;
-    prevYear = year;
-  }
-
-  // Current month date range
-  const start = new Date(year, month - 1, 1, 0, 0, 0);
-  const end = new Date(year, month, 1, 0, 0, 0);
-
-  // Previous month date range
-  const prevStart = new Date(prevYear, prevMonth - 1, 1, 0, 0, 0);
-  const prevEnd = new Date(prevYear, prevMonth, 1, 0, 0, 0);
-
-  // Get current month data
-  const raw = await this.userModel.aggregate<{ _id: number; count: number }>([
-    { $match: { createdAt: { $gte: start, $lt: end } } },
-    {
-      $group: {
-        _id: { $dayOfMonth: '$createdAt' },
-        count: { $sum: 1 },
-      },
-    },
-    { $sort: { '_id': 1 } },
-  ]);
-
-  // Get previous month total
-  const prevMonthData = await this.userModel.aggregate<{ totalCount: number }>([
-    { $match: { createdAt: { $gte: prevStart, $lt: prevEnd } } },
-    {
-      $group: {
-        _id: null,
-        totalCount: { $sum: 1 },
-      },
-    },
-  ]);
-
-  // Calculate totals
-  const currentTotal = raw.reduce((sum, item) => sum + item.count, 0);
-  const previousTotal = prevMonthData[0]?.totalCount || 0;
-
-  // Use existing helper for percentage change & trend calculation
-  const { percentageChange, trend } = this.combinedFluct(currentTotal, previousTotal);
-
-  // Build full array with zeros where missing
-  const lastDay = new Date(year, month, 0).getDate();
-  const data = Array.from({ length: lastDay }, (_, i) => {
-    const dayNum = i + 1;
-    const found = raw.find(r => r._id === dayNum);
-    return { day: dayNum, count: found?.count ?? 0 };
-  });
-
-  return {
-    month: `${year}-${String(month).padStart(2, '0')}`,
-    data,
+  async getDailyNewAccounts(userId: string, month: number): Promise<{
+    month: string;
+    data: { day: number; count: number }[];
     comparison: {
-      previousMonth: `${prevYear}-${String(prevMonth).padStart(2, '0')}`,
-      currentTotal,
-      previousTotal,
-      percentageChange: Math.round(percentageChange * 100) / 100, 
-      trend: trend === 'no change' ? 'no_change' : trend as 'increase' | 'decrease',
-    },
-  };
-}
-
-async getInteractionChartForUser(userId: Types.ObjectId) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); 
-  const start = new Date(year, month, 1);
-  const end = new Date(year, month + 1, 1);
-
-  // Calculate previous month
-  let prevMonth: number;
-  let prevYear: number;
-  
-  if (month === 0) { // January (month 0)
-    prevMonth = 11; // December
-    prevYear = year - 1;
-  } else {
-    prevMonth = month - 1;
-    prevYear = year;
-  }
-
-  const prevStart = new Date(prevYear, prevMonth, 1);
-  const prevEnd = new Date(prevYear, prevMonth + 1, 1);
-
-  // aggregate daily counts for a model 
-  const aggregateDaily = async (
-    model: Model<any>,
-    typeMatch?: Record<string, any>
-  ): Promise<InteractionPoint[]> => {
-    const match: any = {
-      createdAt: { $gte: start, $lt: end },
-      ...(typeMatch || {}),
+      previousMonth: string;
+      currentTotal: number;
+      previousTotal: number;
+      percentageChange: number;
+      trend: 'increase' | 'decrease' | 'no_change';
     };
-    const raw = await model
-      .aggregate<{ _id: number; count: number }>([
-        { $match: match },
-        {
-          $group: {
-            _id: { $dayOfMonth: '$createdAt' },
-            count: { $sum: 1 },
-          },
+  }> {
+    await this.ensureAdmin(userId);
+    if (month < 1 || month > 12) {
+      throw new BadRequestException('Month must be between 1 and 12');
+    }
+
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const year = month <= currentMonth
+      ? now.getFullYear()
+      : now.getFullYear() - 1;
+
+    // Calculate previous month and year
+    let prevMonth: number;
+    let prevYear: number;
+
+    if (month === 1) {
+      prevMonth = 12;
+      prevYear = year - 1;
+    } else {
+      prevMonth = month - 1;
+      prevYear = year;
+    }
+
+    // Current month date range
+    const start = new Date(year, month - 1, 1, 0, 0, 0);
+    const end = new Date(year, month, 1, 0, 0, 0);
+
+    // Previous month date range
+    const prevStart = new Date(prevYear, prevMonth - 1, 1, 0, 0, 0);
+    const prevEnd = new Date(prevYear, prevMonth, 1, 0, 0, 0);
+
+    // Get current month data
+    const raw = await this.userModel.aggregate<{ _id: number; count: number }>([
+      { $match: { createdAt: { $gte: start, $lt: end } } },
+      {
+        $group: {
+          _id: { $dayOfMonth: '$createdAt' },
+          count: { $sum: 1 },
         },
-        { $sort: { '_id': 1 } },
-      ])
-      .exec();
+      },
+      { $sort: { '_id': 1 } },
+    ]);
 
-    return raw.map(r => ({ day: r._id, count: r.count }));
-  };
-
-  // aggregate total counts for previous month
-  const aggregateMonthTotal = async (
-    model: Model<any>,
-    typeMatch?: Record<string, any>
-  ): Promise<number> => {
-    const match: any = {
-      createdAt: { $gte: prevStart, $lt: prevEnd },
-      ...(typeMatch || {}),
-    };
-    const result = await model
-      .aggregate<{ totalCount: number }>([
-        { $match: match },
-        {
-          $group: {
-            _id: null,
-            totalCount: { $sum: 1 },
-          },
+    // Get previous month total
+    const prevMonthData = await this.userModel.aggregate<{ totalCount: number }>([
+      { $match: { createdAt: { $gte: prevStart, $lt: prevEnd } } },
+      {
+        $group: {
+          _id: null,
+          totalCount: { $sum: 1 },
         },
-      ])
-      .exec();
+      },
+    ]);
 
-    return result[0]?.totalCount || 0;
-  };
+    // Calculate totals
+    const currentTotal = raw.reduce((sum, item) => sum + item.count, 0);
+    const previousTotal = prevMonthData[0]?.totalCount || 0;
 
-  // get daily post counts (current month)
-  const rawPosts = await aggregateDaily(this.postModel, {
-    userID: userId,
-    type: { $in: ['post', 'reel'] },
-  });
-  
-  // get daily story counts (current month)
-  const rawStories = await aggregateDaily(this.storyModel, {
-    ownerId: userId,
-  });
+    // Use existing helper for percentage change & trend calculation
+    const { percentageChange, trend } = this.combinedFluct(currentTotal, previousTotal);
 
-  // get previous month totals
-  const prevPostsTotal = await aggregateMonthTotal(this.postModel, {
-    userID: userId,
-    type: { $in: ['post', 'reel'] },
-  });
-  
-  const prevStoriesTotal = await aggregateMonthTotal(this.storyModel, {
-    ownerId: userId,
-  });
-
-  // calculate current month totals
-  const currentPostsTotal = rawPosts.reduce((sum, item) => sum + item.count, 0);
-  const currentStoriesTotal = rawStories.reduce((sum, item) => sum + item.count, 0);
-
-  // Use existing helper for percentage changes
-  const postsComparison = this.combinedFluct(currentPostsTotal, prevPostsTotal);
-  const storiesComparison = this.combinedFluct(currentStoriesTotal, prevStoriesTotal);
-
-  // number of days in this month
-  const lastDay = new Date(year, month + 1, 0).getDate();
-
-  // bucket into 4 weeks
-  const weeks = Array.from({ length: 4 }, (_, i) => ({
-    week: `Week ${i+1}`,
-    post: 0,
-    story: 0,
-  }));
-
-  const accumulate = (raw: InteractionPoint[], field: 'post'|'story') =>
-    raw.forEach(({ day, count }) => {
-      const idx = Math.min(3, Math.floor((day - 1) / 7));
-      weeks[idx][field] += count;
+    // Build full array with zeros where missing
+    const lastDay = new Date(year, month, 0).getDate();
+    const data = Array.from({ length: lastDay }, (_, i) => {
+      const dayNum = i + 1;
+      const found = raw.find(r => r._id === dayNum);
+      return { day: dayNum, count: found?.count ?? 0 };
     });
 
-  accumulate(rawPosts,  'post');
-  accumulate(rawStories,'story');
-
-  return {
-    weeks,
-    comparison: {
-      currentMonth: `${year}-${String(month + 1).padStart(2, '0')}`,
-      previousMonth: `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}`,
-      posts: {
-        current: currentPostsTotal,
-        previous: prevPostsTotal,
-        percentageChange: Math.round(postsComparison.percentageChange * 100) / 100,
-        trend: postsComparison.trend
+    return {
+      month: `${year}-${String(month).padStart(2, '0')}`,
+      data,
+      comparison: {
+        previousMonth: `${prevYear}-${String(prevMonth).padStart(2, '0')}`,
+        currentTotal,
+        previousTotal,
+        percentageChange: Math.round(percentageChange * 100) / 100,
+        trend: trend === 'no change' ? 'no_change' : trend as 'increase' | 'decrease',
       },
-      stories: {
-        current: currentStoriesTotal,
-        previous: prevStoriesTotal,
-        percentageChange: Math.round(storiesComparison.percentageChange * 100) / 100,
-        trend: storiesComparison.trend
-      }
+    };
+  }
+
+  async getInteractionChartForUser(userId: Types.ObjectId) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const start = new Date(year, month, 1);
+    const end = new Date(year, month + 1, 1);
+
+    // Calculate previous month
+    let prevMonth: number;
+    let prevYear: number;
+
+    if (month === 0) { // January (month 0)
+      prevMonth = 11; // December
+      prevYear = year - 1;
+    } else {
+      prevMonth = month - 1;
+      prevYear = year;
     }
-  };
-}
-  
-async searchUsers(userId: string, handleName: string) {
+
+    const prevStart = new Date(prevYear, prevMonth, 1);
+    const prevEnd = new Date(prevYear, prevMonth + 1, 1);
+
+    // aggregate daily counts for a model 
+    const aggregateDaily = async (
+      model: Model<any>,
+      typeMatch?: Record<string, any>
+    ): Promise<InteractionPoint[]> => {
+      const match: any = {
+        createdAt: { $gte: start, $lt: end },
+        ...(typeMatch || {}),
+      };
+      const raw = await model
+        .aggregate<{ _id: number; count: number }>([
+          { $match: match },
+          {
+            $group: {
+              _id: { $dayOfMonth: '$createdAt' },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { '_id': 1 } },
+        ])
+        .exec();
+
+      return raw.map(r => ({ day: r._id, count: r.count }));
+    };
+
+    // aggregate total counts for previous month
+    const aggregateMonthTotal = async (
+      model: Model<any>,
+      typeMatch?: Record<string, any>
+    ): Promise<number> => {
+      const match: any = {
+        createdAt: { $gte: prevStart, $lt: prevEnd },
+        ...(typeMatch || {}),
+      };
+      const result = await model
+        .aggregate<{ totalCount: number }>([
+          { $match: match },
+          {
+            $group: {
+              _id: null,
+              totalCount: { $sum: 1 },
+            },
+          },
+        ])
+        .exec();
+
+      return result[0]?.totalCount || 0;
+    };
+
+    // get daily post counts (current month)
+    const rawPosts = await aggregateDaily(this.postModel, {
+      userID: userId,
+      type: { $in: ['post', 'reel'] },
+    });
+
+    // get daily story counts (current month)
+    const rawStories = await aggregateDaily(this.storyModel, {
+      ownerId: userId,
+    });
+
+    // get previous month totals
+    const prevPostsTotal = await aggregateMonthTotal(this.postModel, {
+      userID: userId,
+      type: { $in: ['post', 'reel'] },
+    });
+
+    const prevStoriesTotal = await aggregateMonthTotal(this.storyModel, {
+      ownerId: userId,
+    });
+
+    // calculate current month totals
+    const currentPostsTotal = rawPosts.reduce((sum, item) => sum + item.count, 0);
+    const currentStoriesTotal = rawStories.reduce((sum, item) => sum + item.count, 0);
+
+    // Use existing helper for percentage changes
+    const postsComparison = this.combinedFluct(currentPostsTotal, prevPostsTotal);
+    const storiesComparison = this.combinedFluct(currentStoriesTotal, prevStoriesTotal);
+
+    // number of days in this month
+    const lastDay = new Date(year, month + 1, 0).getDate();
+
+    // bucket into 4 weeks
+    const weeks = Array.from({ length: 4 }, (_, i) => ({
+      week: `Week ${i + 1}`,
+      post: 0,
+      story: 0,
+    }));
+
+    const accumulate = (raw: InteractionPoint[], field: 'post' | 'story') =>
+      raw.forEach(({ day, count }) => {
+        const idx = Math.min(3, Math.floor((day - 1) / 7));
+        weeks[idx][field] += count;
+      });
+
+    accumulate(rawPosts, 'post');
+    accumulate(rawStories, 'story');
+
+    return {
+      weeks,
+      comparison: {
+        currentMonth: `${year}-${String(month + 1).padStart(2, '0')}`,
+        previousMonth: `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}`,
+        posts: {
+          current: currentPostsTotal,
+          previous: prevPostsTotal,
+          percentageChange: Math.round(postsComparison.percentageChange * 100) / 100,
+          trend: postsComparison.trend
+        },
+        stories: {
+          current: currentStoriesTotal,
+          previous: prevStoriesTotal,
+          percentageChange: Math.round(storiesComparison.percentageChange * 100) / 100,
+          trend: storiesComparison.trend
+        }
+      }
+    };
+  }
+
+  async searchUsers(userId: string, handleName: string) {
     await this.ensureAdmin(userId);
     const trimmed = handleName.trim();
     if (!trimmed) {
@@ -1189,17 +1191,17 @@ async searchUsers(userId: string, handleName: string) {
 
     // sanitize
     const clean: any = {
-      _id:        user._id,
-      username:   user.username,
-      email:      user.email || '',
-      phoneNumber:user.phoneNumber || '',
+      _id: user._id,
+      username: user.username,
+      email: user.email || '',
+      phoneNumber: user.phoneNumber || '',
       handleName: user.handleName,
-      bio:        user.bio || '',
-      address:    user.address || '',
-      gender:     user.gender || '',
+      bio: user.bio || '',
+      address: user.address || '',
+      gender: user.gender || '',
       profilePic: user.profilePic || '',
-      isVip:      user.isVip,
-      deletedAt:  user.deletedAt || false,
+      isVip: user.isVip,
+      deletedAt: user.deletedAt || false,
     };
 
     // attach interaction chart + comparison
@@ -1207,14 +1209,14 @@ async searchUsers(userId: string, handleName: string) {
       user._id as Types.ObjectId
     );
     clean.interactionChartData = interactionData.weeks;
-    clean.monthlyComparison      = interactionData.comparison;
+    clean.monthlyComparison = interactionData.comparison;
 
     return clean;
   }
 
   async getRecommendedUsers(userId: string, page = 1, limit = 20) {
     await this.ensureAdmin(userId);
-        const now = new Date();
+    const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfNext = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
@@ -1293,10 +1295,10 @@ async searchUsers(userId: string, handleName: string) {
         // project fields
         {
           $project: {
-            _id:       1,
-            username:  1,
-            handleName:1,
-            profilePic:1,
+            _id: 1,
+            username: 1,
+            handleName: 1,
+            profilePic: 1,
           },
         },
         // paginate
@@ -1316,7 +1318,7 @@ async searchUsers(userId: string, handleName: string) {
         hasPrevPage: page > 1,
       },
     };
-  }  
+  }
 
   async editAccount(userId: string, dto: EditUserDto) {
     await this.ensureAdmin(userId);
@@ -1328,13 +1330,13 @@ async searchUsers(userId: string, handleName: string) {
     const { current, previous } = this.getRanges(RangePair);
 
     // New users
-    const [ usersCurr, usersPrev ] = await Promise.all([
+    const [usersCurr, usersPrev] = await Promise.all([
       this.userModel.countDocuments({ createdAt: { $gte: current.start, $lte: current.end } }),
       this.userModel.countDocuments({ createdAt: { $gte: previous.start, $lte: previous.end } }),
     ]);
 
     // New content = posts + stories
-    const [ postsCurr, postsPrev, storiesCurr, storiesPrev ] = await Promise.all([
+    const [postsCurr, postsPrev, storiesCurr, storiesPrev] = await Promise.all([
       this.postModel.countDocuments({ createdAt: { $gte: current.start, $lte: current.end } }),
       this.postModel.countDocuments({ createdAt: { $gte: previous.start, $lte: previous.end } }),
       this.storyModel.countDocuments({ createdAt: { $gte: current.start, $lte: current.end } }),
@@ -1344,7 +1346,7 @@ async searchUsers(userId: string, handleName: string) {
     const contentsPrev = postsPrev + storiesPrev;
 
     // Views
-    const [ viewsPostCurr, viewsPostPrev ] = await Promise.all([
+    const [viewsPostCurr, viewsPostPrev] = await Promise.all([
       this.postModel.aggregate([
         { $match: { createdAt: { $gte: current.start, $lte: current.end } } },
         { $group: { _id: null, sum: { $sum: '$viewCount' } } },
@@ -1354,30 +1356,30 @@ async searchUsers(userId: string, handleName: string) {
         { $group: { _id: null, sum: { $sum: '$viewCount' } } },
       ]),
     ]);
-    const [ viewsStoryCurr, viewsStoryPrev ] = await Promise.all([
+    const [viewsStoryCurr, viewsStoryPrev] = await Promise.all([
       this.storyModel.aggregate([
         { $match: { createdAt: { $gte: current.start, $lte: current.end } } },
-        { 
-          $project: { 
-            count: { 
-              $size: { 
-                $ifNull: [ '$viewedByUsers', [] ] 
-              } 
-            } 
-          } 
+        {
+          $project: {
+            count: {
+              $size: {
+                $ifNull: ['$viewedByUsers', []]
+              }
+            }
+          }
         },
         { $group: { _id: null, sum: { $sum: '$count' } } },
       ]),
       this.storyModel.aggregate([
         { $match: { createdAt: { $gte: previous.start, $lte: previous.end } } },
-        { 
-          $project: { 
-            count: { 
-              $size: { 
-                $ifNull: [ '$viewedByUsers', [] ] 
-              } 
-            } 
-          } 
+        {
+          $project: {
+            count: {
+              $size: {
+                $ifNull: ['$viewedByUsers', []]
+              }
+            }
+          }
         },
         { $group: { _id: null, sum: { $sum: '$count' } } },
       ]),
@@ -1386,7 +1388,7 @@ async searchUsers(userId: string, handleName: string) {
     const viewsPrev = (viewsPostPrev[0]?.sum || 0) + (viewsStoryPrev[0]?.sum || 0);
 
     // Comments
-    const [ commCurr, commPrev ] = await Promise.all([
+    const [commCurr, commPrev] = await Promise.all([
       this.commentModel.countDocuments({ createdAt: { $gte: current.start, $lte: current.end } }),
       this.commentModel.countDocuments({ createdAt: { $gte: previous.start, $lte: previous.end } }),
     ]);
@@ -1400,20 +1402,20 @@ async searchUsers(userId: string, handleName: string) {
 
     // return with formatted dates and combined fluctuation
     return {
-      users:    usersCurr,
+      users: usersCurr,
       contents: contentsCurr,
-      views:    viewsCurr,
+      views: viewsCurr,
       comments: commCurr,
-      fluctuation: { 
-        percentageChange, 
-        trend 
+      fluctuation: {
+        percentageChange,
+        trend
       },
       period: {
         from: this.formatDate(current.start),
-        to:   this.formatDate(current.end),
+        to: this.formatDate(current.end),
       }
     };
-  }  
+  }
 
   async getNewPostsByDate(
     adminId: string,
@@ -1424,10 +1426,10 @@ async searchUsers(userId: string, handleName: string) {
 
     const docs = await this.postModel.aggregate([
       // filter by createdAt
-      { 
-        $match: { 
-          createdAt: { $gte: from, $lte: to } 
-        } 
+      {
+        $match: {
+          createdAt: { $gte: from, $lte: to }
+        }
       },
 
       // lookup media
@@ -1508,27 +1510,27 @@ async searchUsers(userId: string, handleName: string) {
   ): any[] {
     // Convert UTC dates to Vietnam timezone for grouping
     const groupId = unit === 'day'
-      ? { 
-          $dateToString: { 
-            format: '%Y-%m-%d', 
-            date: {
-              $dateAdd: {
-                startDate: `$${dateField}`,
-                unit: 'hour',
-                amount: 7
-              }
-            }
-          } 
-        }
-      : { 
-          $month: {
+      ? {
+        $dateToString: {
+          format: '%Y-%m-%d',
+          date: {
             $dateAdd: {
               startDate: `$${dateField}`,
               unit: 'hour',
               amount: 7
             }
           }
-        };
+        }
+      }
+      : {
+        $month: {
+          $dateAdd: {
+            startDate: `$${dateField}`,
+            unit: 'hour',
+            amount: 7
+          }
+        }
+      };
 
     return [
       { $match: { [dateField]: { $gte: from, $lte: to }, ...matchCondition } },
@@ -1543,20 +1545,20 @@ async searchUsers(userId: string, handleName: string) {
     dataMaps: Map<string | number, number>[],
     dataKeys: string[]
   ): any[] {
-    const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const data = [];
 
     if (unit === 'day') {
       // Convert UTC dates to Vietnam timezone for consistent key generation
       const fromVN = new Date(from.getTime() + 7 * 60 * 60 * 1000);
       const toVN = new Date(to.getTime() + 7 * 60 * 60 * 1000);
-      
+
       const days = Math.floor((toVN.getTime() - fromVN.getTime()) / 86400_000) + 1;
       for (let i = 0; i < days; i++) {
         const d = new Date(fromVN.getTime() + i * 86400_000);
         const key = d.toISOString().slice(0, 10); // This will match the aggregation key
-        const period = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
-        
+        const period = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+
         const entry = { period };
         dataKeys.forEach((dataKey, index) => {
           entry[dataKey] = dataMaps[index].get(key) ?? 0;
@@ -1568,7 +1570,7 @@ async searchUsers(userId: string, handleName: string) {
       const toVN = new Date(to.getTime() + 7 * 60 * 60 * 1000);
       const current = toVN.getMonth() + 1;
       for (let m = 1; m <= current; m++) {
-        const entry = { period: monthLabels[m-1] };
+        const entry = { period: monthLabels[m - 1] };
         dataKeys.forEach((dataKey, index) => {
           entry[dataKey] = dataMaps[index].get(m) ?? 0;
         });
@@ -1598,19 +1600,19 @@ async searchUsers(userId: string, handleName: string) {
 
     const map = new Map<string | number, number>(raw.map(d => [d._id, d.count]));
     const data = this.buildTimeSeriesData(from, to, unit, [map], ['accounts']);
-    
+
     let cumulative = 0;
     data.forEach(entry => {
       cumulative += entry.accounts;
       entry.cumulative = cumulative;
     });
 
-    return { 
-      range, 
-      unit, 
-      from: this.formatDate(from), 
-      to: this.formatDate(to), 
-      data 
+    return {
+      range,
+      unit,
+      from: this.formatDate(from),
+      to: this.formatDate(to),
+      data
     };
   }
 
@@ -1647,12 +1649,12 @@ async searchUsers(userId: string, handleName: string) {
 
     const data = this.buildTimeSeriesData(from, to, unit, dataMaps, ['posts', 'reels', 'stories']);
 
-    return { 
-      range, 
-      unit, 
-      from: this.formatDate(from), 
-      to: this.formatDate(to), 
-      data 
+    return {
+      range,
+      unit,
+      from: this.formatDate(from),
+      to: this.formatDate(to),
+      data
     };
   }
 
@@ -1678,8 +1680,8 @@ async searchUsers(userId: string, handleName: string) {
       ),
       this.relationModel.aggregate([
         ...this.buildTimeAggregation(from, to, unit, {}, 'updated_at').slice(0, 1), // Only match stage
-        { 
-          $addFields: { 
+        {
+          $addFields: {
             followCount: {
               $switch: {
                 branches: [
@@ -1692,15 +1694,15 @@ async searchUsers(userId: string, handleName: string) {
                 default: 0
               }
             }
-          } 
+          }
         },
-        { 
-          $group: { 
-            _id: unit === 'day' 
+        {
+          $group: {
+            _id: unit === 'day'
               ? { $dateToString: { format: '%Y-%m-%d', date: '$updated_at' } }
-              : { $month: '$updated_at' }, 
-            count: { $sum: '$followCount' } 
-          } 
+              : { $month: '$updated_at' },
+            count: { $sum: '$followCount' }
+          }
         },
       ]),
     ]);
@@ -1713,12 +1715,426 @@ async searchUsers(userId: string, handleName: string) {
 
     const data = this.buildTimeSeriesData(from, to, unit, dataMaps, ['likes', 'comments', 'follows']);
 
-    return { 
-      range, 
-      unit, 
-      from: this.formatDate(from), 
-      to: this.formatDate(to), 
-      data 
+    return {
+      range,
+      unit,
+      from: this.formatDate(from),
+      to: this.formatDate(to),
+      data
+    };
+  }
+
+  // Story Analytics Methods
+  async getStoryActivity(
+    adminId: string,
+    range: RangeKey,
+  ): Promise<{
+    success: boolean;
+    range: RangeKey;
+    unit: 'day' | 'month';
+    from: string;
+    to: string;
+    data: Array<{ period: string; stories: number; views: number }>;
+  }> {
+    await this.ensureAdmin(adminId);
+    const { from, to, unit } = this.buildRange(range);
+
+    const [storiesRaw, viewsRaw] = await Promise.all([
+      this.storyModel.aggregate(
+        this.buildTimeAggregation(from, to, unit)
+      ),
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        {
+          $group: {
+            _id: unit === 'day'
+              ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
+              : { $month: '$createdAt' },
+            count: { $sum: '$viewCount' }
+          }
+        },
+      ]),
+    ]);
+
+    const dataMaps = [
+      new Map(storiesRaw.map(d => [d._id, d.count])),
+      new Map(viewsRaw.map(d => [d._id, d.count]))
+    ];
+
+    const data = this.buildTimeSeriesData(from, to, unit, dataMaps, ['stories', 'views']);
+
+    return {
+      success: true,
+      range,
+      unit,
+      from: this.formatDate(from),
+      to: this.formatDate(to),
+      data
+    };
+  }
+
+  async getStoryEngagement(
+    adminId: string,
+    range: RangeKey,
+  ): Promise<{
+    success: boolean;
+    data: Array<{ category: string; value: number }>;
+  }> {
+    await this.ensureAdmin(adminId);
+    const { from, to } = this.buildRange(range);
+
+    const [interactions, views, shares] = await Promise.all([
+      // Count total likes on stories
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        { $project: { likeCount: { $size: '$likedByUsers' } } },
+        { $group: { _id: null, total: { $sum: '$likeCount' } } }
+      ]),
+      // Count total views
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        { $group: { _id: null, total: { $sum: '$viewCount' } } }
+      ]),
+      // Count shares (placeholder - you might need to implement story sharing tracking)
+      Promise.resolve([{ total: 0 }])
+    ]);
+
+    return {
+      success: true,
+      data: [
+        { category: 'Tương tác', value: interactions[0]?.total || 0 },
+        { category: 'Lượt xem', value: views[0]?.total || 0 },
+        { category: 'Chia sẻ', value: shares[0]?.total || 0 },
+      ]
+    };
+  }
+
+  async getStorySummary(
+    adminId: string,
+  ): Promise<{
+    success: boolean;
+    data: {
+      active: number;
+      flagged: number;
+      disabled: number;
+      total: number;
+    };
+  }> {
+    await this.ensureAdmin(adminId);
+
+    const [active, flagged, disabled, total] = await Promise.all([
+      this.storyModel.countDocuments({ isEnable: true, isFlagged: false }),
+      this.storyModel.countDocuments({ isFlagged: true }),
+      this.storyModel.countDocuments({ isEnable: false }),
+      this.storyModel.countDocuments({})
+    ]);
+
+    return {
+      success: true,
+      data: {
+        active,
+        flagged,
+        disabled,
+        total
+      }
+    };
+  }
+
+  async getStorySummaryWithTrends(
+    adminId: string,
+  ): Promise<{
+    success: boolean;
+    currentWindow: {
+      active: number;
+      reported: number;
+      flagged: number;
+      disabled: number;
+      total: number;
+    };
+    percentageChange: number;
+    trend: 'increase' | 'decrease' | 'no_change';
+    start: string;
+    end: string;
+  }> {
+    await this.ensureAdmin(adminId);
+    
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+
+    const currStart = new Date(year, month - 5, 1);
+    const currEnd = new Date(year, month + 1, 1);
+    const prevStart = new Date(year, month - 11, 1);
+    const prevEnd = new Date(year, month - 5, 1);
+
+    const countWindow = async (from: Date, to: Date) => {
+      const [total, active, reported, flagged, disabled] = await Promise.all([
+        this.storyModel.countDocuments({ createdAt: { $gte: from, $lt: to } }),
+        this.storyModel.countDocuments({ 
+          createdAt: { $gte: from, $lt: to },
+          isEnable: true,
+          isFlagged: false
+        }),
+        this.reportStoryModel.countDocuments({ createdAt: { $gte: from, $lt: to } }),
+        this.storyModel.countDocuments({ 
+          createdAt: { $gte: from, $lt: to },
+          isFlagged: true
+        }),
+        this.storyModel.countDocuments({ 
+          createdAt: { $gte: from, $lt: to },
+          isEnable: false
+        }),
+      ]);
+      return { total, active, reported, flagged, disabled };
+    };
+
+    const [currWindow, prevWindow] = await Promise.all([
+      countWindow(currStart, currEnd),
+      countWindow(prevStart, prevEnd),
+    ]);
+
+    const { percentageChange, trend } = this.combinedFluct(currWindow.total, prevWindow.total);
+
+    const start = currStart.toLocaleString('en-US', {
+      month: 'short', year: 'numeric'
+    });
+    const endMonthDate = new Date(currEnd.getFullYear(), currEnd.getMonth() - 1, 1);
+    const end = endMonthDate.toLocaleString('en-US', {
+      month: 'short', year: 'numeric'
+    });
+
+    return {
+      success: true,
+      currentWindow: currWindow,
+      percentageChange,
+      trend: trend === 'no change' ? 'no_change' : trend as 'increase' | 'decrease',
+      start,
+      end,
+    };
+  }
+
+  async getNewStoriesByDate(
+    adminId: string,
+    from: Date,
+    to: Date,
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<{
+    success: boolean;
+    data: {
+      items: any[];
+      pagination: {
+        currentPage: number;
+        totalPages: number;
+        totalCount: number;
+        limit: number;
+        hasNextPage: boolean;
+        hasPrevPage: boolean;
+      };
+    };
+  }> {
+    await this.ensureAdmin(adminId);
+    const skip = (page - 1) * limit;
+
+    const [stories, totalCount] = await Promise.all([
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        // Lookup user details
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'ownerId',
+            foreignField: '_id',
+            as: 'user'
+          }
+        },
+        { $unwind: '$user' },
+        // Project required fields
+        {
+          $project: {
+            _id: 1,
+            userID: '$ownerId',
+            caption: '$content.text',
+            isFlagged: 1,
+            isEnable: 1,
+            viewCount: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            user: {
+              _id: '$user._id',
+              handleName: '$user.handleName',
+              profilePic: '$user.profilePic'
+            },
+            media: [{
+              _id: '$_id',
+              storyID: '$_id',
+              videoUrl: { $cond: [{ $regexMatch: { input: '$mediaUrl', regex: /\.(mp4|avi|mov|wmv)$/i } }, '$mediaUrl', null] },
+              imageUrl: { $cond: [{ $not: { $regexMatch: { input: '$mediaUrl', regex: /\.(mp4|avi|mov|wmv)$/i } } }, '$mediaUrl', null] },
+              tags: '$tags'
+            }]
+          }
+        },
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit }
+      ]),
+      this.storyModel.countDocuments({ createdAt: { $gte: from, $lte: to } })
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return {
+      success: true,
+      data: {
+        items: stories,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalCount,
+          limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        }
+      }
+    };
+  }
+
+  async disableStory(adminId: string, storyId: string): Promise<{
+    success: boolean;
+    storyId: string;
+    isEnabled: boolean;
+    message: string;
+  }> {
+    await this.ensureAdmin(adminId);
+    
+    const story = await this.storyModel.findById(storyId);
+    if (!story) {
+      throw new NotFoundException('Story not found');
+    }
+
+    const newStatus = !story.isEnable;
+    await this.storyModel.findByIdAndUpdate(storyId, { isEnable: newStatus });
+
+    return {
+      success: true,
+      storyId,
+      isEnabled: newStatus,
+      message: `Story ${storyId} is now ${newStatus ? 'enabled' : 'disabled'}.`
+    };
+  }
+
+  async enableStory(adminId: string, storyId: string): Promise<{
+    success: boolean;
+    storyId: string;
+    isEnabled: boolean;
+    message: string;
+  }> {
+    await this.ensureAdmin(adminId);
+    
+    const story = await this.storyModel.findById(storyId);
+    if (!story) {
+      throw new NotFoundException('Story not found');
+    }
+
+    if (story.isEnable) {
+      return {
+        success: true,
+        storyId,
+        isEnabled: true,
+        message: `Story ${storyId} is already enabled.`
+      };
+    }
+
+    await this.storyModel.findByIdAndUpdate(storyId, { isEnable: true });
+
+    return {
+      success: true,
+      storyId,
+      isEnabled: true,
+      message: `Story ${storyId} is now enabled.`
+    };
+  }
+
+  async bulkEnableStories(adminId: string, storyIds: string[]): Promise<{
+    success: boolean;
+    message: string;
+    results: any[];
+  }> {
+    await this.ensureAdmin(adminId);
+
+    const results = await Promise.all(
+      storyIds.map(async (id) => {
+        try {
+          return await this.enableStory(adminId, id);
+        } catch (error) {
+          return { 
+            success: false, 
+            storyId: id, 
+            isEnabled: false, 
+            message: error.message || 'Story not found' 
+          };
+        }
+      })
+    );
+
+    return {
+      success: true,
+      message: `${results.length} stories have been processed`,
+      results
+    };
+  }
+
+  async bulkDisableStories(adminId: string, storyIds: string[]): Promise<{
+    success: boolean;
+    message: string;
+    results: any[];
+  }> {
+    await this.ensureAdmin(adminId);
+
+    const results = await Promise.all(
+      storyIds.map(async (id) => {
+        try {
+          const story = await this.storyModel.findById(id);
+          if (!story) {
+            return { 
+              success: false, 
+              storyId: id, 
+              isEnabled: false, 
+              message: 'Story not found' 
+            };
+          }
+
+          if (!story.isEnable) {
+            return {
+              success: true,
+              storyId: id,
+              isEnabled: false,
+              message: `Story ${id} is already disabled.`
+            };
+          }
+
+          await this.storyModel.findByIdAndUpdate(id, { isEnable: false });
+          return {
+            success: true,
+            storyId: id,
+            isEnabled: false,
+            message: `Story ${id} is now disabled.`
+          };
+        } catch (error) {
+          return { 
+            success: false, 
+            storyId: id, 
+            isEnabled: false, 
+            message: error.message || 'Error processing story' 
+          };
+        }
+      })
+    );
+
+    return {
+      success: true,
+      message: `${results.length} stories have been processed`,
+      results
     };
   }
 }

@@ -91,6 +91,15 @@ export class Story extends AbstractDocument {
     };
   }[];
 
+  @Prop({ default: false })
+  isFlagged: boolean;
+
+  @Prop({ default: true })
+  isEnable: boolean;
+
+  @Prop({ default: 0 })
+  viewCount: number;
+
   @Prop({ default: Date.now })
   createdAt: Date;
 }
