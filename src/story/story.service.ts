@@ -51,7 +51,6 @@ export class StoryService {
         if (!sto.music) {
           return sto;
         }
-        this.logger.log(">>>>>>>>>>>>>>>>>>", sto.music._id)
         const res = await this.musicService.findByID(sto.music._id.toString());
         return {
           ...sto,
