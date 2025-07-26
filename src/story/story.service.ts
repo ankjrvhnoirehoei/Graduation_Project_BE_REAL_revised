@@ -51,7 +51,6 @@ export class StoryService {
         if (!sto.music) {
           return sto;
         }
-        this.logger.log(">>>>>>>>>>>>>>>>>>", sto.music._id)
         const res = await this.musicService.findByID(sto.music._id.toString());
         return {
           ...sto,
@@ -124,8 +123,12 @@ export class StoryService {
       likedByUsers: story.likedByUsers || [],
       music: story.music || null,
       content: story.content || null,
-      tags: story.tags || [], // ✅ ADD THIS LINE
+      tags: story.tags || [],
       createdAt: story.createdAt,
+      // Admin fields
+      isFlagged: story.isFlagged || false,
+      isEnable: story.isEnable !== undefined ? story.isEnable : true,
+      viewCount: story.viewCount || 0,
       ...(story.type === StoryType.HIGHLIGHTS && {
         collectionName: story.collectionName,
         thumbnail: story.thumbnail,
@@ -386,13 +389,18 @@ export class StoryService {
         data: this.STORY_RESPONSE(existingStory),
       };
     }
+    
     existingStory.viewedByUsers = [
       ...(existingStory.viewedByUsers || []),
       viewerId,
     ];
+    
+    // Update both viewedByUsers and increment viewCount
     const updated = await this.storyRepo.updateStory(existingStory._id, {
       viewedByUsers: existingStory.viewedByUsers,
+      $inc: { viewCount: 1 }
     });
+    
     return {
       message: 'Success',
       data: this.STORY_RESPONSE_WITH_VIEWER(updated, (viewerId).toString()),
@@ -501,6 +509,36 @@ export class StoryService {
       data: {
         shareTo: shareStoryDto.roomIds,
         content: shareStoryDto.message
+      }
+    };
+  }
+
+  // Admin methods
+  async searchStories(keyword: string, page: number = 1, limit: number = 10) {
+    const result = await this.storyRepo.searchStories(keyword, page, limit);
+    
+    // Enrich the stories with user data and format them
+    const enrichedStories = await Promise.all(
+      result.data.map(async (story: any) => {
+        const userData = await this.getCommonUserData(story.ownerId.toString());
+        return {
+          ...story,
+          user: userData,
+          media: [{
+            _id: story._id,
+            storyID: story._id,
+            videoUrl: story.mediaUrl?.match(/\.(mp4|avi|mov|wmv)$/i) ? story.mediaUrl : null,
+            imageUrl: !story.mediaUrl?.match(/\.(mp4|avi|mov|wmv)$/i) ? story.mediaUrl : null,
+            tags: story.tags || []
+          }]
+        };
+      })
+    );
+
+    return {
+      data: {
+        items: enrichedStories,
+        pagination: result.pagination
       }
     };
   }

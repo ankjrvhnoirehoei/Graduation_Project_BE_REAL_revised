@@ -18,11 +18,15 @@ import { PostLikeModule } from 'src/like_post/like_post.module';
 import { ReportUser, ReportUserSchema } from 'src/report-user/report-user.schema';
 import { ReportContent, ReportContentSchema } from 'src/report-content/report-content.schema';
 import { ReportContentModule } from 'src/report-content/report-content.module';
+import { ReportStory, ReportStorySchema } from 'src/report-story/schema/report-story.schema';
+import { ReportStoryModule } from 'src/report-story/report-story.module';
+import { StoryModule } from 'src/story/story.module';
 import { CommonUtilsModule } from './helpers/helpers.module'
+
 
 @Module({
   imports: [
-    DatabaseModule.forFeature([{ name: Post.name, schema: PostSchema }, { name: Story.name, schema: StorySchema }, { name: Relation.name, schema: RelationSchema }, { name: User.name, schema: UserSchema }, { name: Comment.name, schema: CommentSchema }, { name: PostLike.name, schema: PostLikeSchema }, { name: ReportUser.name, schema: ReportUserSchema }, { name: ReportContent.name, schema: ReportContentSchema },]),
+    DatabaseModule.forFeature([{ name: Post.name, schema: PostSchema }, { name: Story.name, schema: StorySchema }, { name: Relation.name, schema: RelationSchema }, { name: User.name, schema: UserSchema }, { name: Comment.name, schema: CommentSchema }, { name: PostLike.name, schema: PostLikeSchema }, { name: ReportUser.name, schema: ReportUserSchema }, { name: ReportContent.name, schema: ReportContentSchema }, { name: ReportStory.name, schema: ReportStorySchema }]),
     forwardRef(() => UserModule),
     forwardRef(() => PostModule),
     forwardRef(() => RelationModule),
@@ -30,6 +34,8 @@ import { CommonUtilsModule } from './helpers/helpers.module'
     forwardRef(() => PostLikeModule),
     forwardRef(() => ReportUserModule),
     forwardRef(() => ReportContentModule),
+    forwardRef(() => ReportStoryModule),
+    forwardRef(() => StoryModule),
     CommonUtilsModule,
   ],
   controllers: [AdminController],
