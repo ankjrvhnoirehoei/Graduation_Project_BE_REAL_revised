@@ -26,7 +26,7 @@ interface LeanMessageWithSender {
 export class MessageService {
   constructor(
     @InjectModel(Message.name) private messageModel: Model<Message>,
-  ) { }
+  ) {}
 
   async create(
     createMessageDto: CreateMessageDto & { senderId: string },
@@ -47,12 +47,15 @@ export class MessageService {
   }
 
   async findByRoom(roomId: string): Promise<Message[]> {
-    return this.messageModel.find({ roomId }).sort({ createdAt: 1 }).exec();
+    return this.messageModel
+      .find({ roomId, isDelete: false })
+      .sort({ createdAt: 1 })
+      .exec();
   }
 
   async getRecentMessages(roomId: string, limit: number = 20): Promise<any[]> {
     const messages = await this.messageModel
-      .find({ roomId })
+      .find({ roomId, isDelete: false })
       .sort({ createdAt: -1 })
       .limit(limit)
       .populate({
@@ -88,9 +91,13 @@ export class MessageService {
     userId: string,
   ): Promise<{ deleted: boolean }> {
     const result = await this.messageModel
-      .deleteOne({ _id: messageId, senderId: userId })
+      .updateOne(
+        { _id: messageId, senderId: userId },
+        { $set: { isDelete: true } },
+      )
       .exec();
-    return { deleted: result.deletedCount === 1 };
+
+    return { deleted: result.modifiedCount === 1 };
   }
 
   async addOrUpdateReaction(
@@ -121,34 +128,32 @@ export class MessageService {
 
   async getMediaMsginRoomChat(
     roomId: string,
-    page: number = 1
+    page: number = 1,
   ): Promise<{ media: any[]; page: number }> {
     const limit = 20;
     const skip = (page - 1) * limit;
 
-    const messages = await this.messageModel
+    const messages = (await this.messageModel
       .find({
         roomId,
-        'media.type': { $in: ['image', 'video'] }
+        'media.type': { $in: ['image', 'video'] },
       })
       .populate('senderId', 'handleName profilePic')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean()
-      .exec() as any[]
-    ;
-
+      .exec()) as any[];
     const formattedData = messages.map((msg) => ({
       _id: msg._id.toString(),
       media: {
         url: msg.media?.url,
-        type: msg.media?.type
+        type: msg.media?.type,
       },
       createdAt: msg.createdAt.toISOString(),
       senderId: {
-        handleName: msg.senderId.handleName
-      }
+        handleName: msg.senderId.handleName,
+      },
     }));
 
     return {

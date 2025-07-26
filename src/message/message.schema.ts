@@ -36,6 +36,9 @@ export class Message extends Document {
 
   @Prop({ type: [ReactionSchema], default: [] })
   reactions?: Reaction[];
+
+  @Prop({ default: false })
+  isDelete: boolean;
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);

@@ -25,7 +25,7 @@ export class PostService {
     private readonly userService: UserService,
     private readonly commentService: CommentService,
     private readonly relationService: RelationService,
-    private readonly musicService: MusicService
+    private readonly musicService: MusicService,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -121,7 +121,7 @@ export class PostService {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid userID');
     }
-    const objectIds = postIds.map(id => {
+    const objectIds = postIds.map((id) => {
       if (!Types.ObjectId.isValid(id)) {
         throw new BadRequestException(`Invalid postId: ${id}`);
       }
@@ -130,10 +130,12 @@ export class PostService {
 
     const userObjectId = new Types.ObjectId(userId);
 
-    const result = await this.postModel.updateMany({
+    const result = await this.postModel.updateMany(
+      {
         _id: { $in: objectIds },
         userID: userObjectId,
-      },{ $set: { isEnable: false } },
+      },
+      { $set: { isEnable: false } },
     );
 
     if (result.matchedCount === 0) {
@@ -298,8 +300,8 @@ export class PostService {
           isFollow: {
             $cond: [
               { $eq: ['$userID', currentUser] },
-              '$$REMOVE',   // remove field on your own posts
-              '$isFollow',  // otherwise keep it
+              '$$REMOVE', // remove field on your own posts
+              '$isFollow', // otherwise keep it
             ],
           },
         },
@@ -489,7 +491,7 @@ export class PostService {
           'user.username': 1,
           'user.profilePic': 1,
           isFollow: 1,
-          isBlocked:     1,
+          isBlocked: 1,
           isBookmarked: 1,
         },
       },
@@ -757,9 +759,7 @@ export class PostService {
     const matchFilter = { _id: new Types.ObjectId(postId) };
 
     const result = await this.postModel
-      .aggregate([
-        ...this.buildBasePipeline(currentUser, matchFilter),
-      ])
+      .aggregate([...this.buildBasePipeline(currentUser, matchFilter)])
       .exec();
 
     return result[0] || null;
@@ -771,7 +771,7 @@ export class PostService {
     }
 
     const post = await this.runSinglePostAggregation(postId, userId);
-    
+
     if (!post) {
       throw new NotFoundException('Post not found');
     }
@@ -1479,7 +1479,7 @@ export class PostService {
       },
       { $addFields: { likeCount: { $size: '$likes' } } },
 
-      // 5) shareCount 
+      // 5) shareCount
       { $addFields: { shareCount: '$share' } },
 
       // 6) musicInfo
@@ -1561,7 +1561,10 @@ export class PostService {
   }
 
   async disablePost(postId: string): Promise<Boolean> {
-    const post = await this.postModel.findById(postId).select('isEnable').exec();
+    const post = await this.postModel
+      .findById(postId)
+      .select('isEnable')
+      .exec();
     if (!post) {
       throw new NotFoundException(`Post ${postId} not found`);
     }
@@ -1582,7 +1585,9 @@ export class PostService {
       };
     }
     const grouped = mediaList.reduce((acc, current) => {
-      const existingPost = acc.find(item => item.postID.equals(current.postID));
+      const existingPost = acc.find((item) =>
+        item.postID.equals(current.postID),
+      );
       if (existingPost) {
         existingPost.media.push(current);
       } else {
@@ -1591,32 +1596,46 @@ export class PostService {
           media: [current],
         });
       }
-      
-      return acc;
-    }, []) as { postID: Types.ObjectId, media: Media[] }[];
 
-    const postIds = grouped.map(media => media.postID);
-    const posts = await this.postModel.find(
-      { _id: { $in: postIds } },
-      { _id: 1, userID: 1, music: 1, caption: 1, share: 1, createdAt: 1 }
-    ).exec();
-    
+      return acc;
+    }, []) as { postID: Types.ObjectId; media: Media[] }[];
+
+    const postIds = grouped.map((media) => media.postID);
+    const posts = await this.postModel
+      .find(
+        { _id: { $in: postIds } },
+        { _id: 1, userID: 1, music: 1, caption: 1, share: 1, createdAt: 1 },
+      )
+      .exec();
+
     const postIdToMedia = new Map<string, any>();
-    grouped.forEach(media => {
+    grouped.forEach((media) => {
       const { postID, ...mediaData } = media;
       postIdToMedia.set(String(media.postID), mediaData);
     });
 
     const result = await Promise.all(
       posts.map(async (post) => {
-        const likeCount = await this.likePostService.getPostLikesCount(post._id.toString());
-        const commentCount = await this.commentService.getCommentCount(post._id.toString());
-        const isMeLike = await this.likePostService.isMeLikePost(userId, post._id.toString());
-        const isMeFollow = await this.relationService.getRelationType(userId, post.userID.toString());
+        const likeCount = await this.likePostService.getPostLikesCount(
+          post._id.toString(),
+        );
+        const commentCount = await this.commentService.getCommentCount(
+          post._id.toString(),
+        );
+        const isMeLike = await this.likePostService.isMeLikePost(
+          userId,
+          post._id.toString(),
+        );
+        const isMeFollow = await this.relationService.getRelationType(
+          userId,
+          post.userID.toString(),
+        );
         const user = await this.userService.findById(post.userID.toString());
         let mMusic = {};
         if (post.music?.musicId) {
-          mMusic = await this.musicService.findByID(post.music?.musicId.toString());
+          mMusic = await this.musicService.findByID(
+            post.music?.musicId.toString(),
+          );
         }
         const media = postIdToMedia.get(String(post._id));
         return {
@@ -1637,9 +1656,9 @@ export class PostService {
           music: post.music || {},
           musicInfo: mMusic,
           likeCount,
-          commentCount
+          commentCount,
         };
-      })
+      }),
     );
 
     return {
