@@ -10,6 +10,7 @@ interface LeanMessageWithSender {
   content: string;
   media: string;
   createdAt: Date;
+  isDeleted: boolean;
   senderId: {
     _id: string;
     handleName: string;
@@ -48,14 +49,14 @@ export class MessageService {
 
   async findByRoom(roomId: string): Promise<Message[]> {
     return this.messageModel
-      .find({ roomId, isDelete: false })
+      .find({ roomId, isDeleted: false })
       .sort({ createdAt: 1 })
       .exec();
   }
 
   async getRecentMessages(roomId: string, limit: number = 20): Promise<any[]> {
     const messages = await this.messageModel
-      .find({ roomId, isDelete: false })
+      .find({ roomId })
       .sort({ createdAt: -1 })
       .limit(limit)
       .populate({
@@ -64,19 +65,23 @@ export class MessageService {
       })
       .lean<LeanMessageWithSender[]>();
 
-    return messages.reverse().map((msg) => ({
-      _id: msg._id,
-      roomId: msg.roomId,
-      content: msg.content,
-      media: msg.media,
-      createdAt: msg.createdAt,
-      sender: {
-        userId: msg.senderId._id,
-        handleName: msg.senderId.handleName,
-        profilePic: msg.senderId.profilePic,
-      },
-      reactions: msg.reactions ?? [],
-    }));
+    return messages.reverse().map((msg) => {
+      if (msg.isDeleted) {
+        return {
+          _id: msg._id,
+          roomId: msg.roomId,
+          isDeleted: true,
+          createdAt: msg.createdAt,
+          senderId: msg.senderId,
+          sender: {
+            userId: msg.senderId._id,
+            handleName: msg.senderId.handleName,
+            profilePic: msg.senderId.profilePic,
+          },
+        };
+      }
+      return msg;
+    });
   }
 
   async deleteMessagesByRoom(
@@ -93,7 +98,7 @@ export class MessageService {
     const result = await this.messageModel
       .updateOne(
         { _id: messageId, senderId: userId },
-        { $set: { isDelete: true } },
+        { $set: { isDeleted: true } },
       )
       .exec();
 
