@@ -112,7 +112,7 @@ export class RoomService {
     // Gắn kiểu cho lean để TS biết có field createdAt
     const rooms = await this.roomModel
       .find({ user_ids: new Types.ObjectId(userId), type: 'accept' })
-      .populate('user_ids', '_id handleName profilePic')
+      .populate('user_ids', '_id handleName username profilePic')
       .lean<{
         map(arg0: (room: any) => any): unknown;
         _id: Types.ObjectId;
