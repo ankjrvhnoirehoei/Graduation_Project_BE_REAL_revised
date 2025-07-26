@@ -495,126 +495,126 @@ export class AdminController {
     };
   }
 
-  // Story Analytics & Statistics
-  @Get('stories/activity')
-  async getStoryActivity(
-    @CurrentUser('sub') adminId: string,
-    @Query('range', new DefaultValuePipe('7days'))
-    range: '7days' | '30days' | 'year',
-  ) {
-    return this.adminService.getStoryActivity(adminId, range);
-  }
+  // // Story Analytics & Statistics
+  // @Get('stories/activity')
+  // async getStoryActivity(
+  //   @CurrentUser('sub') adminId: string,
+  //   @Query('range', new DefaultValuePipe('7days'))
+  //   range: '7days' | '30days' | 'year',
+  // ) {
+  //   return this.adminService.getStoryActivity(adminId, range);
+  // }
 
-  @Get('stories/engagement')
-  async getStoryEngagement(
-    @CurrentUser('sub') adminId: string,
-    @Query('range', new DefaultValuePipe('7days'))
-    range: '7days' | '30days' | 'year',
-  ) {
-    return this.adminService.getStoryEngagement(adminId, range);
-  }
+  // @Get('stories/engagement')
+  // async getStoryEngagement(
+  //   @CurrentUser('sub') adminId: string,
+  //   @Query('range', new DefaultValuePipe('7days'))
+  //   range: '7days' | '30days' | 'year',
+  // ) {
+  //   return this.adminService.getStoryEngagement(adminId, range);
+  // }
 
-  @Get('stories/summary')
-  async getStorySummary(@CurrentUser('sub') adminId: string) {
-    return this.adminService.getStorySummary(adminId);
-  }
+  // @Get('stories/summary')
+  // async getStorySummary(@CurrentUser('sub') adminId: string) {
+  //   return this.adminService.getStorySummary(adminId);
+  // }
 
-  @Get('stories/summary-stories')
-  async getStorySummaryWithTrends(@CurrentUser('sub') adminId: string) {
-    return this.adminService.getStorySummaryWithTrends(adminId);
-  }
+  // @Get('stories/summary-stories')
+  // async getStorySummaryWithTrends(@CurrentUser('sub') adminId: string) {
+  //   return this.adminService.getStorySummaryWithTrends(adminId);
+  // }
 
-  // Story Management
-  @Get('stories/new')
-  async getNewStories(
-    @CurrentUser('sub') adminId: string,
-    @Query('range', new DefaultValuePipe('default')) range: 'default' | '7days' | '30days' | 'year',
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
-  ) {
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    let from: Date, to: Date = now;
+  // // Story Management
+  // @Get('stories/new')
+  // async getNewStories(
+  //   @CurrentUser('sub') adminId: string,
+  //   @Query('range', new DefaultValuePipe('default')) range: 'default' | '7days' | '30days' | 'year',
+  //   @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+  //   @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  // ) {
+  //   const now = new Date();
+  //   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  //   let from: Date, to: Date = now;
 
-    switch (range) {
-      case '7days':
-        from = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
-        break;
-      case '30days':
-        from = new Date(todayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
-        break;
-      case 'year':
-        from = new Date(now.getFullYear(), 0, 1);
-        break;
-      default:
-        from = todayStart;
-    }
+  //   switch (range) {
+  //     case '7days':
+  //       from = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
+  //       break;
+  //     case '30days':
+  //       from = new Date(todayStart.getTime() - 29 * 24 * 60 * 60 * 1000);
+  //       break;
+  //     case 'year':
+  //       from = new Date(now.getFullYear(), 0, 1);
+  //       break;
+  //     default:
+  //       from = todayStart;
+  //   }
 
-    return this.adminService.getNewStoriesByDate(adminId, from, to, page, limit);
-  }
+  //   return this.adminService.getNewStoriesByDate(adminId, from, to, page, limit);
+  // }
 
-  @Patch('stories/disable/:id')
-  async disableStory(
-    @CurrentUser('sub') adminId: string,
-    @Param('id') storyId: string,
-  ) {
-    return this.adminService.disableStory(adminId, storyId);
-  }
+  // @Patch('stories/disable/:id')
+  // async disableStory(
+  //   @CurrentUser('sub') adminId: string,
+  //   @Param('id') storyId: string,
+  // ) {
+  //   return this.adminService.disableStory(adminId, storyId);
+  // }
 
-  // Additional Story Endpoints
-  @Get('stories/search')
-  async searchStories(
-    @CurrentUser('sub') adminId: string,
-    @Query('keyword') keyword: string,
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
-  ) {
-    await this.adminService.ensureAdmin(adminId);
+  // // Additional Story Endpoints
+  // @Get('stories/search')
+  // async searchStories(
+  //   @CurrentUser('sub') adminId: string,
+  //   @Query('keyword') keyword: string,
+  //   @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+  //   @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  // ) {
+  //   await this.adminService.ensureAdmin(adminId);
 
-    if (!keyword || keyword.trim() === '') {
-      throw new NotFoundException('Keyword is required');
-    }
+  //   if (!keyword || keyword.trim() === '') {
+  //     throw new NotFoundException('Keyword is required');
+  //   }
 
-    const result = await this.storyService.searchStories(keyword.trim(), page, limit);
-    return { success: true, ...result };
-  }
+  //   const result = await this.storyService.searchStories(keyword.trim(), page, limit);
+  //   return { success: true, ...result };
+  // }
 
-  @Get('stories/:id')
-  async getStoryDetails(
-    @CurrentUser('sub') adminId: string,
-    @Param('id') storyId: string,
-  ) {
-    await this.adminService.ensureAdmin(adminId);
+  // @Get('stories/:id')
+  // async getStoryDetails(
+  //   @CurrentUser('sub') adminId: string,
+  //   @Param('id') storyId: string,
+  // ) {
+  //   await this.adminService.ensureAdmin(adminId);
 
-    const result = await this.storyService.findStoryById([storyId], adminId);
-    if (!result.data || result.data.length === 0) {
-      throw new NotFoundException('Story not found');
-    }
+  //   const result = await this.storyService.findStoryById([storyId], adminId);
+  //   if (!result.data || result.data.length === 0) {
+  //     throw new NotFoundException('Story not found');
+  //   }
 
-    return { success: true, data: result.data[0] };
-  }
+  //   return { success: true, data: result.data[0] };
+  // }
 
-  @Patch('stories/bulk-disable')
-  async bulkDisableStories(
-    @CurrentUser('sub') adminId: string,
-    @Body('storyIds') storyIds: string[],
-  ) {
-    if (!storyIds || storyIds.length === 0) {
-      throw new NotFoundException('Story IDs are required');
-    }
+  // @Patch('stories/bulk-disable')
+  // async bulkDisableStories(
+  //   @CurrentUser('sub') adminId: string,
+  //   @Body('storyIds') storyIds: string[],
+  // ) {
+  //   if (!storyIds || storyIds.length === 0) {
+  //     throw new NotFoundException('Story IDs are required');
+  //   }
 
-    return this.adminService.bulkDisableStories(adminId, storyIds);
-  }
+  //   return this.adminService.bulkDisableStories(adminId, storyIds);
+  // }
 
-  @Patch('stories/bulk-enable')
-  async bulkEnableStories(
-    @CurrentUser('sub') adminId: string,
-    @Body('storyIds') storyIds: string[],
-  ) {
-    if (!storyIds || storyIds.length === 0) {
-      throw new NotFoundException('Story IDs are required');
-    }
+  // @Patch('stories/bulk-enable')
+  // async bulkEnableStories(
+  //   @CurrentUser('sub') adminId: string,
+  //   @Body('storyIds') storyIds: string[],
+  // ) {
+  //   if (!storyIds || storyIds.length === 0) {
+  //     throw new NotFoundException('Story IDs are required');
+  //   }
 
-    return this.adminService.bulkEnableStories(adminId, storyIds);
-  }
+  //   return this.adminService.bulkEnableStories(adminId, storyIds);
+  // }
 }
