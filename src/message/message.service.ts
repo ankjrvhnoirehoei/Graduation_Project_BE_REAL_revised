@@ -49,7 +49,7 @@ export class MessageService {
 
   async findByRoom(roomId: string): Promise<Message[]> {
     return this.messageModel
-      .find({ roomId, isDeleted: false })
+      .find({ roomId, isDelete: false })
       .sort({ createdAt: 1 })
       .exec();
   }
@@ -65,24 +65,20 @@ export class MessageService {
       })
       .lean<LeanMessageWithSender[]>();
 
-    return messages.reverse().map((msg) => {
-      if (msg.isDeleted) {
-        return {
-          _id: msg._id,
-          roomId: msg.roomId,
-          isDeleted: true,
-          createdAt: msg.createdAt,
-          senderId: msg.senderId,
-          content: 'Tin nhắn đã bị thu hồi',
-          sender: {
-            userId: msg.senderId._id,
-            handleName: msg.senderId.handleName,
-            profilePic: msg.senderId.profilePic,
-          },
-        };
-      }
-      return msg;
-    });
+    return messages.reverse().map((msg) => ({
+      _id: msg._id,
+      roomId: msg.roomId,
+      content: msg.content,
+      media: msg.media,
+      createdAt: msg.isDeleted ? 'Tin nhắn đã bị thu hồi' : msg.createdAt,
+      isDeleted: msg.isDeleted,
+      sender: {
+        userId: msg.senderId._id,
+        handleName: msg.senderId.handleName,
+        profilePic: msg.senderId.profilePic,
+      },
+      reactions: msg.reactions ?? [],
+    }));
   }
 
   async deleteMessagesByRoom(
@@ -99,7 +95,7 @@ export class MessageService {
     const result = await this.messageModel
       .updateOne(
         { _id: messageId, senderId: userId },
-        { $set: { isDeleted: true } },
+        { $set: { isDelete: true } },
       )
       .exec();
 
