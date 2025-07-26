@@ -8,6 +8,7 @@ import { UserModule } from 'src/user/user.module';
 import { AdminModule } from 'src/admin/admin.module'; 
 import { Post, PostSchema } from 'src/post/post.schema';
 import { PostModule } from 'src/post/post.module';
+import { CommonUtilsModule } from 'src/admin/helpers/helpers.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { PostModule } from 'src/post/post.module';
       { name: Post.name, schema: PostSchema },
     ]),
     UserModule,
+    CommonUtilsModule,
     forwardRef(() => AdminModule),
     forwardRef(() => PostModule),
   ],
