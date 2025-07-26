@@ -137,12 +137,17 @@ export class RoomService {
           senderId: { $first: '$senderId' },
           media: { $first: '$media' },
           createdAt: { $first: '$createdAt' },
+          isDeleted: { $first: '$isDeleted' },
         },
       },
     ]);
 
     const latestMessageMap = new Map<string, any>();
     for (const msg of messages) {
+      if (msg.isDeleted) {
+        msg.content = 'Tin nhắn đã bị thu hồi';
+        msg.media = null;
+      }
       latestMessageMap.set(msg._id, msg);
     }
 

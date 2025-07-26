@@ -73,7 +73,7 @@ export class MessageService {
           isDeleted: true,
           createdAt: msg.createdAt,
           senderId: msg.senderId,
-          content: 'Tin nhắn đã thu hồi',
+          content: 'Tin nhắn đã bị thu hồi',
           sender: {
             userId: msg.senderId._id,
             handleName: msg.senderId.handleName,
