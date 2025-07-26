@@ -95,7 +95,7 @@ export class MessageService {
     const result = await this.messageModel
       .updateOne(
         { _id: messageId, senderId: userId },
-        { $set: { isDelete: true } },
+        { $set: { isDeleted: true } },
       )
       .exec();
 
