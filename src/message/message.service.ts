@@ -68,9 +68,9 @@ export class MessageService {
     return messages.reverse().map((msg) => ({
       _id: msg._id,
       roomId: msg.roomId,
-      content: msg.content,
+      content: msg.isDeleted ? 'Tin nhắn đã bị thu hồi' : msg.content,
       media: msg.media,
-      createdAt: msg.isDeleted ? 'Tin nhắn đã bị thu hồi' : msg.createdAt,
+      createdAt: msg.createdAt,
       isDeleted: msg.isDeleted,
       sender: {
         userId: msg.senderId._id,
