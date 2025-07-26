@@ -7,6 +7,7 @@ import { CreateReportUserDto } from '../report-user/dto/create-report.dto';
 import { UserService } from 'src/user/user.service';
 import { AdminService } from 'src/admin/admin.service';
 import { ReportReason } from './report-content.schema';
+import { CommonServices } from 'src/admin/helpers/helpers.service';
 interface PaginationOptions {
   page: number;
   limit: number;
@@ -27,6 +28,7 @@ export class ReportContentService {
     private readonly reportModel: Model<ReportContentDocument>,
     private readonly userService: UserService,
     private readonly adminService: AdminService,
+    private readonly commonService: CommonServices,
   ) {}
 
 async createReport(
@@ -247,7 +249,7 @@ async getReportReasonsActivity(
   await this.adminService.ensureAdmin(adminId);
   
   // Get range configuration using admin service helper
-  const { from, to, unit } = this.adminService.buildRange(range);
+  const { from, to, unit } = this.commonService.buildRange(range);
 
   // Get aggregated data for each report reason
   const [
@@ -262,31 +264,31 @@ async getReportReasonsActivity(
     otherRaw
   ] = await Promise.all([
     this.reportModel.aggregate(
-      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HARASSMENT_AND_BULLYING })
+      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HARASSMENT_AND_BULLYING })
     ),
     this.reportModel.aggregate(
-      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HATE_SPEECH })
+      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HATE_SPEECH })
     ),
     this.reportModel.aggregate(
-      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.IMPERSONATION_FAKE_ACCOUNTS })
+      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.IMPERSONATION_FAKE_ACCOUNTS })
     ),
     this.reportModel.aggregate(
-      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.GRAPHIC_CONTENT })
+      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.GRAPHIC_CONTENT })
     ),
     this.reportModel.aggregate(
-      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.THREATS_AND_VIOLENCE })
+      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.THREATS_AND_VIOLENCE })
     ),
     this.reportModel.aggregate(
-      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SCAMS_AND_FRAUD })
+      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SCAMS_AND_FRAUD })
     ),
     this.reportModel.aggregate(
-      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SENSITIVE_PERSONAL_INFO })
+      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SENSITIVE_PERSONAL_INFO })
     ),
     this.reportModel.aggregate(
-      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SELF_HARM })
+      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SELF_HARM })
     ),
     this.reportModel.aggregate(
-      this.adminService.buildTimeAggregation(from, to, unit, { reason: ReportReason.OTHER })
+      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.OTHER })
     ),
   ]);
 
@@ -314,7 +316,7 @@ async getReportReasonsActivity(
     'OTHER'
   ];
 
-  const timeSeriesData = this.adminService.buildTimeSeriesData(
+  const timeSeriesData = this.commonService.buildTimeSeriesData(
     from,
     to,
     unit,
@@ -326,8 +328,8 @@ async getReportReasonsActivity(
     success: true,
     range,
     unit,
-    from: this.adminService.formatDate(from),
-    to: this.adminService.formatDate(to),
+    from: this.commonService.formatDate(from),
+    to: this.commonService.formatDate(to),
     data: timeSeriesData
   };
 }

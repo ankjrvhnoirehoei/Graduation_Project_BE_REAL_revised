@@ -1,10 +1,9 @@
-import { Body, Controller, DefaultValuePipe, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, DefaultValuePipe, Get, NotFoundException, Param, ParseBoolPipe, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { WeeklyPostsDto } from 'src/post/dto/weekly-posts.dto';
 import { LastTwoWeeksDto } from 'src/post/dto/last-two-weeks.dto';
-import { TopPostDto } from 'src/post/dto/top-posts.dto';
 import { TopFollowerDto } from 'src/user/dto/top-followers.dto';
 import { EditUserDto } from 'src/user/dto/update-user.dto';
 import { PostService } from 'src/post/post.service';
@@ -79,7 +78,7 @@ export class AdminController {
   }
 
   @Get('posts/top-liked')
-  async getTopLiked(@CurrentUser('sub') userId: string): Promise<TopPostDto[]> {
+  async getTopLiked(@CurrentUser('sub') userId: string) {
     return this.adminService.getTopLiked(userId);
   }
 
@@ -112,11 +111,14 @@ export class AdminController {
   async getNewPosts(
     @CurrentUser('sub') userId: string,
     @Query('range', new DefaultValuePipe('default')) range: 'default' | '7days' | '30days' | 'year',
+    @Query('sortBy', new DefaultValuePipe('createdAt')) sortBy: 'createdAt' | 'likeCount' | 'commentCount' | 'viewCount',
+    @Query('sortOrder', new DefaultValuePipe('desc')) sortOrder: 'asc' | 'desc',
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     let from: Date, to: Date = now;
-
     switch (range) {
       case '7days':
         from = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
@@ -130,9 +132,16 @@ export class AdminController {
       default:
         from = todayStart;
     }
-
-    const posts = await this.adminService.getNewPostsByDate(userId, from, to);
-    return { success: true, data: posts };
+    const result = await this.adminService.getNewPostsByDatePaginated(
+      userId, 
+      from, 
+      to, 
+      sortBy, 
+      sortOrder, 
+      page, 
+      limit
+    );
+    return { success: true, data: result }; 
   }
 
   @Patch('posts/disable/:id')

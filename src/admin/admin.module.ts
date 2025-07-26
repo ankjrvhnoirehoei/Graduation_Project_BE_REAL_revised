@@ -21,6 +21,8 @@ import { ReportContentModule } from 'src/report-content/report-content.module';
 import { ReportStory, ReportStorySchema } from 'src/report-story/schema/report-story.schema';
 import { ReportStoryModule } from 'src/report-story/report-story.module';
 import { StoryModule } from 'src/story/story.module';
+import { CommonUtilsModule } from './helpers/helpers.module'
+
 
 @Module({
   imports: [
@@ -34,6 +36,7 @@ import { StoryModule } from 'src/story/story.module';
     forwardRef(() => ReportContentModule),
     forwardRef(() => ReportStoryModule),
     forwardRef(() => StoryModule),
+    CommonUtilsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],
