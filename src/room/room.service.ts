@@ -213,7 +213,7 @@ export class RoomService {
         type: 'waiting',
         created_by: { $ne: new Types.ObjectId(userId) },  // loại bỏ các room mình tạo
       })
-      .populate('user_ids', '_id handleName profilePic')
+      .populate('user_ids', '_id handleName username profilePic')
       .lean();
 
     const stringRoomIds = rooms.map((room) => room._id.toString());
