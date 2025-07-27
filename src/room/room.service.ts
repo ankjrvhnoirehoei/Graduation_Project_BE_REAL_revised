@@ -211,6 +211,7 @@ export class RoomService {
       .find({
         user_ids: new Types.ObjectId(userId),
         type: 'waiting',
+        created_by: { $ne: new Types.ObjectId(userId) },  // loại bỏ các room mình tạo
       })
       .populate('user_ids', '_id handleName profilePic')
       .lean();
