@@ -42,7 +42,7 @@ export class RoomService {
       .findOne({
         user_ids: { $all: allUserIds, $size: allUserIds.length },
       })
-      .populate('user_ids', '_id handleName profilePic');
+      .populate('user_ids', '_id handleName username profilePic');
 
     if (existingRoom) {
       return {
