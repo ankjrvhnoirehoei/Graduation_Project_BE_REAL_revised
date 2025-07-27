@@ -111,7 +111,12 @@ export class RoomService {
   async getRoomsOfUser(userId: string): Promise<any[]> {
     // Gắn kiểu cho lean để TS biết có field createdAt
     const rooms = await this.roomModel
-      .find({ user_ids: new Types.ObjectId(userId), type: 'accept' })
+      .find({
+        $or: [
+          { user_ids: new Types.ObjectId(userId), type: 'accept' },
+          { created_by: new Types.ObjectId(userId), type: 'waiting' },
+        ],
+      })
       .populate('user_ids', '_id handleName username profilePic')
       .lean<{
         map(arg0: (room: any) => any): unknown;
@@ -193,6 +198,7 @@ export class RoomService {
       .find({
         user_ids: new Types.ObjectId(userId),
         type: 'waiting',
+        created_by: { $ne: new Types.ObjectId(userId) }, // loại bỏ các room mình tạo
       })
       .populate('user_ids', '_id handleName profilePic')
       .lean();
@@ -200,11 +206,7 @@ export class RoomService {
     const stringRoomIds = rooms.map((room) => room._id.toString());
 
     const messages = await this.messageModel.aggregate([
-      {
-        $match: {
-          roomId: { $in: stringRoomIds },
-        },
-      },
+      { $match: { roomId: { $in: stringRoomIds } } },
       { $sort: { createdAt: -1 } },
       {
         $group: {
