@@ -109,28 +109,44 @@ export class RoomService {
   }
 
   async getRoomsOfUser(userId: string): Promise<any[]> {
-    // Gắn kiểu cho lean để TS biết có field createdAt
+    // 1) Lấy danh sách room
     const rooms = await this.roomModel
       .find({
         $or: [
-          { user_ids: new Types.ObjectId(userId), type: 'accept' },
-          { created_by: new Types.ObjectId(userId), type: 'waiting' },
+          {
+            $and: [
+              { user_ids: new Types.ObjectId(userId) },
+              { type: 'accept' },
+            ],
+          },
+          {
+            $and: [
+              { created_by: new Types.ObjectId(userId) },
+              { type: 'waiting' },
+            ],
+          },
         ],
       })
       .populate('user_ids', '_id handleName username profilePic')
-      .lean<{
-        map(arg0: (room: any) => any): unknown;
-        _id: Types.ObjectId;
-        name: string;
-        theme?: string;
-        type: string;
-        user_ids: Types.ObjectId[];
-        created_by: Types.ObjectId;
-        createdAt: Date;
-      }>();
+      .lean<
+        {
+          _id: Types.ObjectId;
+          name: string;
+          theme?: string;
+          type: string;
+          user_ids: Types.ObjectId[];
+          created_by: Types.ObjectId;
+          createdAt: Date;
+        }[]
+      >();
 
-    const stringRoomIds = rooms.map((room) => room._id.toString());
+    // 2) Nếu muốn an toàn, có thể filter thêm
+    const validRooms = rooms.filter((r) => r && typeof r.type === 'string');
 
+    // 3) Chuẩn bị danh sách roomId dưới dạng string
+    const stringRoomIds = validRooms.map((room) => room._id.toString());
+
+    // 4) Lấy tin nhắn mới nhất cho mỗi room
     const messages = await this.messageModel.aggregate([
       { $match: { roomId: { $in: stringRoomIds } } },
       { $sort: { createdAt: -1 } },
@@ -147,20 +163,22 @@ export class RoomService {
       },
     ]);
 
+    // 5) Build map _id → latestMessage, có guard media null
     const latestMessageMap = new Map<string, any>();
     for (const msg of messages) {
       if (msg.isDeleted) {
         msg.content = 'Tin nhắn đã bị thu hồi';
         msg.media = null;
       }
-      if (msg.media.type == 'image') {
+      // chỉ check type khi media khác null
+      if (msg.media?.type === 'image') {
         msg.content = 'Hình ảnh';
       }
       latestMessageMap.set(msg._id, msg);
     }
 
-    // Ghép room với latestMessage, giữ nguyên createdAt để sort
-    const roomsWithMessages: any = rooms.map((room) => ({
+    // 6) Ghép room với latestMessage, giữ createdAt để sort
+    const roomsWithMessages = validRooms.map((room) => ({
       _id: room._id,
       name: room.name,
       theme: room.theme,
@@ -171,25 +189,20 @@ export class RoomService {
       latestMessage: latestMessageMap.get(room._id.toString()) ?? null,
     }));
 
-    // Sort: so sánh max giữa thời điểm tạo room và thời điểm tin nhắn mới nhất
+    // 7) Sort theo thời gian (tạo room vs tin nhắn mới nhất)
     roomsWithMessages.sort((a, b) => {
       const aRoomTime = a.createdAt.getTime();
       const bRoomTime = b.createdAt.getTime();
-
       const aMsgTime = a.latestMessage?.createdAt
         ? new Date(a.latestMessage.createdAt).getTime()
         : 0;
       const bMsgTime = b.latestMessage?.createdAt
         ? new Date(b.latestMessage.createdAt).getTime()
         : 0;
-
-      const aTime = Math.max(aRoomTime, aMsgTime);
-      const bTime = Math.max(bRoomTime, bMsgTime);
-
-      return bTime - aTime;
+      return Math.max(bRoomTime, bMsgTime) - Math.max(aRoomTime, aMsgTime);
     });
 
-    // Trả về đúng structure ban đầu (bỏ createdAt tạm)
+    // 8) Trả về cấu trúc ban đầu, bỏ createdAt tạm
     return roomsWithMessages.map(({ createdAt, ...rest }) => rest);
   }
 
@@ -198,7 +211,6 @@ export class RoomService {
       .find({
         user_ids: new Types.ObjectId(userId),
         type: 'waiting',
-        created_by: { $ne: new Types.ObjectId(userId) }, // loại bỏ các room mình tạo
       })
       .populate('user_ids', '_id handleName profilePic')
       .lean();
@@ -206,7 +218,11 @@ export class RoomService {
     const stringRoomIds = rooms.map((room) => room._id.toString());
 
     const messages = await this.messageModel.aggregate([
-      { $match: { roomId: { $in: stringRoomIds } } },
+      {
+        $match: {
+          roomId: { $in: stringRoomIds },
+        },
+      },
       { $sort: { createdAt: -1 } },
       {
         $group: {
