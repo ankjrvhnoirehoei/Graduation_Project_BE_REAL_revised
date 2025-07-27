@@ -277,4 +277,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('errorMessage', 'Lỗi xoá tin nhắn');
     }
   }
+
+  @SubscribeMessage('room:update-theme')
+  handleUpdateRoomTheme(
+    @MessageBody() payload: { roomId: string; theme: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { roomId, theme } = payload;
+
+    if (!roomId || !theme) {
+      client.emit('errorMessage', 'Missing roomId or theme');
+      return;
+    }
+
+    client.to(roomId).emit('room:update-theme', {
+      roomId,
+      theme,
+    });
+
+    console.log(`🎨 Theme updated in room ${roomId}: ${theme}`);
+  }
 }
