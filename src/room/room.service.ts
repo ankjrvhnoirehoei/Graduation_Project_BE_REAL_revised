@@ -211,7 +211,7 @@ export class RoomService {
       .find({
         user_ids: new Types.ObjectId(userId),
         type: 'waiting',
-        created_by: { $ne: new Types.ObjectId(userId) },  // loại bỏ các room mình tạo
+        created_by: { $ne: new Types.ObjectId(userId) }, // loại bỏ các room mình tạo
       })
       .populate('user_ids', '_id handleName username profilePic')
       .lean();
@@ -330,10 +330,6 @@ export class RoomService {
       .findById(id)
       .populate({
         path: 'user_ids',
-        select: '-password -refreshToken -fcmToken -role',
-      })
-      .populate({
-        path: 'created_by',
         select: '-password -refreshToken -fcmToken -role',
       })
       .exec();
