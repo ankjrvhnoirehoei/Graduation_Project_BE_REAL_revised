@@ -250,4 +250,31 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`📞 Call cancelled by ${senderId} in room ${roomId}`);
     client.to(roomId).emit('callCancelled', { senderId });
   }
+
+  @SubscribeMessage('deleteMessage')
+  async handleDeleteMessage(
+    @MessageBody()
+    payload: { messageId: string; userId: string; roomId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { messageId, userId, roomId } = payload;
+
+    try {
+      const result = await this.messageService.deleteMessageById(
+        messageId,
+        userId,
+      );
+
+      if (result.deleted) {
+        this.server.to(roomId).emit('messageDeleted', {
+          messageId,
+        });
+      } else {
+        client.emit('errorMessage', 'Không thể xoá tin nhắn');
+      }
+    } catch (err) {
+      console.error('❗ Error deleting message:', err);
+      client.emit('errorMessage', 'Lỗi xoá tin nhắn');
+    }
+  }
 }

@@ -148,6 +148,9 @@ export class RoomService {
         msg.content = 'Tin nhắn đã bị thu hồi';
         msg.media = null;
       }
+      if (msg.media.type == 'image') {
+        msg.content = 'Hình ảnh';
+      }
       latestMessageMap.set(msg._id, msg);
     }
 

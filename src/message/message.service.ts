@@ -49,7 +49,7 @@ export class MessageService {
 
   async findByRoom(roomId: string): Promise<Message[]> {
     return this.messageModel
-      .find({ roomId, isDelete: false })
+      .find({ roomId, isDeleted: false })
       .sort({ createdAt: 1 })
       .exec();
   }
