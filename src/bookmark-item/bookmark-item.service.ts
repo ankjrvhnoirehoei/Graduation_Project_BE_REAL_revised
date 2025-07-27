@@ -9,6 +9,7 @@ import {
 import { PostService } from 'src/post/post.service';
 import { MusicService } from 'src/music/music.service';
 import { BookmarkPlaylistService } from 'src/bookmark-playlist/bookmark-playlist.service';
+import { CommonServices } from 'src/admin/helpers/helpers.service';
 interface RemovalResult {
   deletedCount: number;
   notFoundCount: number;
@@ -30,6 +31,7 @@ export class BookmarkItemService {
     private readonly musicService: MusicService, 
     @Inject(forwardRef(() => BookmarkPlaylistService))
     private readonly playlistService: BookmarkPlaylistService,
+    private readonly commonService: CommonServices,
   ) {}
 
   // returns all non-deleted items in a given playlist
@@ -89,7 +91,7 @@ export class BookmarkItemService {
       };
     }
 
-    const result = await this.postService.runPagedAggregation(
+    const result = await this.commonService.runPagedAggregation(
       {
         _userId: userId,
         type: { $in: ['post', 'reel'] },
@@ -412,7 +414,7 @@ export class BookmarkItemService {
     const total  = await this.itemModel.countDocuments({ playlistID: { $in: await this.getPlaylistIds(uid) }, isDeleted: false });
     const ids    = raw.map((r) => r.itemID);
 
-    const { items, pagination } = await this.postService.runPagedAggregation(
+    const { items, pagination } = await this.commonService.runPagedAggregation(
       { _userId: userId, _id: { $in: ids }, type: { $in: ['post','reel'] } },
       page,
       limit

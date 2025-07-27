@@ -326,11 +326,11 @@ export class UserController {
   @Post('forgot-password/confirm')
   async confirmForgotPassword(
     @Body() dto: ConfirmForgotPasswordDto,
-  ): Promise<{ message: string; newPassword: string }> {
-    const { newPassword } = await this.userService.confirmPasswordReset(dto);
+  ) {
+    const result = await this.userService.confirmPasswordReset(dto);
     return {
-      message: 'Đặt lại mật khẩu thành công.',
-      newPassword,
+      message: 'Xác nhận tài khoản thành công.',
+      ...result
     };
   }
 

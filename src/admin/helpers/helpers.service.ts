@@ -1,12 +1,17 @@
 import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
 
-import { PipelineStage, Types } from 'mongoose';
+import { Model, PipelineStage, Types } from 'mongoose';
 import { WeeklyPostsDto } from 'src/post/dto/weekly-posts.dto';
+import { Post, PostDocument } from 'src/post/post.schema';
 export type RangePair = { start: Date; end: Date };
 export type RangeKey = '7days' | '30days' | 'year';
 
 @Injectable()
 export class CommonServices {
+  constructor(
+    @InjectModel(Post.name) private postModel: Model<PostDocument>,
+  ) {}
   /**
    * Get local time boundaries for comparison periods
    * Uses Vietnamese timezone (UTC+7) for proper local time calculation
@@ -447,5 +452,396 @@ export class CommonServices {
     }
 
     return data;
+  }
+
+  // core all posts/reels 
+  public buildBasePipeline(
+    currentUser: Types.ObjectId,
+    matchFilter: Record<string, any>,
+  ): PipelineStage[] {
+    return [
+      {
+        $lookup: {
+          from: 'relations',
+          let: { pu: '$userID', cu: currentUser },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userOneID', '$$cu'] },
+                    { $eq: ['$userTwoID', '$$pu'] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 0, relCurToAuth: '$relation' } },
+          ],
+          as: 'relCurToAuthArr',
+        },
+      },
+      {
+        $addFields: {
+          relCurToAuth: {
+            $ifNull: [
+              { $arrayElemAt: ['$relCurToAuthArr.relCurToAuth', 0] },
+              '',
+            ],
+          },
+        },
+      },
+
+      //
+      // 2) lookup where postAuthor -> currentUser
+      {
+        $lookup: {
+          from: 'relations',
+          let: { pu: '$userID', cu: currentUser },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userOneID', '$$pu'] },
+                    { $eq: ['$userTwoID', '$$cu'] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 0, relAuthToCur: '$relation' } },
+          ],
+          as: 'relAuthToCurArr',
+        },
+      },
+      {
+        $addFields: {
+          relAuthToCur: {
+            $ifNull: [
+              { $arrayElemAt: ['$relAuthToCurArr.relAuthToCur', 0] },
+              '',
+            ],
+          },
+        },
+      },
+
+      // 3) compute isFollow and isBlocked via regex
+      {
+        $addFields: {
+          isFollow: {
+            $or: [
+              // current->author “FOLLOW_*”
+              {
+                $regexMatch: {
+                  input: '$relCurToAuth',
+                  regex: '^FOLLOW_',
+                },
+              },
+              // author->current “*_FOLLOW”
+              {
+                $regexMatch: {
+                  input: '$relAuthToCur',
+                  regex: '_FOLLOW$',
+                },
+              },
+            ],
+          },
+          isBlocked: {
+            $or: [
+              // current->author “BLOCK_*”
+              {
+                $regexMatch: {
+                  input: '$relCurToAuth',
+                  regex: '^BLOCK_',
+                },
+              },
+              // author->current “*_BLOCK”
+              {
+                $regexMatch: {
+                  input: '$relAuthToCur',
+                  regex: '_BLOCK$',
+                },
+              },
+            ],
+          },
+        },
+      },
+
+      // 4) drop temporary fields
+      {
+        $project: {
+          relCurToAuthArr: 0,
+          relAuthToCurArr: 0,
+          relCurToAuth: 0,
+          relAuthToCur: 0,
+        },
+      },
+
+      // 5) filter out blocked authors
+      {
+        $match: {
+          $expr: {
+            $not: [
+              {
+                $and: [
+                  { $ne: ['$userID', currentUser] },
+                  { $eq: ['$isBlocked', true] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+
+      {
+        $addFields: {
+          isFollow: {
+            $cond: [
+              { $eq: ['$userID', currentUser] },
+              '$$REMOVE', // remove field on your own posts
+              '$isFollow', // otherwise keep it
+            ],
+          },
+        },
+      },
+      {
+        $project: {
+          isBlocked: 0,
+        },
+      },
+
+      // hidden posts + any extra matching
+      {
+        $lookup: {
+          from: 'hiddenposts',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'hidden',
+        },
+      },
+      {
+        $match: {
+          ...matchFilter,
+          isEnable: true,
+          nsfw: false,
+          $expr: { $not: { $in: [currentUser, '$hidden.userId'] } },
+        },
+      },
+
+      // 3) top‑level lookups & counts
+      {
+        $lookup: {
+          from: 'media',
+          localField: '_id',
+          foreignField: 'postID',
+          as: 'media',
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userID',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      {
+        $lookup: {
+          from: 'postlikes',
+          localField: '_id',
+          foreignField: 'postId',
+          as: 'likes',
+        },
+      },
+      {
+        $lookup: {
+          from: 'comments',
+          let: { postID: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postID', '$$postID'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'comments',
+        },
+      },
+      {
+        $addFields: {
+          likeCount: { $size: '$likes' },
+          commentCount: { $size: '$comments' },
+        },
+      },
+
+      // music lookup
+      {
+        $lookup: {
+          from: 'musics',
+          localField: 'music.musicId',
+          foreignField: '_id',
+          as: 'musicInfo',
+        },
+      },
+      { $unwind: { path: '$musicInfo', preserveNullAndEmptyArrays: true } },
+
+      // isLike
+      {
+        $lookup: {
+          from: 'postlikes',
+          let: { pid: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$postId', '$$pid'] },
+                    { $eq: ['$userId', currentUser] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'userLikeEntry',
+        },
+      },
+      { $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } } },
+
+      // bookmarks
+      {
+        $lookup: {
+          from: 'bookmarkplaylists',
+          let: { uid: currentUser },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userID', '$$uid'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 1 } },
+          ],
+          as: 'myPlaylists',
+        },
+      },
+      {
+        $lookup: {
+          from: 'bookmarkitems',
+          let: { pid: '$_id', pls: '$myPlaylists._id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $in: ['$playlistID', '$$pls'] },
+                    { $eq: ['$itemID', '$$pid'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+            { $limit: 1 },
+          ],
+          as: 'bookmarkEntry',
+        },
+      },
+      {
+        $addFields: { isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] } },
+      },
+
+      // final shape
+      {
+        $project: {
+          _id: 1,
+          userID: 1,
+          type: 1,
+          caption: 1,
+          isFlagged: 1,
+          nsfw: 1,
+          isEnable: 1,
+          location: 1,
+          isArchived: 1,
+          viewCount: 1,
+          share: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          media: 1,
+          isLike: 1,
+          likeCount: 1,
+          commentCount: 1,
+          music: 1,
+          'musicInfo.song': 1,
+          'musicInfo.link': 1,
+          'musicInfo.coverImg': 1,
+          'musicInfo.author': 1,
+          'user._id': 1,
+          'user.handleName': 1,
+          'user.username': 1,
+          'user.profilePic': 1,
+          isFollow: 1,
+          isBlocked: 1,
+          isBookmarked: 1,
+        },
+      },
+    ];
+  }
+  
+  // generic pagination and runner
+  public async runPagedAggregation(
+    matchFilter: Record<string, any>,
+    page: number,
+    limit: number,
+    sampleSize?: number,
+  ) {
+    const currentUser = new Types.ObjectId(matchFilter._userId);
+    const baseMatch = { ...matchFilter };
+    delete baseMatch._userId;
+
+    // count total
+    const countRes = await this.postModel
+      .aggregate([
+        ...this.buildBasePipeline(currentUser, baseMatch),
+        { $count: 'total' },
+      ])
+      .exec();
+    const total = countRes[0]?.total ?? 0;
+    const totalPages = Math.max(Math.ceil(total / limit), 1);
+
+    // build page stages
+    const pageStages: PipelineStage[] = [
+      { $sort: { createdAt: -1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+    ];
+    if (sampleSize) pageStages.push({ $sample: { size: sampleSize } });
+
+    // execute
+    const items = await this.postModel
+      .aggregate([
+        ...this.buildBasePipeline(currentUser, baseMatch),
+        ...pageStages,
+      ])
+      .exec();
+
+    return {
+      items,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount: total,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
   }
 }

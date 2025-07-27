@@ -350,10 +350,16 @@ export class BookmarkPlaylistService {
     }).exec();
 
     if (!playlist) {
-      throw new BadRequestException('Could not locate “All posts” playlist');
+      await this.findAllByUser(userId);
+      const newPlaylist = await this.playlistModel.findOne({
+        userID: uid,
+        playlistName: { $in: ['All posts', 'Tất cả bài đăng'] },
+        isDeleted: false,
+      }).exec();
+      return newPlaylist
+    } else {
+      return playlist;
     }
-
-    return playlist;
   }
 
 

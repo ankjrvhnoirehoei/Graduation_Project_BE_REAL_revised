@@ -106,7 +106,6 @@ export class UserService {
       password: hashedPassword,
       username: username,
       handleName: handleName,
-      isVip: false,
       deletedAt: false,
       profilePic:
         profilePic ||
@@ -552,9 +551,9 @@ export class UserService {
     };
   }
   
-  // Forgot password 1: write your email and new password
+  // Forgot password 1: write your email/phone number to get verification code
   async initiatePasswordReset(dto: ForgotPasswordDto): Promise<{ token: string }> {
-    const { email, phone, newPassword } = dto;
+    const { email, phone } = dto;
 
     // look up user by the right field
     const user = email
@@ -565,6 +564,10 @@ export class UserService {
       throw new NotFoundException('Không tìm thấy tài khoản hợp lệ.');
     }
 
+    if (user.isGoogle) {
+      throw new BadRequestException('Tài khoản đăng nhập bằng tài khoản Google không sử dụng mật khẩu.')
+    }
+
     // generate 6‑digit code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -573,12 +576,12 @@ export class UserService {
       await this.mailer.sendMail({
       from: process.env.EMAIL_FROM,
       to: email,
-      subject: 'Mã xác nhận đặt lại mật khẩu',
+      subject: 'Mã xác nhận tài khoản',
       html: `
         <div style="font-family: Arial, sans-serif; color: #333;">
-          <h2 style="color: #4a90e2;">Đặt lại mật khẩu</h2>
+          <h2 style="color: #4a90e2;">Xác nhận tài khoản</h2>
           <p>Xin chào,</p>
-          <p>Bạn đã yêu cầu đặt lại mật khẩu. Hãy sử dụng mã xác nhận bên dưới:</p>
+          <p>Bạn đã yêu cầu xác nhận tài khoản. Hãy sử dụng mã xác nhận bên dưới:</p>
           <div style="
             background: #f5f5f5;
             padding: 20px;
@@ -618,20 +621,20 @@ export class UserService {
       );
     }
 
-    // email token
+    // create token with user identifier and code
     const token = this.jwtService.sign(
-      { email, phone, newPassword, code },
+      { email, phone, code },
       { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '15m' },
     );
 
     return { token };
   }
 
-  // Forgot password 2: enter the confirmation code
+  // Forgot password 2: enter the confirmation code to verify account
   async confirmPasswordReset(
     dto: ConfirmForgotPasswordDto,
-  ): Promise<{ newPassword: string }> {
-    let payload: { email?: string; phone?: string; newPassword: string; code: string };
+  ) {
+    let payload: { email?: string; phone?: string; code: string };
     try {
       payload = this.jwtService.verify(dto.token, {
         secret: process.env.JWT_ACCESS_SECRET,
@@ -652,12 +655,21 @@ export class UserService {
     if (!user || user.deletedAt) {
       throw new NotFoundException('Tài khoản không hợp lệ hoặc đã bị vô hiệu hoá.');
     }
+    
+    const freshPayload = {
+      ...(payload.email ? { email: payload.email } : { phone: payload.phone }),
+      code: payload.code,
+    };
 
-    // hash & save new password
-    user.password = await bcrypt.hash(payload.newPassword, 10);
+    const refreshToken = await this.jwtService.signAsync(freshPayload, {
+      secret: process.env.JWT_REFRESH_SECRET,
+      expiresIn: '7d',
+    });
+
+    // persist & return
+    user.refreshToken = refreshToken;
     await user.save();
-
-    return { newPassword: payload.newPassword };
+    return { refreshToken };
   }
 
   async validateUser(userId: string): Promise<{ success: boolean; message: string }> {
