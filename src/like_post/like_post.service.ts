@@ -6,6 +6,7 @@ import { Post, PostDocument } from 'src/post/post.schema';
 import { User, UserDocument } from 'src/user/user.schema'; 
 import { RelationService } from 'src/relation/relation.service';
 import { PostService } from 'src/post/post.service';
+import { CommonServices } from 'src/admin/helpers/helpers.service';
 
 export enum TimeRange {
   TODAY = 'today',
@@ -28,9 +29,7 @@ export class PostLikeService {
     @InjectModel(User.name)  
     private userModel: Model<UserDocument>, 
     private readonly relationService: RelationService,
-
-    @Inject(forwardRef(() => PostService))
-    private readonly postService: PostService,
+    private readonly commonService: CommonServices,
   ) {}
 
   async like(postId: string, userId: string): Promise<void> {
@@ -159,7 +158,7 @@ export class PostLikeService {
     
     const posts = await this.postModel
       .aggregate([
-        ...this.postService.buildBasePipeline(currentUser, baseMatch),
+        ...this.commonService.buildBasePipeline(currentUser, baseMatch),
       ])
       .exec();
 

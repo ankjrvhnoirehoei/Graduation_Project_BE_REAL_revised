@@ -36,7 +36,7 @@ export class User {
   dateOfBirth?: string;
 
   @Prop({ default: false })
-  isVip: boolean;
+  isVip?: boolean;
 
   @Prop()
   refreshToken?: string;
@@ -52,6 +52,9 @@ export class User {
 
   @Prop ({ default: true })
   wantNotified?: boolean;
+
+  @Prop ({ default: false})
+  isGoogle: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

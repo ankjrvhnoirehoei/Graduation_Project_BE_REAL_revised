@@ -13,6 +13,7 @@ import { StoryModule } from 'src/story/story.module';
 import { PostLike, PostLikeSchema } from 'src/like_post/like_post.schema';
 import { Comment, CommentSchema } from 'src/comment/comment.schema';
 import { RelationModule } from 'src/relation/relation.module';
+import { CommonUtilsModule } from 'src/admin/helpers/helpers.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { RelationModule } from 'src/relation/relation.module';
     forwardRef(() => PostLikeModule),
     RelationModule,
     MusicModule,
+    forwardRef(() => CommonUtilsModule),
   ],
   controllers: [PostController],
   providers: [PostService],

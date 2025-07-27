@@ -7,6 +7,7 @@ import { Post, PostSchema } from 'src/post/post.schema';
 import { UserSchema } from 'src/user/user.schema';
 import { RelationModule } from 'src/relation/relation.module';
 import { PostModule } from 'src/post/post.module';
+import { CommonUtilsModule } from 'src/admin/helpers/helpers.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { PostModule } from 'src/post/post.module';
     ]),
     RelationModule,
     forwardRef(() => PostModule),
+    CommonUtilsModule,
   ],
   controllers: [PostLikeController],
   providers: [PostLikeService],

@@ -10,6 +10,7 @@ import {
 import { BookmarkPlaylistModule } from 'src/bookmark-playlist/bookmark-playlist.module';
 import { PostModule } from 'src/post/post.module';
 import { MusicModule } from 'src/music/music.module';
+import { CommonUtilsModule } from 'src/admin/helpers/helpers.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { MusicModule } from 'src/music/music.module';
     forwardRef(() => PostModule),
     forwardRef(() => BookmarkPlaylistModule),
     forwardRef(() => MusicModule),
+    CommonUtilsModule,
   ],
   providers: [BookmarkItemService],
   controllers: [BookmarkItemController],

@@ -9,23 +9,14 @@ import { CreatePostDto } from './dto/post.dto';
 import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
-import { Media } from 'src/media/media.schema';
-import { UserService } from 'src/user/user.service';
-import { PostLikeService } from 'src/like_post/like_post.service';
-import { CommentService } from 'src/comment/comment.service';
-import { RelationService } from 'src/relation/relation.service';
-import { MusicService } from 'src/music/music.service';
+import { CommonServices } from 'src/admin/helpers/helpers.service';
 
 @Injectable()
 export class PostService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
-    private readonly likePostService: PostLikeService,
-    private readonly userService: UserService,
-    private readonly commentService: CommentService,
-    private readonly relationService: RelationService,
-    private readonly musicService: MusicService,
+    private readonly commonService: CommonServices,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -158,345 +149,7 @@ export class PostService {
     return post.type as 'post' | 'reel' | 'music';
   }
 
-  public buildBasePipeline(
-    currentUser: Types.ObjectId,
-    matchFilter: Record<string, any>,
-  ): PipelineStage[] {
-    return [
-      {
-        $lookup: {
-          from: 'relations',
-          let: { pu: '$userID', cu: currentUser },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$userOneID', '$$cu'] },
-                    { $eq: ['$userTwoID', '$$pu'] },
-                  ],
-                },
-              },
-            },
-            { $project: { _id: 0, relCurToAuth: '$relation' } },
-          ],
-          as: 'relCurToAuthArr',
-        },
-      },
-      {
-        $addFields: {
-          relCurToAuth: {
-            $ifNull: [
-              { $arrayElemAt: ['$relCurToAuthArr.relCurToAuth', 0] },
-              '',
-            ],
-          },
-        },
-      },
 
-      //
-      // 2) lookup where postAuthor -> currentUser
-      {
-        $lookup: {
-          from: 'relations',
-          let: { pu: '$userID', cu: currentUser },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$userOneID', '$$pu'] },
-                    { $eq: ['$userTwoID', '$$cu'] },
-                  ],
-                },
-              },
-            },
-            { $project: { _id: 0, relAuthToCur: '$relation' } },
-          ],
-          as: 'relAuthToCurArr',
-        },
-      },
-      {
-        $addFields: {
-          relAuthToCur: {
-            $ifNull: [
-              { $arrayElemAt: ['$relAuthToCurArr.relAuthToCur', 0] },
-              '',
-            ],
-          },
-        },
-      },
-
-      // 3) compute isFollow and isBlocked via regex
-      {
-        $addFields: {
-          isFollow: {
-            $or: [
-              // current->author “FOLLOW_*”
-              {
-                $regexMatch: {
-                  input: '$relCurToAuth',
-                  regex: '^FOLLOW_',
-                },
-              },
-              // author->current “*_FOLLOW”
-              {
-                $regexMatch: {
-                  input: '$relAuthToCur',
-                  regex: '_FOLLOW$',
-                },
-              },
-            ],
-          },
-          isBlocked: {
-            $or: [
-              // current->author “BLOCK_*”
-              {
-                $regexMatch: {
-                  input: '$relCurToAuth',
-                  regex: '^BLOCK_',
-                },
-              },
-              // author->current “*_BLOCK”
-              {
-                $regexMatch: {
-                  input: '$relAuthToCur',
-                  regex: '_BLOCK$',
-                },
-              },
-            ],
-          },
-        },
-      },
-
-      // 4) drop temporary fields
-      {
-        $project: {
-          relCurToAuthArr: 0,
-          relAuthToCurArr: 0,
-          relCurToAuth: 0,
-          relAuthToCur: 0,
-        },
-      },
-
-      // 5) filter out blocked authors
-      {
-        $match: {
-          $expr: {
-            $not: [
-              {
-                $and: [
-                  { $ne: ['$userID', currentUser] },
-                  { $eq: ['$isBlocked', true] },
-                ],
-              },
-            ],
-          },
-        },
-      },
-
-      {
-        $addFields: {
-          isFollow: {
-            $cond: [
-              { $eq: ['$userID', currentUser] },
-              '$$REMOVE', // remove field on your own posts
-              '$isFollow', // otherwise keep it
-            ],
-          },
-        },
-      },
-      {
-        $project: {
-          isBlocked: 0,
-        },
-      },
-
-      // hidden posts + any extra matching
-      {
-        $lookup: {
-          from: 'hiddenposts',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'hidden',
-        },
-      },
-      {
-        $match: {
-          ...matchFilter,
-          isEnable: true,
-          nsfw: false,
-          $expr: { $not: { $in: [currentUser, '$hidden.userId'] } },
-        },
-      },
-
-      // 3) top‑level lookups & counts
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: '$user' },
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes',
-        },
-      },
-      {
-        $lookup: {
-          from: 'comments',
-          let: { postID: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postID'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'comments',
-        },
-      },
-      {
-        $addFields: {
-          likeCount: { $size: '$likes' },
-          commentCount: { $size: '$comments' },
-        },
-      },
-
-      // music lookup
-      {
-        $lookup: {
-          from: 'musics',
-          localField: 'music.musicId',
-          foreignField: '_id',
-          as: 'musicInfo',
-        },
-      },
-      { $unwind: { path: '$musicInfo', preserveNullAndEmptyArrays: true } },
-
-      // isLike
-      {
-        $lookup: {
-          from: 'postlikes',
-          let: { pid: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postId', '$$pid'] },
-                    { $eq: ['$userId', currentUser] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'userLikeEntry',
-        },
-      },
-      { $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } } },
-
-      // bookmarks
-      {
-        $lookup: {
-          from: 'bookmarkplaylists',
-          let: { uid: currentUser },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$userID', '$$uid'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-            { $project: { _id: 1 } },
-          ],
-          as: 'myPlaylists',
-        },
-      },
-      {
-        $lookup: {
-          from: 'bookmarkitems',
-          let: { pid: '$_id', pls: '$myPlaylists._id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $in: ['$playlistID', '$$pls'] },
-                    { $eq: ['$itemID', '$$pid'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-            { $limit: 1 },
-          ],
-          as: 'bookmarkEntry',
-        },
-      },
-      {
-        $addFields: { isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] } },
-      },
-
-      // final shape
-      {
-        $project: {
-          _id: 1,
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          location: 1,
-          isArchived: 1,
-          viewCount: 1,
-          share: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          media: 1,
-          isLike: 1,
-          likeCount: 1,
-          commentCount: 1,
-          music: 1,
-          'musicInfo.song': 1,
-          'musicInfo.link': 1,
-          'musicInfo.coverImg': 1,
-          'musicInfo.author': 1,
-          'user._id': 1,
-          'user.handleName': 1,
-          'user.username': 1,
-          'user.profilePic': 1,
-          isFollow: 1,
-          isBlocked: 1,
-          isBookmarked: 1,
-        },
-      },
-    ];
-  }
 
   private buildUserMediaPipeline(currentUser: Types.ObjectId): PipelineStage[] {
     return [
@@ -684,58 +337,8 @@ export class PostService {
     ];
   }
 
-  // generic pagination and runner
-  public async runPagedAggregation(
-    matchFilter: Record<string, any>,
-    page: number,
-    limit: number,
-    sampleSize?: number,
-  ) {
-    const currentUser = new Types.ObjectId(matchFilter._userId);
-    const baseMatch = { ...matchFilter };
-    delete baseMatch._userId;
-
-    // count total
-    const countRes = await this.postModel
-      .aggregate([
-        ...this.buildBasePipeline(currentUser, baseMatch),
-        { $count: 'total' },
-      ])
-      .exec();
-    const total = countRes[0]?.total ?? 0;
-    const totalPages = Math.max(Math.ceil(total / limit), 1);
-
-    // build page stages
-    const pageStages: PipelineStage[] = [
-      { $sort: { createdAt: -1 } },
-      { $skip: (page - 1) * limit },
-      { $limit: limit },
-    ];
-    if (sampleSize) pageStages.push({ $sample: { size: sampleSize } });
-
-    // execute
-    const items = await this.postModel
-      .aggregate([
-        ...this.buildBasePipeline(currentUser, baseMatch),
-        ...pageStages,
-      ])
-      .exec();
-
-    return {
-      items,
-      pagination: {
-        currentPage: page,
-        totalPages,
-        totalCount: total,
-        limit,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      },
-    };
-  }
-
   async findAllWithMedia(userId: string, page = 1, limit = 20) {
-    return this.runPagedAggregation(
+    return this.commonService.runPagedAggregation(
       { _userId: userId, type: { $in: ['post', 'reel'] } },
       page,
       limit,
@@ -743,7 +346,7 @@ export class PostService {
   }
 
   async findReelsWithMedia(userId: string, page = 1, limit = 20) {
-    return this.runPagedAggregation(
+    return this.commonService.runPagedAggregation(
       { _userId: userId, type: 'reel' },
       page,
       limit,
@@ -759,7 +362,7 @@ export class PostService {
     const matchFilter = { _id: new Types.ObjectId(postId) };
 
     const result = await this.postModel
-      .aggregate([...this.buildBasePipeline(currentUser, matchFilter)])
+      .aggregate([...this.commonService.buildBasePipeline(currentUser, matchFilter)])
       .exec();
 
     return result[0] || null;
@@ -923,8 +526,8 @@ export class PostService {
 
     // Use the existing runPagedAggregation method for both posts and reels
     const [postsResult, reelsResult] = await Promise.all([
-      this.runPagedAggregation(postsMatchFilter, page, limit),
-      this.runPagedAggregation(reelsMatchFilter, page, limit),
+      this.commonService.runPagedAggregation(postsMatchFilter, page, limit),
+      this.commonService.runPagedAggregation(reelsMatchFilter, page, limit),
     ]);
 
     return {
@@ -1576,90 +1179,38 @@ export class PostService {
     return newState;
   }
 
-  async getUserTaggedPosts(userId: string) {
-    const mediaList = await this.mediaService.findUserTaggedId(userId);
-    if (!mediaList || mediaList.length === 0) {
+  async getUserTaggedPosts(targetUser: string, currentUser: string, page: number = 1, limit: number = 10) {
+    // First, find all media that have the user tagged
+    const taggedMedia = await this.mediaService.findUserTaggedId(targetUser);
+    
+    if (!taggedMedia || taggedMedia.length === 0) {
       return {
         message: 'success',
-        data: [],
+        data: {
+          items: [],
+          pagination: {
+            currentPage: page,
+            totalPages: 1,
+            totalCount: 0,
+            limit,
+            hasNextPage: false,
+            hasPrevPage: false,
+          },
+        },
       };
     }
-    const grouped = mediaList.reduce((acc, current) => {
-      const existingPost = acc.find((item) =>
-        item.postID.equals(current.postID),
-      );
-      if (existingPost) {
-        existingPost.media.push(current);
-      } else {
-        acc.push({
-          postID: current.postID,
-          media: [current],
-        });
-      }
 
-      return acc;
-    }, []) as { postID: Types.ObjectId; media: Media[] }[];
+    // Extract unique post IDs from tagged media
+    const postIds = [...new Set(taggedMedia.map(media => media.postID))];
 
-    const postIds = grouped.map((media) => media.postID);
-    const posts = await this.postModel
-      .find(
-        { _id: { $in: postIds } },
-        { _id: 1, userID: 1, music: 1, caption: 1, share: 1, createdAt: 1 },
-      )
-      .exec();
+    // Create match filter for posts that contain tagged media
+    const matchFilter = {
+      _userId: currentUser, // This will be used by buildBasePipeline for currentUser context
+      _id: { $in: postIds }, // Only posts that have tagged media
+    };
 
-    const postIdToMedia = new Map<string, any>();
-    grouped.forEach((media) => {
-      const { postID, ...mediaData } = media;
-      postIdToMedia.set(String(media.postID), mediaData);
-    });
-
-    const result = await Promise.all(
-      posts.map(async (post) => {
-        const likeCount = await this.likePostService.getPostLikesCount(
-          post._id.toString(),
-        );
-        const commentCount = await this.commentService.getCommentCount(
-          post._id.toString(),
-        );
-        const isMeLike = await this.likePostService.isMeLikePost(
-          userId,
-          post._id.toString(),
-        );
-        const isMeFollow = await this.relationService.getRelationType(
-          userId,
-          post.userID.toString(),
-        );
-        const user = await this.userService.findById(post.userID.toString());
-        let mMusic = {};
-        if (post.music?.musicId) {
-          mMusic = await this.musicService.findByID(
-            post.music?.musicId.toString(),
-          );
-        }
-        const media = postIdToMedia.get(String(post._id));
-        return {
-          _id: post._id,
-          user: {
-            _id: user._id,
-            handleName: user.handleName,
-            profilePic: user.profilePic,
-          },
-          type: post.type,
-          caption: post.caption,
-          media: media.media,
-          share: post.share,
-          createdAt: (post as any).createdAt,
-          isLike: isMeLike,
-          isFollow: isMeFollow === 'NULL_FOLLOW' ? false : true,
-          isBookmarked: false,
-          music: post.music || {},
-          musicInfo: mMusic,
-          likeCount,
-          commentCount,
-        };
-      }),
-    );
+    // Use the existing aggregation helpers to get full posts with all data
+    const result = await this.commonService.runPagedAggregation(matchFilter, page, limit);
 
     return {
       message: 'success',
