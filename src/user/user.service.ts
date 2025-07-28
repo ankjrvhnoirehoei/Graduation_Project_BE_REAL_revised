@@ -642,11 +642,9 @@ export class UserService {
     } catch {
       throw new BadRequestException('Token không hợp lệ hoặc đã hết hạn.');
     }
-
     if (payload.code !== dto.code) {
       throw new BadRequestException('Mã xác nhận không đúng.');
     }
-
     // fetch user again by email or phone
     const lookup = payload.email
       ? { email: payload.email }
@@ -656,16 +654,13 @@ export class UserService {
       throw new NotFoundException('Tài khoản không hợp lệ hoặc đã bị vô hiệu hoá.');
     }
     
-    const freshPayload = {
-      ...(payload.email ? { email: payload.email } : { phone: payload.phone }),
-      code: payload.code,
-    };
-
-    const refreshToken = await this.jwtService.signAsync(freshPayload, {
+    // Create refresh token with user ID 
+    const refreshPayload = { sub: user._id.toString() };
+    const refreshToken = await this.jwtService.signAsync(refreshPayload, {
       secret: process.env.JWT_REFRESH_SECRET,
       expiresIn: '7d',
     });
-
+    
     // persist & return
     user.refreshToken = refreshToken;
     await user.save();

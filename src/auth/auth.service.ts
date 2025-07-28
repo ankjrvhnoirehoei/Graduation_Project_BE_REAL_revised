@@ -16,7 +16,8 @@ export class AuthService {
     email: string,
     password: string,
     fcmToken?: string,
-  ): Promise<{ message: string; accessToken: string; refreshToken: string; fcmToken?: string }> {
+    isGoogle?: boolean,
+  ): Promise<{ message: string; accessToken: string; refreshToken: string; fcmToken?: string; isGoogle?: boolean }> {
     if (!email) {
       throw new BadRequestException("Vui lòng cung cấp địa chỉ email.");
     }
