@@ -60,7 +60,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const { roomId, userId } = payload;
     client.data.userId = userId;
     this.onlineUsers.set(userId, client.id);
-    client.join(roomId);
+    client.join(roomId.toString());
     console.log(`📥 User ${userId} (${client.id}) joined room: ${roomId}`);
   }
 
@@ -69,7 +69,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody('roomId') roomId: string,
     @ConnectedSocket() client: Socket,
   ) {
-    client.leave(roomId);
+    client.leave(roomId.toString());
     console.log(`📤 Client ${client.id} left room: ${roomId}`);
   }
 
@@ -125,9 +125,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const recipientSocket = socketId
           ? this.server.sockets.sockets.get(socketId)
           : null;
-        const inRoom = recipientSocket
-          ? recipientSocket.rooms.has(roomId)
-          : false;
+        const inRoom = recipientSocket?.rooms.has(roomId.toString()) ?? false;
 
         if (!isOnline || !inRoom) {
           const recipient = await this.userService.findById(recipientId);
