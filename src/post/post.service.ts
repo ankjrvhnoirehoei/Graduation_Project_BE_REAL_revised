@@ -9,7 +9,7 @@ import { CreatePostDto } from './dto/post.dto';
 import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
-import { CommonServices } from 'src/admin/helpers/helpers.service';
+import { CommonServices, RecommendationConfig } from 'src/admin/helpers/helpers.service';
 
 @Injectable()
 export class PostService {
@@ -345,12 +345,78 @@ export class PostService {
     );
   }
 
-  async findReelsWithMedia(userId: string, page = 1, limit = 20) {
+  // async findReelsWithMedia(userId: string, page = 1, limit = 20) {
+  //   return this.commonService.runPagedAggregation(
+  //     { _userId: userId, type: 'reel' },
+  //     page,
+  //     limit,
+  //     20,
+  //   );
+  // }
+
+  async findRecommendedPostsWithMedia(userId: string, page = 1, limit = 20) {
+    const recommendationConfig = this.commonService.getDefaultRecommendationConfig();
+    
+    return this.commonService.runPagedAggregation(
+      { _userId: userId, type: { $in: ['post', 'reel'] } },
+      page,
+      limit,
+      undefined, // no sampling
+      recommendationConfig,
+    );
+  }
+
+  async findTrendingPostsWithMedia(userId: string, page = 1, limit = 20) {
+    const trendingConfig = this.commonService.getTrendingRecommendationConfig();
+    
+    return this.commonService.runPagedAggregation(
+      { _userId: userId, type: { $in: ['post', 'reel'] } },
+      page,
+      limit,
+      undefined,
+      trendingConfig,
+    );
+  }
+
+  async findRecommendedReelsWithMedia(userId: string, page = 1, limit = 20) {
+    const recommendationConfig = this.commonService.getDefaultRecommendationConfig();
+    
     return this.commonService.runPagedAggregation(
       { _userId: userId, type: 'reel' },
       page,
       limit,
       20,
+      recommendationConfig,
+    );
+  }
+
+  // Custom recommendation with specific config
+  async findPostsWithCustomRecommendation(
+    userId: string, 
+    page = 1, 
+    limit = 20, 
+    customConfig: Partial<RecommendationConfig>
+  ) {
+    const defaultConfig = this.commonService.getDefaultRecommendationConfig();
+    const mergedConfig: RecommendationConfig = {
+      ...defaultConfig,
+      ...customConfig,
+      weights: {
+        ...defaultConfig.weights,
+        ...customConfig.weights,
+      },
+      diversity: {
+        ...defaultConfig.diversity,
+        ...customConfig.diversity,
+      },
+    };
+
+    return this.commonService.runPagedAggregation(
+      { _userId: userId, type: { $in: ['post', 'reel'] } },
+      page,
+      limit,
+      undefined,
+      mergedConfig,
     );
   }
 

@@ -4,13 +4,35 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
 import { WeeklyPostsDto } from 'src/post/dto/weekly-posts.dto';
 import { Post, PostDocument } from 'src/post/post.schema';
+import { User, UserDocument } from 'src/user/user.schema';
 export type RangePair = { start: Date; end: Date };
 export type RangeKey = '7days' | '30days' | 'year';
+export interface RecommendationConfig {
+  enableRecommendation: boolean;
+  weights: {
+    mediaTagged: number;       // Posts where user is tagged in media
+    captionMentioned: number;  // Posts where user is mentioned in caption
+    followedUsers: number;     // Posts from followed users
+    engagement: number;        // High engagement posts
+    recency: number;           // Recent posts
+    bookmarkedMusic: number;   // Posts with music user has bookmarked
+  };
+  diversity: {
+    enabled: boolean;
+    randomFactor: number;      // 0-1, how much randomness to add
+  };
+  limits: {
+    maxMediaTaggedPosts?: number;
+    maxFollowedUserPosts?: number;
+  };
+}
+
 
 @Injectable()
 export class CommonServices {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
   ) {}
   /**
    * Get local time boundaries for comparison periods
@@ -795,41 +817,373 @@ export class CommonServices {
     ];
   }
   
+  // Build recommendation scoring pipeline stages. can be modified freely for what type of recommendation is needed
+  public buildRecommendationStages(
+    currentUser: Types.ObjectId,
+    userHandleName: string,
+    config: RecommendationConfig
+  ): PipelineStage[] {
+    if (!config.enableRecommendation) {
+      return []; // Return empty array if recommendation is disabled
+    }
+
+    return [
+      // get user's bookmarked music IDs for music recommendations
+      {
+        $lookup: {
+          from: 'bookmarkplaylists',
+          let: { uid: currentUser },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userID', '$$uid'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'userPlaylists',
+        },
+      },
+      {
+        $lookup: {
+          from: 'bookmarkitems',
+          let: { playlists: '$userPlaylists._id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $in: ['$playlistID', '$$playlists'] },
+                    { $eq: ['$itemType', 'music'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+            { $project: { itemID: 1 } },
+          ],
+          as: 'bookmarkedMusicItems',
+        },
+      },
+
+      // Calculate comprehensive recommendation score
+      {
+        $addFields: {
+          recommendationScore: {
+            $add: [
+              // Score for posts where user is tagged in media
+              {
+                $multiply: [
+                  config.weights.mediaTagged,
+                  {
+                    $cond: [
+                      {
+                        $gt: [
+                          {
+                            $size: {
+                              $filter: {
+                                input: { $ifNull: ['$media', []] },
+                                cond: {
+                                  $gt: [
+                                    {
+                                      $size: {
+                                        $filter: {
+                                          input: { $ifNull: ['$$this.tags', []] },
+                                          cond: { $eq: ['$$this.userId', currentUser] },
+                                        },
+                                      },
+                                    },
+                                    0,
+                                  ],
+                                },
+                              },
+                            },
+                          },
+                          0,
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                ],
+              },
+
+              // Score for posts where user is mentioned in caption
+              {
+                $multiply: [
+                  config.weights.captionMentioned,
+                  {
+                    $cond: [
+                      {
+                        $regexMatch: {
+                          input: { $ifNull: ['$caption', ''] },
+                          regex: `@${userHandleName}`,
+                          options: 'i',
+                        },
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                ],
+              },
+
+              // Score for posts from followed users
+              {
+                $multiply: [
+                  config.weights.followedUsers,
+                  {
+                    $cond: [{ $eq: ['$isFollow', true] }, 1, 0],
+                  },
+                ],
+              },
+
+              // Engagement score (normalized)
+              {
+                $multiply: [
+                  config.weights.engagement,
+                  {
+                    $add: [
+                      { $divide: [{ $ifNull: ['$likeCount', 0] }, 10] },
+                      { $multiply: [{ $divide: [{ $ifNull: ['$commentCount', 0] }, 5] }, 1.5] },
+                      { $divide: [{ $ifNull: ['$viewCount', 0] }, 100] },
+                    ],
+                  },
+                ],
+              },
+
+              // Recency score (exponential decay)
+              {
+                $multiply: [
+                  config.weights.recency,
+                  {
+                    $let: {
+                      vars: {
+                        daysDiff: {
+                          $divide: [
+                            { $subtract: [new Date(), '$createdAt'] },
+                            86400000, // milliseconds in a day
+                          ],
+                        },
+                      },
+                      in: {
+                        $cond: [
+                          { $lte: ['$$daysDiff', 1] }, 3, // Posts from today get high score
+                          {
+                            $cond: [
+                              { $lte: ['$$daysDiff', 7] }, 2, // Posts from this week
+                              {
+                                $cond: [
+                                  { $lte: ['$$daysDiff', 30] }, 1, // Posts from this month
+                                  0.5, // Older posts get lower score
+                                ],
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                ],
+              },
+
+              // Score for posts with music user has bookmarked
+              {
+                $multiply: [
+                  config.weights.bookmarkedMusic,
+                  {
+                    $cond: [
+                      {
+                        $and: [
+                          { $ne: ['$music.musicId', null] },
+                          {
+                            $in: [
+                              '$music.musicId',
+                              { $map: { input: '$bookmarkedMusicItems', as: 'item', in: '$$item.itemID' } },
+                            ],
+                          },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+
+          // Add metadata for debugging/analytics (optional)
+          recommendationMeta: {
+            isMediaTagged: {
+              $gt: [
+                {
+                  $size: {
+                    $filter: {
+                      input: { $ifNull: ['$media', []] },
+                      cond: {
+                        $gt: [
+                          {
+                            $size: {
+                              $filter: {
+                                input: { $ifNull: ['$$this.tags', []] },
+                                cond: { $eq: ['$$this.userId', currentUser] },
+                              },
+                            },
+                          },
+                          0,
+                        ],
+                      },
+                    },
+                  },
+                },
+                0,
+              ],
+            },
+            isCaptionMentioned: {
+              $regexMatch: {
+                input: { $ifNull: ['$caption', ''] },
+                regex: `@${userHandleName}`,
+                options: 'i',
+              },
+            },
+            isFromFollowed: { $eq: ['$isFollow', true] },
+            hasBookmarkedMusic: {
+              $and: [
+                { $ne: ['$music.musicId', null] },
+                {
+                  $in: [
+                    '$music.musicId',
+                    { $map: { input: '$bookmarkedMusicItems', as: 'item', in: '$$item.itemID' } },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+
+      // add diversity factor if enabled
+      ...(config.diversity.enabled
+        ? [
+            {
+              $addFields: {
+                diversityFactor: {
+                  $multiply: [
+                    { $rand: {} },
+                    config.diversity.randomFactor || 0.1,
+                  ],
+                },
+              },
+            } as PipelineStage,
+          ]
+        : []),
+
+      // clean up temporary fields
+      {
+        $project: {
+          userPlaylists: 0,
+          bookmarkedMusicItems: 0,
+        },
+      },
+    ];
+  }
+
+  // recommendation pipeline
+  public buildRecommendationSortStages(config: RecommendationConfig): PipelineStage[] {
+    if (!config.enableRecommendation) {
+      // Default chronological sort
+      return [{$sort: { createdAt: -1 as -1, },},];
+    }
+
+    const sortOrder: Record<string, 1 | -1> = {
+    recommendationScore: -1,
+    ...(config.diversity.enabled ? { diversityFactor: -1 } : {}),
+    createdAt: -1,
+  };
+
+  return [{ $sort: sortOrder }];
+  }
+
   // generic pagination and runner
   public async runPagedAggregation(
     matchFilter: Record<string, any>,
     page: number,
     limit: number,
     sampleSize?: number,
+    recommendationConfig?: RecommendationConfig,
   ) {
     const currentUser = new Types.ObjectId(matchFilter._userId);
     const baseMatch = { ...matchFilter };
     delete baseMatch._userId;
 
-    // count total
+    // Get user's handleName if recommendation is enabled
+    let userHandleName = '';
+    if (recommendationConfig?.enableRecommendation) {
+      const user = await this.userModel.findById(currentUser).select('handleName').exec();
+      userHandleName = user?.handleName || '';
+    }
+
+    // Build base pipeline
+    let pipeline = this.buildBasePipeline(currentUser, baseMatch);
+
+    // Add recommendation stages if enabled
+    if (recommendationConfig?.enableRecommendation && userHandleName) {
+      const recommendationStages = this.buildRecommendationStages(
+        currentUser,
+        userHandleName,
+        recommendationConfig,
+      );
+      pipeline = [...pipeline, ...recommendationStages];
+    }
+
+    // Count total
     const countRes = await this.postModel
-      .aggregate([
-        ...this.buildBasePipeline(currentUser, baseMatch),
-        { $count: 'total' },
-      ])
+      .aggregate([...pipeline, { $count: 'total' }])
       .exec();
     const total = countRes[0]?.total ?? 0;
     const totalPages = Math.max(Math.ceil(total / limit), 1);
 
-    // build page stages
+    // Build sort and pagination stages
+    const defaultSort: PipelineStage = {
+      $sort: { createdAt: -1 as -1 },
+    };
+
+    const sortStages: PipelineStage[] = recommendationConfig?.enableRecommendation
+      ? this.buildRecommendationSortStages(recommendationConfig)
+      : [defaultSort];
+
     const pageStages: PipelineStage[] = [
-      { $sort: { createdAt: -1 } },
+      ...sortStages,
       { $skip: (page - 1) * limit },
       { $limit: limit },
     ];
-    if (sampleSize) pageStages.push({ $sample: { size: sampleSize } });
 
-    // execute
+    if (sampleSize) {
+      pageStages.push({ $sample: { size: sampleSize } });
+    }
+
+    // Clean up recommendation fields in final projection
+    const cleanupStages: PipelineStage[] = recommendationConfig?.enableRecommendation
+      ? [
+          {
+            $project: {
+              recommendationScore: 0,
+              recommendationMeta: 0,
+              diversityFactor: 0,
+            },
+          },
+        ]
+      : [];
+
+    // Execute main query
     const items = await this.postModel
-      .aggregate([
-        ...this.buildBasePipeline(currentUser, baseMatch),
-        ...pageStages,
-      ])
+      .aggregate([...pipeline, ...pageStages, ...cleanupStages])
       .exec();
 
     return {
@@ -844,4 +1198,50 @@ export class CommonServices {
       },
     };
   }
+
+  // default recommendation
+  public getDefaultRecommendationConfig(): RecommendationConfig {
+    return {
+      enableRecommendation: true,
+      weights: {
+        mediaTagged: 15,        // Highest priority for media tags
+        captionMentioned: 12,   // High priority for caption mentions
+        followedUsers: 8,       // Medium-high priority for followed users
+        engagement: 5,          // Medium priority for engagement
+        recency: 2,             // Lower priority for recency
+        bookmarkedMusic: 6,     // Medium priority for bookmarked music
+      },
+      diversity: {
+        enabled: true,
+        randomFactor: 0.1,
+      },
+      limits: {
+        maxMediaTaggedPosts: 15,
+        maxFollowedUserPosts: 25,
+      },
+    };
+  }
+
+  // trending recommendations
+  public getTrendingRecommendationConfig(): RecommendationConfig {
+    return {
+      enableRecommendation: true,
+      weights: {
+        mediaTagged: 5,
+        captionMentioned: 3,
+        followedUsers: 2,
+        engagement: 15,         // Highest priority for trending
+        recency: 8,             // High priority for recent trending
+        bookmarkedMusic: 3,
+      },
+      diversity: {
+        enabled: true,
+        randomFactor: 0.05,
+      },      
+      limits: {
+        maxMediaTaggedPosts: 15,
+        maxFollowedUserPosts: 25,
+      },
+    };
+  }  
 }

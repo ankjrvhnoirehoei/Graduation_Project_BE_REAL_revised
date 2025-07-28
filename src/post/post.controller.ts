@@ -19,6 +19,7 @@ import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { SearchDto } from './dto/search.dto';
 import { UserService } from 'src/user/user.service';
 import { DeletePostsDto } from './dto/delete-posts.dto';
+import { RecommendationConfig } from 'src/admin/helpers/helpers.service';
 
 @Controller('posts')
 @UseGuards(JwtRefreshAuthGuard)
@@ -69,7 +70,7 @@ export class PostController {
       hasPrevPage: boolean;
     };
   }> {
-    return this.postService.findAllWithMedia(userId, page, limit);
+    return this.postService.findRecommendedPostsWithMedia(userId, page, limit);
   }
 
 
@@ -89,7 +90,56 @@ export class PostController {
       hasPrevPage: boolean;
     };
   }> {
-    return this.postService.findReelsWithMedia(userId, page, limit);
+    return this.postService.findRecommendedReelsWithMedia(userId, page, limit);
+  }
+
+  @Get('smart-feed')
+  async getSmartFeed(
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('algorithm') algorithm: 'chronological' | 'recommended' | 'trending' = 'recommended',
+  ) {
+    switch (algorithm) {
+      case 'trending':
+        return this.postService.findTrendingPostsWithMedia(userId, page, limit);
+      case 'recommended':
+        return this.postService.findRecommendedPostsWithMedia(userId, page, limit);
+      case 'chronological':
+      default:
+        return this.postService.findAllWithMedia(userId, page, limit);
+    }
+  }
+
+  @Get('custom-recommendation')
+  async getCustomRecommendation(
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('mediaTaggedWeight', new DefaultValuePipe(15), ParseIntPipe) mediaTaggedWeight: number,
+    @Query('followedUsersWeight', new DefaultValuePipe(8), ParseIntPipe) followedUsersWeight: number,
+    @Query('engagementWeight', new DefaultValuePipe(5), ParseIntPipe) engagementWeight: number,
+    @Query('captionMentioned', new DefaultValuePipe(8), ParseIntPipe) captionMentioned: number,
+    @Query('recency', new DefaultValuePipe(5), ParseIntPipe) recency: number,
+    @Query('bookmarkedMusic', new DefaultValuePipe(10), ParseIntPipe) bookmarkedMusic: number,
+  ) {
+    const customConfig: Partial<RecommendationConfig> = {
+      weights: {
+        mediaTagged: mediaTaggedWeight,
+        followedUsers: followedUsersWeight,
+        engagement: engagementWeight,
+        captionMentioned: captionMentioned,
+        recency: recency,
+        bookmarkedMusic: bookmarkedMusic,
+      },
+    };
+
+    return this.postService.findPostsWithCustomRecommendation(
+      userId, 
+      page, 
+      limit, 
+      customConfig
+    );
   }
 
   @Get(':postId') 

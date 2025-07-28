@@ -1,5 +1,5 @@
 import { forwardRef, Module } from '@nestjs/common';
-import { DatabaseModule } from '@app/common';
+import { DatabaseModule, UserSchema } from '@app/common';
 import { PostService } from './post.service';
 import { PostController } from './post.controller';
 import { Post, PostSchema } from './post.schema';
@@ -14,6 +14,7 @@ import { PostLike, PostLikeSchema } from 'src/like_post/like_post.schema';
 import { Comment, CommentSchema } from 'src/comment/comment.schema';
 import { RelationModule } from 'src/relation/relation.module';
 import { CommonUtilsModule } from 'src/admin/helpers/helpers.module';
+import { User } from 'src/user/user.schema';
 
 @Module({
   imports: [
@@ -21,7 +22,8 @@ import { CommonUtilsModule } from 'src/admin/helpers/helpers.module';
       { name: Post.name, schema: PostSchema },
       { name: Story.name, schema: StorySchema },
       { name: PostLike.name, schema: PostLikeSchema },
-      { name: Comment.name, schema: CommentSchema }
+      { name: Comment.name, schema: CommentSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     MediaModule,
     MusicModule,
