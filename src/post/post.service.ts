@@ -331,6 +331,7 @@ export class PostService {
           music: 1,
           'user._id': 1,
           'user.handleName': 1,
+          'user.username': 1,
           'user.profilePic': 1,
           isBookmarked: 1,
         },
@@ -1066,6 +1067,7 @@ export class PostService {
           user: {
             _id: 1,
             handleName: 1,
+            username: 1,
             profilePic: 1,
           },
           isFollow: 1,
