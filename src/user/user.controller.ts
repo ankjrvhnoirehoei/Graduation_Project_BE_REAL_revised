@@ -32,8 +32,9 @@ import {
   ChangePasswordDTO,
   ConfirmEmailDto,
   EditUserDto,  
-  ForgotPasswordDto,
-  ConfirmForgotPasswordDto,
+  CheckUserEmailDto, 
+  SendVerificationCodeDto, 
+  VerifyCodeDto
 } from './dto/update-user.dto';
 
 @Controller('users')
@@ -308,29 +309,42 @@ export class UserController {
     return { message: 'Email updated successfully' };
   }
 
-  @Post('forgot-password')
-  async initiateForgotPassword(
-    @Body() dto: ForgotPasswordDto
-  ): Promise<{ token: string }> {
-    // enforce exactly one of email/phone
-    const hasEmail = !!dto.email;
-    const hasPhone = !!dto.phone;
-    if (hasEmail === hasPhone) {
-      // either both true or both false
-      throw new BadRequestException('Vui lòng chỉ nhập email hoặc số điện thoại, không cả hai và không bỏ trống.');
-    }
-
-    return this.userService.initiatePasswordReset(dto);
+  // step 1: check user's email and account status
+  @Post('forgot-password/check-email')
+  async checkUserEmail(
+    @Body() dto: CheckUserEmailDto
+  ): Promise<{ message: string; hasPhoneNumber: boolean }> {
+    const result = await this.userService.checkUserForPasswordReset(dto.email);
+    
+    return {
+      message: 'Tài khoản hợp lệ.',
+      hasPhoneNumber: result.hasPhoneNumber
+    };
   }
 
-  @Post('forgot-password/confirm')
-  async confirmForgotPassword(
-    @Body() dto: ConfirmForgotPasswordDto,
-  ) {
-    const result = await this.userService.confirmPasswordReset(dto);
+  // step 2: send verification code 
+  @Post('forgot-password/send-code')
+  async sendPasswordResetCode(
+    @Body() dto: SendVerificationCodeDto
+  ): Promise<{ message: string; token: string }> {
+    const result = await this.userService.sendPasswordResetCode(dto);
+    
     return {
-      message: 'Xác nhận tài khoản thành công.',
-      ...result
+      message: 'Mã xác nhận đã được gửi đến số điện thoại của bạn.',
+      token: result.token
+    };
+  }
+
+  // step 3: verify code and get refresh token
+  @Post('forgot-password/verify-code')
+  async verifyPasswordResetCode(
+    @Body() dto: VerifyCodeDto
+  ): Promise<{ message: string; refreshToken: string }> {
+    const result = await this.userService.verifyPasswordResetCode(dto);
+    
+    return {
+      message: 'Xác nhận thành công. Bạn có thể đặt lại mật khẩu.',
+      refreshToken: result.refreshToken
     };
   }
 

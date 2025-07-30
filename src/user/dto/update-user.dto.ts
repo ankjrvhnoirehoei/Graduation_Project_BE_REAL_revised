@@ -127,14 +127,30 @@ export class ChangePasswordDTO {
   newPassword: string;
 }
 
-export class ForgotPasswordDto {
-  phone?: string;
-
-  @IsEmail({}, { message: 'Phải là 1 email hợp lệ' })
-  email?: string;
+export class CheckUserEmailDto {
+  @IsEmail({}, { message: 'Email không hợp lệ' })
+  @IsNotEmpty({ message: 'Email không được để trống' })
+  email: string;
 }
 
-export class ConfirmForgotPasswordDto {
+export class SendVerificationCodeDto {
+  @IsEmail({}, { message: 'Email không hợp lệ' })
+  @IsNotEmpty({ message: 'Email không được để trống' })
+  email: string;
+
+  @IsOptional()
+  @IsString({ message: 'Số điện thoại phải là chuỗi' })
+  @Matches(/^[0-9]{10,11}$/, { message: 'Số điện thoại không hợp lệ (10-11 chữ số)' })
+  phoneNumber?: string;
+}
+
+export class VerifyCodeDto {
+  @IsNotEmpty({ message: 'Token không được để trống' })
+  @IsString({ message: 'Token phải là chuỗi' })
   token: string;
+
+  @IsNotEmpty({ message: 'Mã xác nhận không được để trống' })
+  @IsString({ message: 'Mã xác nhận phải là chuỗi' })
+  @Matches(/^[0-9]{6}$/, { message: 'Mã xác nhận phải là 6 chữ số' })
   code: string;
 }
