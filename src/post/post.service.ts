@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -1246,7 +1247,7 @@ export class PostService {
   }
 
   async getUserTaggedPosts(targetUser: string, currentUser: string, page: number = 1, limit: number = 10) {
-    // First, find all media that have the user tagged
+    // find all media that have the user tagged
     const taggedMedia = await this.mediaService.findUserTaggedId(targetUser);
     
     if (!taggedMedia || taggedMedia.length === 0) {
@@ -1266,10 +1267,10 @@ export class PostService {
       };
     }
 
-    // Extract unique post IDs from tagged media
+    // extract unique post IDs from tagged media
     const postIds = [...new Set(taggedMedia.map(media => media.postID))];
 
-    // Create match filter for posts that contain tagged media
+    // create match filter for posts that contain tagged media
     const matchFilter = {
       _userId: currentUser, // This will be used by buildBasePipeline for currentUser context
       _id: { $in: postIds }, // Only posts that have tagged media
