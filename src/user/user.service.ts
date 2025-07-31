@@ -18,8 +18,9 @@ import {
   ChangePasswordDTO,
   ConfirmEmailDto,
   EditUserDto,
-  ForgotPasswordDto,
-  ConfirmForgotPasswordDto,
+  CheckUserEmailDto,
+  SendVerificationCodeDto,
+  VerifyCodeDto,
 } from './dto/update-user.dto';
 import { JwtService } from '@nestjs/jwt';
 import { Relation } from 'src/relation/relation.schema';
@@ -551,90 +552,97 @@ export class UserService {
     };
   }
   
-  // Forgot password 1: write your email/phone number to get verification code
-  async initiatePasswordReset(dto: ForgotPasswordDto): Promise<{ token: string }> {
-    const { email, phone } = dto;
-
-    // look up user by the right field
-    const user = email
-      ? await this.userModel.findOne({ email: email }).lean()
-      : await this.userModel.findOne({ phoneNumber: phone }).lean();
-
+  // step 1: check if user 
+  async checkUserForPasswordReset(email: string): Promise<{ hasPhoneNumber: boolean }> {
+    const user = await this.userModel.findOne({ email }).lean();
+    
     if (!user || user.deletedAt) {
-      throw new NotFoundException('Không tìm thấy tài khoản hợp lệ.');
+      throw new NotFoundException('Không tìm thấy tài khoản với email này.');
     }
 
     if (user.isGoogle) {
-      throw new BadRequestException('Tài khoản đăng nhập bằng tài khoản Google không sử dụng mật khẩu.')
+      throw new BadRequestException('Tài khoản này được đăng ký bằng Google và không sử dụng mật khẩu. Vui lòng đăng nhập bằng Google.');
     }
 
-    // generate 6‑digit code
+    return {
+      hasPhoneNumber: !!user.phoneNumber
+    };
+  }
+
+  // step 2: send verification code 
+  async sendPasswordResetCode(dto: SendVerificationCodeDto): Promise<{ token: string }> {
+    const { email, phoneNumber } = dto;
+    
+    const user = await this.userModel.findOne({ email });
+    
+    if (!user || user.deletedAt) {
+      throw new NotFoundException('Không tìm thấy tài khoản với email này.');
+    }
+
+    if (user.isGoogle) {
+      throw new BadRequestException('Tài khoản này được đăng ký bằng Google và không sử dụng mật khẩu.');
+    }
+
+    let finalPhoneNumber = user.phoneNumber;
+
+    // If user doesn't have phone number, we need to add it
+    if (!user.phoneNumber) {
+      if (!phoneNumber) {
+        throw new BadRequestException('Vui lòng cung cấp số điện thoại để tiếp tục.');
+      }
+
+      // Check if phone number is already used by another user
+      const existingPhoneUser = await this.userModel.findOne({ 
+        phoneNumber,
+        _id: { $ne: user._id } // Exclude current user
+      }).lean();
+
+      if (existingPhoneUser) {
+        throw new ConflictException('Số điện thoại này đã được sử dụng bởi tài khoản khác.');
+      }
+
+      // Save phone number to user
+      user.phoneNumber = phoneNumber;
+      await user.save();
+      finalPhoneNumber = phoneNumber;
+    }
+
     const code = Math.floor(100000 + Math.random() * 900000).toString();
 
-    if (email) {
-      // mail flow
-      await this.mailer.sendMail({
-      from: process.env.EMAIL_FROM,
-      to: email,
-      subject: 'Mã xác nhận tài khoản',
-      html: `
-        <div style="font-family: Arial, sans-serif; color: #333;">
-          <h2 style="color: #4a90e2;">Xác nhận tài khoản</h2>
-          <p>Xin chào,</p>
-          <p>Bạn đã yêu cầu xác nhận tài khoản. Hãy sử dụng mã xác nhận bên dưới:</p>
-          <div style="
-            background: #f5f5f5;
-            padding: 20px;
-            text-align: center;
-            font-size: 1.5em;
-            letter-spacing: 5px;
-            margin: 20px 0;
-            border-radius: 6px;
-          ">
-            <strong>${code}</strong>
-          </div>
-          <p style="font-size: 0.9em; color: #777;">
-            Mã này có hiệu lực trong 15 phút. Nếu bạn không yêu cầu, vui lòng bỏ qua email này.
-          </p>
-          <hr style="border:none; border-top:1px solid #eee;">
-          <p style="font-size:0.8em; color:#aaa;">
-            © Cirla
-          </p>
-        </div>
-      `});
-    } else {
-      // SMS flow 
-      const smsPayload = {
-        ApiKey: process.env.SMS_API_KEY,
-        SecretKey: process.env.SMS_SECRET_KEY,
-        Phone: phone,
-        Content: `${code} la ma xac minh dang ky Baotrixemay cua ban`,
-        Brandname: 'Baotrixemay',
-        SmsType: '2',
-      };
-      // HTTP call via HttpService
+    // Send SMS
+    const smsPayload = {
+      ApiKey: process.env.SMS_API_KEY,
+      SecretKey: process.env.SMS_SECRET_KEY,
+      Phone: finalPhoneNumber,
+      Content: `${code} la ma xac minh dang ky Baotrixemay cua ban`,
+      Brandname: 'Baotrixemay',
+      SmsType: '2',
+    };
+
+    try {
       await firstValueFrom(
         this.httpService.post(
           'https://rest.esms.vn/MainService.svc/json/SendMultipleMessage_V4_post_json/',
           smsPayload
         )
       );
+    } catch (error) {
+      throw new BadRequestException('Không thể gửi mã xác nhận. Vui lòng thử lại sau.');
     }
 
-    // create token with user identifier and code
+    // Create token with email and code
     const token = this.jwtService.sign(
-      { email, phone, code },
-      { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '15m' },
+      { email, code },
+      { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '15m' }
     );
 
     return { token };
   }
 
-  // Forgot password 2: enter the confirmation code to verify account
-  async confirmPasswordReset(
-    dto: ConfirmForgotPasswordDto,
-  ) {
-    let payload: { email?: string; phone?: string; code: string };
+  // step 3: verify code and generate refresh token
+  async verifyPasswordResetCode(dto: VerifyCodeDto): Promise<{ refreshToken: string }> {
+    let payload: { email: string; code: string };
+    
     try {
       payload = this.jwtService.verify(dto.token, {
         secret: process.env.JWT_ACCESS_SECRET,
@@ -642,28 +650,29 @@ export class UserService {
     } catch {
       throw new BadRequestException('Token không hợp lệ hoặc đã hết hạn.');
     }
+
     if (payload.code !== dto.code) {
       throw new BadRequestException('Mã xác nhận không đúng.');
     }
-    // fetch user again by email or phone
-    const lookup = payload.email
-      ? { email: payload.email }
-      : { phoneNumber: payload.phone };
-    const user = await this.userModel.findOne(lookup);
-    if (!user || user.deletedAt) {
-      throw new NotFoundException('Tài khoản không hợp lệ hoặc đã bị vô hiệu hoá.');
-    }
+
+    // Find user by email
+    const user = await this.userModel.findOne({ email: payload.email });
     
-    // Create refresh token with user ID 
+    if (!user || user.deletedAt) {
+      throw new NotFoundException('Tài khoản không hợp lệ hoặc đã bị vô hiệu hóa.');
+    }
+
+    // Create refresh token
     const refreshPayload = { sub: user._id.toString() };
     const refreshToken = await this.jwtService.signAsync(refreshPayload, {
       secret: process.env.JWT_REFRESH_SECRET,
       expiresIn: '7d',
     });
-    
-    // persist & return
+
+    // Save refresh token
     user.refreshToken = refreshToken;
     await user.save();
+
     return { refreshToken };
   }
 
