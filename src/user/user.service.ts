@@ -79,7 +79,7 @@ export class UserService {
     const { email, password, profilePic } = registerDto;
     const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
-      throw new ConflictException('Email already in use');
+      throw new ConflictException('Email đã được sử dụng');
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
