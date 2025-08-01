@@ -80,6 +80,7 @@ export class CommentService {
                 user: {
                   _id: '$user._id',
                   handleName: '$user.handleName',
+                  username: '$user.username',
                   profilePic: '$user.profilePic',
                 },
               },
