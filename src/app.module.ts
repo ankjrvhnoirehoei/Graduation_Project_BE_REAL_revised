@@ -26,6 +26,8 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { ShareController } from './share/share.controller';
 import { ReportStoryModule } from './report-story/report-story.module';
+import { NotificationCronModule } from './cron-job/daily/notification-cron.module';
+import { ChatModule } from './AI/chat.module';
 
 @Module({
   imports: [
@@ -77,6 +79,8 @@ import { ReportStoryModule } from './report-story/report-story.module';
     ReportUserModule,
     ReportContentModule,
     ReportStoryModule,
+    NotificationCronModule,
+    ChatModule,
   ],
    controllers: [
     ShareController, 
