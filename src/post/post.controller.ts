@@ -275,11 +275,6 @@ export class PostController {
     );
   }
 
-  @Get('tags')
-  async getRecentTags(@CurrentUser('sub') userId: string) {
-    const tags = await this.postService.getRecentTags(userId);
-    return { tags };
-  }
 
   @Get('reels/:userId')
   async getReelsByUser(
