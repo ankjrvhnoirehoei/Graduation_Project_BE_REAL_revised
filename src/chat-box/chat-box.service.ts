@@ -40,13 +40,15 @@ export class ChatBoxService {
     const currentPage = page;
 
     return {
-      currentPage,
-      totalPages,
-      totalCount,
-      limit,
-      hasNextPage: currentPage < totalPages,
-      hasPrevPage: currentPage > 1,
       data,
+      pagination: {
+        currentPage,
+        totalPages,
+        totalCount,
+        limit,
+        hasNextPage: currentPage < totalPages,
+        hasPrevPage: currentPage > 1,
+      },
     };
   }
 }

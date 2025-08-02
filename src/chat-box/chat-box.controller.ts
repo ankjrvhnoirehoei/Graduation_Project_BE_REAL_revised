@@ -2,7 +2,7 @@ import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ChatBoxService } from './chat-box.service';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
-import { ChatBoxPaginationResult } from './chat-box.dto';
+import { ChatBoxHistoryResponse } from './chat-box.dto';
 
 @Controller('chat-box')
 export class ChatBoxController {
@@ -14,7 +14,7 @@ export class ChatBoxController {
     @Query('page') page = '1',
     @Query('limit') limit = '10',
     @CurrentUser('sub') userId: string,
-  ): Promise<ChatBoxPaginationResult> {
+  ): Promise<ChatBoxHistoryResponse> {
     const pageNumber = parseInt(page, 10);
     const limitNumber = parseInt(limit, 10);
 
