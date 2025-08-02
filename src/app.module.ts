@@ -28,6 +28,7 @@ import { ShareController } from './share/share.controller';
 import { ReportStoryModule } from './report-story/report-story.module';
 import { NotificationCronModule } from './cron-job/daily/notification-cron.module';
 import { ChatModule } from './AI/chat.module';
+import { ChatBoxModule } from './chat-box/chat-box.module';
 
 @Module({
   imports: [
@@ -38,7 +39,7 @@ import { ChatModule } from './AI/chat.module';
     }),
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
-      serveRoot: '/', 
+      serveRoot: '/',
       serveStaticOptions: {
         dotfiles: 'allow',
       },
@@ -81,10 +82,9 @@ import { ChatModule } from './AI/chat.module';
     ReportStoryModule,
     NotificationCronModule,
     ChatModule,
+    ChatBoxModule,
   ],
-   controllers: [
-    ShareController, 
-  ],
+  controllers: [ShareController],
   // providers: [
   //   {
   //     provide: APP_INTERCEPTOR,
