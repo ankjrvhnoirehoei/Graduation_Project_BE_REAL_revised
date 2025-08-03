@@ -1,6 +1,5 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import * as cookieParser from 'cookie-parser';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerConfig } from '@app/common';
 
@@ -13,7 +12,7 @@ async function bootstrap() {
       'http://localhost:5173',
     ],
     credentials: true,
-    exposedHeaders: ['Content-Range'], 
+    exposedHeaders: ['Content-Range'],
   });
   SwaggerConfig(app);
   const configService = app.get(ConfigService);

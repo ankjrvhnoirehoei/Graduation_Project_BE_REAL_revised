@@ -1,5 +1,7 @@
-import { Controller, Get, Param, Res } from '@nestjs/common';
+import { Controller, Get, Param, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
+import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
 @Controller()
 export class ShareController {
@@ -11,6 +13,17 @@ export class ShareController {
   @Get('profile/:id')
   profile(@Param('id') id: string, @Res() res: Response) {
     this.renderFallback(res, `profile/${id}`);
+  }
+
+  @Get('join-room/:roomId')
+  @UseGuards(JwtRefreshAuthGuard)
+  async joinRoom(
+    @Param('roomId') roomId: string,
+    @CurrentUser('sub') userId: string,
+    @Res() res: Response,
+  ) {
+    const path = `join-room/${roomId}?userId=${userId}`;
+    this.renderFallback(res, path);
   }
 
   private renderFallback(res: Response, path: string) {

@@ -47,6 +47,10 @@ export class MessageService {
     });
   }
 
+  async findById(messageId: string): Promise<Message | null> {
+    return this.messageModel.findById(messageId);
+  }
+
   async findByRoom(roomId: string): Promise<Message[]> {
     return this.messageModel
       .find({ roomId, isDeleted: false })
@@ -162,5 +166,31 @@ export class MessageService {
       page: page,
       media: formattedData,
     };
+  }
+
+  async removeReactionIfExists(
+    messageId: string,
+    userId: string,
+    content: string,
+  ) {
+    const message = await this.messageModel.findById(messageId);
+    if (!message) throw new Error('Message not found');
+
+    const prevLength = message.reactions.length;
+
+    message.reactions = message.reactions.filter(
+      (r) => !(r.userId.toString() === userId && r.content === content),
+    );
+
+    const changed = message.reactions.length !== prevLength;
+
+    if (changed) {
+      await message.save();
+    }
+
+    return message.populate({
+      path: 'senderId',
+      select: 'handleName profilePic',
+    });
   }
 }

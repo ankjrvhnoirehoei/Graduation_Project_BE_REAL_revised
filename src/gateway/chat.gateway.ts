@@ -164,19 +164,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      const updatedMessage = await this.messageService.addOrUpdateReaction(
-        messageId,
-        userId,
-        content,
+      const message = await this.messageService.findById(messageId);
+      if (!message) throw new Error('Message not found');
+
+      const alreadyReacted = message.reactions?.some(
+        (r) => r.userId.toString() === userId && r.content === content,
       );
+
+      let updatedMessage;
+
+      if (alreadyReacted) {
+        // remove nếu giống reaction cũ
+        updatedMessage = await this.messageService.removeReactionIfExists(
+          messageId,
+          userId,
+          content,
+        );
+      } else {
+        // add hoặc update
+        updatedMessage = await this.messageService.addOrUpdateReaction(
+          messageId,
+          userId,
+          content,
+        );
+      }
 
       this.server.to(updatedMessage.roomId.toString()).emit('reactionUpdated', {
         messageId,
         reactions: updatedMessage.reactions,
       });
     } catch (err) {
-      console.error('❗ Error adding reaction:', err);
-      client.emit('errorMessage', 'Failed to add reaction');
+      console.error('❗ Error adding/removing reaction:', err);
+      client.emit('errorMessage', 'Failed to update reaction');
     }
   }
 
@@ -294,5 +313,54 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
 
     console.log(`🎨 Theme updated in room ${roomId}: ${theme}`);
+  }
+
+  @SubscribeMessage('typing')
+  async handleTyping(
+    @MessageBody() payload: { roomId: string; userId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { roomId, userId } = payload;
+
+    if (!roomId || !userId) {
+      client.emit('errorMessage', 'Missing roomId or userId');
+      return;
+    }
+
+    try {
+      const user = await this.userService.findById(userId);
+      if (!user) return;
+
+      this.server.to(roomId).emit('userTyping', {
+        roomId,
+        userId,
+        username: user.username,
+        profilePic: user.profilePic,
+      });
+    } catch (err) {
+      console.error('❗ Error handling typing event:', err);
+    }
+  }
+
+  @SubscribeMessage('stopTyping')
+  async handleStopTyping(
+    @MessageBody() payload: { roomId: string; userId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { roomId, userId } = payload;
+
+    if (!roomId || !userId) {
+      client.emit('errorMessage', 'Missing roomId or userId');
+      return;
+    }
+
+    try {
+      this.server.to(roomId).emit('userStoppedTyping', {
+        roomId,
+        userId,
+      });
+    } catch (err) {
+      console.error('❗ Error handling stopTyping event:', err);
+    }
   }
 }
