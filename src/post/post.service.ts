@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,14 +9,20 @@ import { CreatePostDto } from './dto/post.dto';
 import { Post, PostDocument } from './post.schema';
 import { MediaService } from 'src/media/media.service';
 import { CreateMediaDto } from 'src/media/dto/media.dto';
-import { CommonServices, RecommendationConfig } from 'src/admin/helpers/helpers.service';
+import {
+  CommonServices,
+  RecommendationConfig,
+} from 'src/admin/helpers/helpers.service';
+import { PagedResult, PostItem, runPagedAggregation } from 'src/ts/algorithm';
+import { User, UserDocument } from 'src/user/user.schema';
 
 @Injectable()
 export class PostService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     private readonly mediaService: MediaService,
-    private readonly commonService: CommonServices,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private commonService: CommonServices,
   ) {}
 
   async create(postDto: CreatePostDto): Promise<Post> {
@@ -149,8 +154,6 @@ export class PostService {
 
     return post.type as 'post' | 'reel' | 'music';
   }
-
-
 
   private buildUserMediaPipeline(currentUser: Types.ObjectId): PipelineStage[] {
     return [
@@ -356,21 +359,116 @@ export class PostService {
   //   );
   // }
 
-  async findRecommendedPostsWithMedia(userId: string, page = 1, limit = 20) {
-    const recommendationConfig = this.commonService.getDefaultRecommendationConfig();
-    
-    return this.commonService.runPagedAggregation(
-      { _userId: userId, type: { $in: ['post', 'reel'] } },
-      page,
-      limit,
-      undefined, // no sampling
-      recommendationConfig,
+  // async findRecommendedPostsWithMedia(userId: string, page = 1, limit = 20) {
+  //   const recommendationConfig = this.commonService.getDefaultRecommendationConfig();
+
+  //   return this.commonService.runPagedAggregation(
+  //     { _userId: userId, type: { $in: ['post', 'reel'] } },
+  //     page,
+  //     limit,
+  //     undefined, // no sampling
+  //     recommendationConfig,
+  //   );
+  // }
+
+  async findRecommendedPostsWithMedia(
+    userId: string,
+    page = 1,
+    limit = 20,
+  ): Promise<PagedResult> {
+    const currentUser = new Types.ObjectId(userId);
+    const recommendationConfig =
+      this.commonService.getDefaultRecommendationConfig();
+
+    // nếu có recommendation thì lấy handleName
+    let userHandleName = '';
+    if (recommendationConfig.enableRecommendation) {
+      const u = await this.userModel
+        .findById(currentUser)
+        .select('handleName')
+        .lean();
+      userHandleName = u?.handleName ?? '';
+    }
+
+    // match filter ban đầu
+    const baseMatch = { type: { $in: ['post', 'reel'] } };
+
+    // --- Gọi đúng methods trên commonService ---
+    const basePipeline = this.commonService.buildBasePipeline(
+      currentUser,
+      baseMatch,
     );
+    const recPipeline =
+      recommendationConfig.enableRecommendation && userHandleName
+        ? this.commonService.buildRecommendationStages(
+            currentUser,
+            userHandleName,
+            recommendationConfig,
+          )
+        : [];
+
+    // project chỉ những field cần cho runPagedAggregation
+    const projectStage: PipelineStage = {
+      $project: {
+        _id: 1,
+        userID: 1,
+        type: 1,
+        caption: 1,
+        isFlagged: 1,
+        nsfw: 1,
+        isEnable: 1,
+        viewCount: 1,
+        share: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        media: 1,
+        likeCount: 1,
+        commentCount: 1,
+        isLike: 1,
+        isBookmarked: 1,
+        isFollow: 1,
+        user: 1,
+      },
+    };
+
+    //  Lấy raw docs đã đầy đủ các lookup & counts
+    const rawDocs = await this.postModel
+      .aggregate([...basePipeline, ...recPipeline, projectStage])
+      .exec();
+
+    // convert sang PostItem[] rồi sort + paginate
+    const postItems: PostItem[] = rawDocs.map((d) => ({
+      _id: d._id.toString(),
+      userID: d.userID.toString(),
+      type: d.type,
+      caption: d.caption,
+      isFlagged: d.isFlagged,
+      nsfw: d.nsfw,
+      isEnable: d.isEnable,
+      viewCount: d.viewCount,
+      share: d.share,
+      createdAt: (d.createdAt as Date).toISOString(),
+      updatedAt: (d.updatedAt as Date).toISOString(),
+      media: d.media,
+      likeCount: d.likeCount,
+      commentCount: d.commentCount,
+      isLike: d.isLike,
+      isBookmarked: d.isBookmarked,
+      isFollow: d.isFollow,
+      user: {
+        _id: d.user._id.toString(),
+        username: d.user.username,
+        handleName: d.user.handleName,
+        profilePic: d.user.profilePic,
+      },
+    }));
+
+    return runPagedAggregation(postItems, page, limit);
   }
 
   async findTrendingPostsWithMedia(userId: string, page = 1, limit = 20) {
     const trendingConfig = this.commonService.getTrendingRecommendationConfig();
-    
+
     return this.commonService.runPagedAggregation(
       { _userId: userId, type: { $in: ['post', 'reel'] } },
       page,
@@ -380,24 +478,123 @@ export class PostService {
     );
   }
 
-  async findRecommendedReelsWithMedia(userId: string, page = 1, limit = 20) {
-    const recommendationConfig = this.commonService.getDefaultRecommendationConfig();
-    
-    return this.commonService.runPagedAggregation(
-      { _userId: userId, type: 'reel' },
-      page,
-      limit,
-      20,
-      recommendationConfig,
+  // async findRecommendedReelsWithMedia(userId: string, page = 1, limit = 20) {
+  //   const recommendationConfig =
+  //     this.commonService.getDefaultRecommendationConfig();
+
+  //   return this.commonService.runPagedAggregation(
+  //     { _userId: userId, type: 'reel' },
+  //     page,
+  //     limit,
+  //     20,
+  //     recommendationConfig,
+  //   );
+  // }
+
+  async findRecommendedReelsWithMedia(
+    userId: string,
+    page = 1,
+    limit = 20,
+  ): Promise<PagedResult> {
+    const currentUser = new Types.ObjectId(userId);
+    const recommendationConfig =
+      this.commonService.getDefaultRecommendationConfig();
+
+    // Nếu có recommendation, lấy thêm handleName
+    let userHandleName = '';
+    if (recommendationConfig.enableRecommendation) {
+      const u = await this.userModel
+        .findById(currentUser)
+        .select('handleName')
+        .lean();
+      userHandleName = u?.handleName ?? '';
+    }
+
+    // 1) Chỉ match theo type = 'reel'
+    const baseMatch = { type: 'reel' };
+
+    // 2) Build pipeline (lookup media, user, counts, flags…)
+    const basePipeline: PipelineStage[] = this.commonService.buildBasePipeline(
+      currentUser,
+      baseMatch,
     );
+
+    // 3) Nếu bật recommendation, nối thêm stages tính score (nhưng cuối cùng ta sẽ project bỏ đi)
+    const recPipeline: PipelineStage[] =
+      recommendationConfig.enableRecommendation && userHandleName
+        ? this.commonService.buildRecommendationStages(
+            currentUser,
+            userHandleName,
+            recommendationConfig,
+          )
+        : [];
+
+    // 4) Cuối cùng chỉ project đúng những field algorithm.ts cần
+    const projectStage: PipelineStage = {
+      $project: {
+        _id: 1,
+        userID: 1,
+        type: 1,
+        caption: 1,
+        isFlagged: 1,
+        nsfw: 1,
+        isEnable: 1,
+        viewCount: 1,
+        share: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        media: 1,
+        likeCount: 1,
+        commentCount: 1,
+        isLike: 1,
+        isBookmarked: 1,
+        isFollow: 1,
+        user: 1,
+      },
+    };
+
+    // 5) Chạy aggregation lấy rawDocs
+    const rawDocs = await this.postModel
+      .aggregate([...basePipeline, ...recPipeline, projectStage])
+      .exec();
+
+    // 6) Transform thành PostItem[]
+    const postItems: PostItem[] = rawDocs.map((d) => ({
+      _id: d._id.toString(),
+      userID: d.userID.toString(),
+      type: d.type,
+      caption: d.caption,
+      isFlagged: d.isFlagged,
+      nsfw: d.nsfw,
+      isEnable: d.isEnable,
+      viewCount: d.viewCount,
+      share: d.share,
+      createdAt: (d.createdAt as Date).toISOString(),
+      updatedAt: (d.updatedAt as Date).toISOString(),
+      media: d.media,
+      likeCount: d.likeCount,
+      commentCount: d.commentCount,
+      isLike: d.isLike,
+      isBookmarked: d.isBookmarked,
+      isFollow: d.isFollow,
+      user: {
+        _id: d.user._id.toString(),
+        username: d.user.username,
+        handleName: d.user.handleName,
+        profilePic: d.user.profilePic,
+      },
+    }));
+
+    // 7) Gọi thuật toán O(n log n) + slice page/limit
+    return runPagedAggregation(postItems, page, limit);
   }
 
   // Custom recommendation with specific config
   async findPostsWithCustomRecommendation(
-    userId: string, 
-    page = 1, 
-    limit = 20, 
-    customConfig: Partial<RecommendationConfig>
+    userId: string,
+    page = 1,
+    limit = 20,
+    customConfig: Partial<RecommendationConfig>,
   ) {
     const defaultConfig = this.commonService.getDefaultRecommendationConfig();
     const mergedConfig: RecommendationConfig = {
@@ -430,7 +627,9 @@ export class PostService {
     const matchFilter = { _id: new Types.ObjectId(postId) };
 
     const result = await this.postModel
-      .aggregate([...this.commonService.buildBasePipeline(currentUser, matchFilter)])
+      .aggregate([
+        ...this.commonService.buildBasePipeline(currentUser, matchFilter),
+      ])
       .exec();
 
     return result[0] || null;
@@ -1149,10 +1348,15 @@ export class PostService {
     return newState;
   }
 
-  async getUserTaggedPosts(targetUser: string, currentUser: string, page: number = 1, limit: number = 10) {
+  async getUserTaggedPosts(
+    targetUser: string,
+    currentUser: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
     // find all media that have the user tagged
     const taggedMedia = await this.mediaService.findUserTaggedId(targetUser);
-    
+
     if (!taggedMedia || taggedMedia.length === 0) {
       return {
         message: 'success',
@@ -1171,7 +1375,7 @@ export class PostService {
     }
 
     // extract unique post IDs from tagged media
-    const postIds = [...new Set(taggedMedia.map(media => media.postID))];
+    const postIds = [...new Set(taggedMedia.map((media) => media.postID))];
 
     // create match filter for posts that contain tagged media
     const matchFilter = {
@@ -1180,7 +1384,11 @@ export class PostService {
     };
 
     // Use the existing aggregation helpers to get full posts with all data
-    const result = await this.commonService.runPagedAggregation(matchFilter, page, limit);
+    const result = await this.commonService.runPagedAggregation(
+      matchFilter,
+      page,
+      limit,
+    );
 
     return {
       message: 'success',
