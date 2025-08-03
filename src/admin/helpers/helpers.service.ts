@@ -1208,8 +1208,8 @@ export class CommonServices {
         captionMentioned: 12,   // High priority for caption mentions
         followedUsers: 8,       // Medium-high priority for followed users
         engagement: 5,          // Medium priority for engagement
-        recency: 2,             // Lower priority for recency
-        bookmarkedMusic: 6,     // Medium priority for bookmarked music
+        recency: 10,            // High priority for recency
+        bookmarkedMusic: 2,     // Low priority for bookmarked music
       },
       diversity: {
         enabled: true,
