@@ -487,7 +487,7 @@ export class AdminController {
     }
 
     const reportService = this.getReportService(reportMode);
-    const report = await reportService.resolveReport(reportId);
+    const report = await reportService.resolveReport(reportId, adminId);
 
     return {
       message: 'Báo cáo đã được giải quyết',
