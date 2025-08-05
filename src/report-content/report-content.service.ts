@@ -225,7 +225,7 @@ async createReport(
 
     if (!report) throw new NotFoundException('Không tìm thấy báo cáo!');
 
-    // Count resolved reports for this target
+    // count resolved reports for this target
     const resolvedReportsCount = await this.reportModel
       .countDocuments({
         targetId: report.targetId,
@@ -235,7 +235,7 @@ async createReport(
 
     let targetBanned = false;
 
-    // If this is the 3rd resolved report, ban the target
+    // if this is the 3rd resolved report, disable the post
     if (resolvedReportsCount >= 3) {
       try {
         await this.postService.disablePost(report.targetId.toString());
@@ -245,7 +245,6 @@ async createReport(
       }
     }
 
-    // Send notifications
     await this.sendNotifications(report, targetBanned, adminId);
 
     return report;
@@ -258,16 +257,15 @@ async createReport(
   ): Promise<void> {
     try {
       if (targetBanned) {
-        // Auto-resolve all other unresolved reports for this target
+        // auto-resolve all other unresolved reports for this target
         const unresolvedReports = await this.reportModel
           .find({
             targetId: report.targetId,
             resolved: false,
-            _id: { $ne: report._id }, // Exclude the current report
+            _id: { $ne: report._id }, // exclude the current report
           })
           .exec();
 
-        // Mark all unresolved reports as resolved
         if (unresolvedReports.length > 0) {
           await this.reportModel
             .updateMany(
@@ -286,7 +284,6 @@ async createReport(
             .exec();
         }
 
-        // Get all resolved reports for this target (including newly auto-resolved ones)
         const allResolvedReports = await this.reportModel
           .find({
             targetId: report.targetId,
@@ -296,7 +293,7 @@ async createReport(
 
         const allReporterIds = allResolvedReports.map(r => r.reporterId.toString());
 
-        // Send ban notification to ALL reporters (first 3 + auto-resolved ones)
+        // send notification to ALL reporters
         await this.notificationService.sendPushNotification(
           allReporterIds,
           adminId,
@@ -310,7 +307,7 @@ async createReport(
           }
         );
       } else {
-        // Send notification to the single reporter about resolution
+        // send notification to the single reporter about resolution
         await this.notificationService.sendPushNotification(
           [report.reporterId.toString()],
           adminId,

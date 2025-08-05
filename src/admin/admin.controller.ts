@@ -451,7 +451,7 @@ export class AdminController {
     };
   }
 
-  // Dismiss a report (mark as resolved and dismissed)
+  // Dismiss a report
   @Patch('reports/:mode/dismiss/:id')
   async dismissReport(
     @CurrentUser('sub') adminId: string,
@@ -473,7 +473,7 @@ export class AdminController {
     };
   }
 
-  // Resolve a report (mark as resolved only)
+  // Resolve a report
   @Patch('reports/:mode/resolve/:id')
   async resolveReport(
     @CurrentUser('sub') adminId: string,
