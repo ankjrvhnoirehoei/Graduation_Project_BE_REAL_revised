@@ -10,6 +10,7 @@ import { UserService } from 'src/user/user.service';
 import { AdminService } from 'src/admin/admin.service';
 import { ReportReason } from './report-user.schema'; 
 import { CommonServices } from 'src/admin/helpers/helpers.service';
+import { NotificationService } from 'src/notification/notification.service';
 
 interface PaginationOptions {
   page: number;
@@ -33,6 +34,7 @@ export class ReportUserService {
     private readonly userService: UserService,
     private readonly adminService: AdminService,
     private readonly commonService: CommonServices,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async create(
@@ -211,7 +213,7 @@ export class ReportUserService {
     return report;
   }
 
-  async resolveReport(id: string): Promise<ReportUser> {
+  async resolveReport(id: string, adminId: string): Promise<ReportUser> {
     const report = await this.reportUserModel
       .findByIdAndUpdate(
         id,
@@ -223,265 +225,365 @@ export class ReportUserService {
         },
         { new: true }
       )
-      .lean()
+      // .lean()
       .exec();
 
     if (!report) throw new NotFoundException('Không tìm thấy báo cáo!');
+
+    // count resolved reports for this target
+    const resolvedReportsCount = await this.reportUserModel
+      .countDocuments({
+        targetId: report.targetId,
+        resolved: true,
+        isDismissed: false,
+      })
+      .exec();
+
+    let targetBanned = false;
+
+    // if this is the 3rd resolved report, ban the user
+    if (resolvedReportsCount >= 3) {
+      try {
+        await this.userService.disableUser(report.targetId.toString());
+        targetBanned = true;
+      } catch (error) {
+        console.error('Error disabling user:', error);
+      }
+    }
+
+    await this.sendNotifications(report, targetBanned, adminId);
+
     return report;
   }
 
-async getReportedUsersActivity(
-  adminId: string,
-  range: '7days' | '30days' | 'year',
-): Promise<{
-  success: boolean;
-  range: '7days' | '30days' | 'year';
-  unit: 'day' | 'month';
-  from: string;
-  to: string;
-  data: Array<{ period: string; [handleName: string]: number | string }>;
-}> {
-  // Ensure admin access
-  await this.adminService.ensureAdmin(adminId);
-  
-  // Get range configuration using admin service helper
-  const { from, to, unit } = this.commonService.buildRange(range);
+  private async sendNotifications(
+    report: ReportUserDocument,
+    targetBanned: boolean,
+    adminId: string,
+  ): Promise<void> {
+    try {
+      if (targetBanned) {
+        // auto-resolve all other unresolved reports for this target
+        const unresolvedReports = await this.reportUserModel
+          .find({
+            targetId: report.targetId,
+            resolved: false,
+            _id: { $ne: report._id }, // excluding the current report
+          })
+          .exec();
 
-  // Use commonService helper to build aggregation pipeline
-  const reportData = await this.reportUserModel.aggregate([
-    ...this.commonService.buildTimeAggregation(
+        if (unresolvedReports.length > 0) {
+          await this.reportUserModel
+            .updateMany(
+              {
+                targetId: report.targetId,
+                resolved: false,
+                _id: { $ne: report._id },
+              },
+              {
+                $set: {
+                  resolved: true,
+                  isRead: true,
+                },
+              }
+            )
+            .exec();
+        }
+
+        const allResolvedReports = await this.reportUserModel
+          .find({
+            targetId: report.targetId,
+            resolved: true,
+          })
+          .exec();
+
+        const allReporterIds = allResolvedReports.map(r => r.reporterId.toString());
+
+        // send ban notification to ALL reporters
+        await this.notificationService.sendPushNotification(
+          allReporterIds,
+          adminId,
+          'Báo cáo đã được xử lý',
+          'Người dùng bạn báo cáo đã bị khóa tài khoản do vi phạm quy định cộng đồng. Cảm ơn bạn đã góp phần xây dựng môi trường lành mạnh.',
+          {
+            type: 'REPORT_TARGET_BANNED',
+            reportId: report._id.toString(),
+            targetId: report.targetId.toString(),
+            targetType: 'user',
+          }
+        );
+      } else {
+        // send notification to the single reporter about resolution
+        await this.notificationService.sendPushNotification(
+          [report.reporterId.toString()],
+          adminId,
+          'Báo cáo đã được xem xét',
+          'Báo cáo của bạn đã được admin xem xét và xử lý. Cảm ơn bạn đã góp phần duy trì môi trường cộng đồng tích cực.',
+          {
+            type: 'REPORT_RESOLVED',
+            reportId: report._id.toString(),
+            targetId: report.targetId.toString(),
+            targetType: 'user',
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Error sending notifications:', error);
+    }
+  }
+
+  async getReportedUsersActivity(
+    adminId: string,
+    range: '7days' | '30days' | 'year',
+  ): Promise<{
+    success: boolean;
+    range: '7days' | '30days' | 'year';
+    unit: 'day' | 'month';
+    from: string;
+    to: string;
+    data: Array<{ period: string; [handleName: string]: number | string }>;
+  }> {
+    // Ensure admin access
+    await this.adminService.ensureAdmin(adminId);
+    
+    // Get range configuration using admin service helper
+    const { from, to, unit } = this.commonService.buildRange(range);
+
+    // Use commonService helper to build aggregation pipeline
+    const reportData = await this.reportUserModel.aggregate([
+      ...this.commonService.buildTimeAggregation(
+        from,
+        to,
+        unit,
+        {},
+        'createdAt'
+      ),
+      {
+        $lookup: {
+          from: 'reportusers',
+          let: { period: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $gte: ['$createdAt', from] },
+                    { $lte: ['$createdAt', to] },
+                  ]
+                }
+              }
+            },
+            {
+              $group: {
+                _id: {
+                  targetId: '$targetId',
+                  period: unit === 'day'
+                    ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
+                    : { $month: '$createdAt' }
+                },
+                count: { $sum: 1 }
+              }
+            },
+            {
+              $match: {
+                '_id.period': '$period'
+              }
+            }
+          ],
+          as: 'userReports'
+        }
+      }
+    ]);
+
+    // Simplified approach: Get all reports in the time range and process them
+    const allReports = await this.reportUserModel.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: from, $lte: to },
+        }
+      },
+      {
+        $group: {
+          _id: {
+            targetId: '$targetId',
+            period: unit === 'day'
+              ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
+              : { $month: '$createdAt' }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: '$_id.targetId',
+          reports: {
+            $push: {
+              period: '$_id.period',
+              count: '$count'
+            }
+          },
+          totalReports: { $sum: '$count' }
+        }
+      },
+      {
+        $sort: { totalReports: -1 }
+      },
+      {
+        $limit: 20
+      }
+    ]);
+
+    // Get user details for the reported users
+    const userIds = allReports.map(item => item._id);
+    const users = await this.userService.findManyByIds(userIds.map(id => id.toString()));
+    
+    // Create a map of userId to handleName
+    const userHandleMap = new Map();
+    users.forEach(user => {
+      userHandleMap.set(user._id.toString(), user.handleName);
+    });
+
+    // Create maps for each user's report data
+    const userDataMaps = allReports.map(userData => {
+      const reportMap = new Map();
+      userData.reports.forEach(report => {
+        reportMap.set(report.period, report.count);
+      });
+      return reportMap;
+    });
+
+    // Get user handle names in the same order
+    const userHandles = allReports.map(userData => 
+      userHandleMap.get(userData._id.toString()) || 'Unknown'
+    );
+
+    // Use commonService helper to build time series data
+    const timeSeriesData = this.commonService.buildTimeSeriesData(
       from,
       to,
       unit,
-      {},
-      'createdAt'
-    ),
-    {
-      $lookup: {
-        from: 'reportusers',
-        let: { period: '$_id' },
-        pipeline: [
-          {
-            $match: {
-              $expr: {
-                $and: [
-                  { $gte: ['$createdAt', from] },
-                  { $lte: ['$createdAt', to] },
-                ]
-              }
-            }
-          },
-          {
-            $group: {
-              _id: {
-                targetId: '$targetId',
-                period: unit === 'day'
-                  ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
-                  : { $month: '$createdAt' }
-              },
-              count: { $sum: 1 }
-            }
-          },
-          {
-            $match: {
-              '_id.period': '$period'
-            }
-          }
-        ],
-        as: 'userReports'
-      }
-    }
-  ]);
+      userDataMaps,
+      userHandles
+    );
 
-  // Simplified approach: Get all reports in the time range and process them
-  const allReports = await this.reportUserModel.aggregate([
-    {
-      $match: {
-        createdAt: { $gte: from, $lte: to },
-      }
-    },
-    {
-      $group: {
-        _id: {
-          targetId: '$targetId',
-          period: unit === 'day'
-            ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
-            : { $month: '$createdAt' }
-        },
-        count: { $sum: 1 }
-      }
-    },
-    {
-      $group: {
-        _id: '$_id.targetId',
-        reports: {
-          $push: {
-            period: '$_id.period',
-            count: '$count'
-          }
-        },
-        totalReports: { $sum: '$count' }
-      }
-    },
-    {
-      $sort: { totalReports: -1 }
-    },
-    {
-      $limit: 20
-    }
-  ]);
+    return {
+      success: true,
+      range,
+      unit,
+      from: this.commonService.formatDate(from),
+      to: this.commonService.formatDate(to),
+      data: timeSeriesData
+    };
+  }
 
-  // Get user details for the reported users
-  const userIds = allReports.map(item => item._id);
-  const users = await this.userService.findManyByIds(userIds.map(id => id.toString()));
-  
-  // Create a map of userId to handleName
-  const userHandleMap = new Map();
-  users.forEach(user => {
-    userHandleMap.set(user._id.toString(), user.handleName);
-  });
+  async getReportReasonsActivity(
+    adminId: string,
+    range: '7days' | '30days' | 'year',
+  ): Promise<{
+    success: boolean;
+    range: '7days' | '30days' | 'year';
+    unit: 'day' | 'month';
+    from: string;
+    to: string;
+    data: Array<{ 
+      period: string; 
+      HARASSMENT_AND_BULLYING: number;
+      HATE_SPEECH: number;
+      IMPERSONATION_FAKE_ACCOUNTS: number;
+      GRAPHIC_CONTENT: number;
+      THREATS_AND_VIOLENCE: number;
+      SCAMS_AND_FRAUD: number;
+      SENSITIVE_PERSONAL_INFO: number;
+      SELF_HARM: number;
+      OTHER: number;
+    }>;
+  }> {
+    // Ensure admin access
+    await this.adminService.ensureAdmin(adminId);
+    
+    // Get range configuration using admin service helper
+    const { from, to, unit } = this.commonService.buildRange(range);
 
-  // Create maps for each user's report data
-  const userDataMaps = allReports.map(userData => {
-    const reportMap = new Map();
-    userData.reports.forEach(report => {
-      reportMap.set(report.period, report.count);
-    });
-    return reportMap;
-  });
+    // Get aggregated data for each report reason
+    const [
+      harassmentRaw,
+      hateSpeechRaw,
+      impersonationRaw,
+      graphicContentRaw,
+      threatsRaw,
+      scamsRaw,
+      personalInfoRaw,
+      selfHarmRaw,
+      otherRaw
+    ] = await Promise.all([
+      this.reportUserModel.aggregate(
+        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HARASSMENT_AND_BULLYING })
+      ),
+      this.reportUserModel.aggregate(
+        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HATE_SPEECH })
+      ),
+      this.reportUserModel.aggregate(
+        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.IMPERSONATION_FAKE_ACCOUNTS })
+      ),
+      this.reportUserModel.aggregate(
+        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.GRAPHIC_CONTENT })
+      ),
+      this.reportUserModel.aggregate(
+        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.THREATS_AND_VIOLENCE })
+      ),
+      this.reportUserModel.aggregate(
+        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SCAMS_AND_FRAUD })
+      ),
+      this.reportUserModel.aggregate(
+        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SENSITIVE_PERSONAL_INFO })
+      ),
+      this.reportUserModel.aggregate(
+        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SELF_HARM })
+      ),
+      this.reportUserModel.aggregate(
+        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.OTHER })
+      ),
+    ]);
 
-  // Get user handle names in the same order
-  const userHandles = allReports.map(userData => 
-    userHandleMap.get(userData._id.toString()) || 'Unknown'
-  );
+    const dataMaps = [
+      new Map(harassmentRaw.map(d => [d._id, d.count])),
+      new Map(hateSpeechRaw.map(d => [d._id, d.count])),
+      new Map(impersonationRaw.map(d => [d._id, d.count])),
+      new Map(graphicContentRaw.map(d => [d._id, d.count])),
+      new Map(threatsRaw.map(d => [d._id, d.count])),
+      new Map(scamsRaw.map(d => [d._id, d.count])),
+      new Map(personalInfoRaw.map(d => [d._id, d.count])),
+      new Map(selfHarmRaw.map(d => [d._id, d.count])),
+      new Map(otherRaw.map(d => [d._id, d.count]))
+    ];
 
-  // Use commonService helper to build time series data
-  const timeSeriesData = this.commonService.buildTimeSeriesData(
-    from,
-    to,
-    unit,
-    userDataMaps,
-    userHandles
-  );
+    const dataKeys = [
+      'HARASSMENT_AND_BULLYING',
+      'HATE_SPEECH',
+      'IMPERSONATION_FAKE_ACCOUNTS',
+      'GRAPHIC_CONTENT',
+      'THREATS_AND_VIOLENCE',
+      'SCAMS_AND_FRAUD',
+      'SENSITIVE_PERSONAL_INFO',
+      'SELF_HARM',
+      'OTHER'
+    ];
 
-  return {
-    success: true,
-    range,
-    unit,
-    from: this.commonService.formatDate(from),
-    to: this.commonService.formatDate(to),
-    data: timeSeriesData
-  };
-}
+    const timeSeriesData = this.commonService.buildTimeSeriesData(
+      from,
+      to,
+      unit,
+      dataMaps,
+      dataKeys
+    );
 
-async getReportReasonsActivity(
-  adminId: string,
-  range: '7days' | '30days' | 'year',
-): Promise<{
-  success: boolean;
-  range: '7days' | '30days' | 'year';
-  unit: 'day' | 'month';
-  from: string;
-  to: string;
-  data: Array<{ 
-    period: string; 
-    HARASSMENT_AND_BULLYING: number;
-    HATE_SPEECH: number;
-    IMPERSONATION_FAKE_ACCOUNTS: number;
-    GRAPHIC_CONTENT: number;
-    THREATS_AND_VIOLENCE: number;
-    SCAMS_AND_FRAUD: number;
-    SENSITIVE_PERSONAL_INFO: number;
-    SELF_HARM: number;
-    OTHER: number;
-  }>;
-}> {
-  // Ensure admin access
-  await this.adminService.ensureAdmin(adminId);
-  
-  // Get range configuration using admin service helper
-  const { from, to, unit } = this.commonService.buildRange(range);
-
-  // Get aggregated data for each report reason
-  const [
-    harassmentRaw,
-    hateSpeechRaw,
-    impersonationRaw,
-    graphicContentRaw,
-    threatsRaw,
-    scamsRaw,
-    personalInfoRaw,
-    selfHarmRaw,
-    otherRaw
-  ] = await Promise.all([
-    this.reportUserModel.aggregate(
-      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HARASSMENT_AND_BULLYING })
-    ),
-    this.reportUserModel.aggregate(
-      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HATE_SPEECH })
-    ),
-    this.reportUserModel.aggregate(
-      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.IMPERSONATION_FAKE_ACCOUNTS })
-    ),
-    this.reportUserModel.aggregate(
-      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.GRAPHIC_CONTENT })
-    ),
-    this.reportUserModel.aggregate(
-      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.THREATS_AND_VIOLENCE })
-    ),
-    this.reportUserModel.aggregate(
-      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SCAMS_AND_FRAUD })
-    ),
-    this.reportUserModel.aggregate(
-      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SENSITIVE_PERSONAL_INFO })
-    ),
-    this.reportUserModel.aggregate(
-      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SELF_HARM })
-    ),
-    this.reportUserModel.aggregate(
-      this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.OTHER })
-    ),
-  ]);
-
-  const dataMaps = [
-    new Map(harassmentRaw.map(d => [d._id, d.count])),
-    new Map(hateSpeechRaw.map(d => [d._id, d.count])),
-    new Map(impersonationRaw.map(d => [d._id, d.count])),
-    new Map(graphicContentRaw.map(d => [d._id, d.count])),
-    new Map(threatsRaw.map(d => [d._id, d.count])),
-    new Map(scamsRaw.map(d => [d._id, d.count])),
-    new Map(personalInfoRaw.map(d => [d._id, d.count])),
-    new Map(selfHarmRaw.map(d => [d._id, d.count])),
-    new Map(otherRaw.map(d => [d._id, d.count]))
-  ];
-
-  const dataKeys = [
-    'HARASSMENT_AND_BULLYING',
-    'HATE_SPEECH',
-    'IMPERSONATION_FAKE_ACCOUNTS',
-    'GRAPHIC_CONTENT',
-    'THREATS_AND_VIOLENCE',
-    'SCAMS_AND_FRAUD',
-    'SENSITIVE_PERSONAL_INFO',
-    'SELF_HARM',
-    'OTHER'
-  ];
-
-  const timeSeriesData = this.commonService.buildTimeSeriesData(
-    from,
-    to,
-    unit,
-    dataMaps,
-    dataKeys
-  );
-
-  return {
-    success: true,
-    range,
-    unit,
-    from: this.commonService.formatDate(from),
-    to: this.commonService.formatDate(to),
-    data: timeSeriesData
-  };
-}
+    return {
+      success: true,
+      range,
+      unit,
+      from: this.commonService.formatDate(from),
+      to: this.commonService.formatDate(to),
+      data: timeSeriesData
+    };
+  }
 }

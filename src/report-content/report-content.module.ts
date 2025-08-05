@@ -9,6 +9,8 @@ import { AdminModule } from 'src/admin/admin.module';
 import { Post, PostSchema } from 'src/post/post.schema';
 import { PostModule } from 'src/post/post.module';
 import { CommonUtilsModule } from 'src/admin/helpers/helpers.module';
+import { NotificationModule } from 'src/notification/notification.module';
+import { Notification, NotificationSchema } from 'src/notification/notification.schema';
 
 @Module({
   imports: [
@@ -16,11 +18,13 @@ import { CommonUtilsModule } from 'src/admin/helpers/helpers.module';
       { name: ReportContent.name, schema: ReportContentSchema },
       { name: User.name, schema: UserSchema },
       { name: Post.name, schema: PostSchema },
+      { name: Notification.name, schema: NotificationSchema },
     ]),
     UserModule,
     CommonUtilsModule,
     forwardRef(() => AdminModule),
     forwardRef(() => PostModule),
+    forwardRef(() => NotificationModule),
   ],
   providers: [ReportContentService],
   controllers: [ReportContentController],
