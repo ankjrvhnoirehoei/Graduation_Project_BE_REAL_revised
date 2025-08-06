@@ -139,9 +139,11 @@ export class MessageService {
     const limit = 20;
     const skip = (page - 1) * limit;
 
-    const messages = (await this.messageModel
+    // Tìm các tin nhắn trong room, có media type là image/video, và chưa bị xóa
+    const messages = await this.messageModel
       .find({
         roomId,
+        isDeleted: false, // lọc bỏ các tin đã bị xóa
         'media.type': { $in: ['image', 'video'] },
       })
       .populate('senderId', 'handleName profilePic')
@@ -149,8 +151,9 @@ export class MessageService {
       .skip(skip)
       .limit(limit)
       .lean()
-      .exec()) as any[];
-    const formattedData = messages.map((msg) => ({
+      .exec();
+
+    const formattedData = (messages as any[]).map((msg) => ({
       _id: msg._id.toString(),
       media: {
         url: msg.media?.url,
@@ -159,11 +162,13 @@ export class MessageService {
       createdAt: msg.createdAt.toISOString(),
       senderId: {
         handleName: msg.senderId.handleName,
+        username: msg.senderId.username,
+        profilePic: msg.senderId.profilePic, // nếu cần gửi kèm avatar
       },
     }));
 
     return {
-      page: page,
+      page,
       media: formattedData,
     };
   }

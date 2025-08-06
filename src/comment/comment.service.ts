@@ -31,7 +31,7 @@ export class CommentService {
 
     const user = await this.userModel
       .findById(userID)
-      .select('_id handleName profilePic')
+      .select('_id handleName username profilePic')
       .lean();
 
     if (!user) {
@@ -110,6 +110,7 @@ export class CommentService {
                 user: {
                   _id: '$user._id',
                   handleName: '$user.handleName',
+                  username: '$user.username',
                   profilePic: '$user.profilePic',
                 },
               },
