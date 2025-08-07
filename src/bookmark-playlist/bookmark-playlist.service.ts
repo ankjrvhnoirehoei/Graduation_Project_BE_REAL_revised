@@ -40,7 +40,6 @@ export class BookmarkPlaylistService {
   /**
    * returns all non-deleted playlists for a given user
    * if none exist, automatically creates the two default playlists
-   * ("All posts" and "Music") and returns them.
    */
   async findAllByUser(userId: string): Promise<(BookmarkPlaylist & { thumbnails: string[] })[]> {
     if (!Types.ObjectId.isValid(userId)) {
@@ -48,13 +47,13 @@ export class BookmarkPlaylistService {
     }
     const uid = new Types.ObjectId(userId);
 
-    // 1) Load existing playlists
+    // load existing playlists
     let playlists = await this.playlistModel
       .find({ userID: uid, isDeleted: false })
       .sort({ createdAt: 1 })
       .exec();
 
-    // 2) If none exist, insert defaults and reload
+    // if none exist, insert defaults and reload
     if (playlists.length === 0) {
       const defaults = [
         { userID: uid, playlistName: 'Tất cả bài đăng' },
@@ -67,7 +66,7 @@ export class BookmarkPlaylistService {
         .exec();
     }
 
-    // 3) Enrich each with filtered thumbnails and mark blocked/hidden items as deleted
+    // enrich each with thumbnails
     return this.addFilteredThumbnails(playlists, uid);
   }
 
@@ -89,7 +88,7 @@ export class BookmarkPlaylistService {
       }),
     );
 
-    // Reload playlists to get updated postCount values
+    // update postCount
     const updatedPlaylists = await this.playlistModel
       .find({ 
         _id: { $in: playlists.map(p => p._id) }, 
@@ -98,7 +97,6 @@ export class BookmarkPlaylistService {
       .sort({ createdAt: 1 })
       .exec();
 
-    // Combine updated playlist data with thumbnails
     return updatedPlaylists.map(playlist => {
       const result = results.find(r => r.playlistId.equals(playlist._id));
       return {
@@ -108,18 +106,16 @@ export class BookmarkPlaylistService {
     });
   }
 
-  /**
-   * Get filtered thumbnails for a specific playlist
-   */
+  // Get filtered thumbnails for a specific playlist
   private async getPlaylistThumbnails(
     playlistId: Types.ObjectId,
     currentUserId: Types.ObjectId,
   ): Promise<string[]> {
-    // Get bookmark items for this playlist (get more initially since some will be filtered)
+    // get bookmark items for this playlist, get more since some might be deleted
     const bookmarkItems = await this.bookmarkItemModel
       .find({ playlistID: playlistId, isDeleted: false })
       .sort({ createdAt: -1 })
-      .limit(50) // Get more items initially since some might be filtered out
+      .limit(50)
       .exec();
 
     if (bookmarkItems.length === 0) {
@@ -129,12 +125,12 @@ export class BookmarkPlaylistService {
     const thumbnails: string[] = [];
     const itemsToMarkDeleted: Types.ObjectId[] = [];
 
-    // Process items to get thumbnails
+    // process items to get thumbnails
     for (const item of bookmarkItems) {
       if (thumbnails.length >= 4) break;
 
       if (item.itemType === 'music') {
-        // Handle music items - these typically don't need filtering for blocks/hidden
+        // handle music items
         const music = await this.musicModel
           .findById(item.itemID)
           .select('coverImg')
@@ -144,14 +140,14 @@ export class BookmarkPlaylistService {
           thumbnails.push(music.coverImg);
         }
       } else {
-        // Handle post/reel items - need filtering
+        // handle post/reel items
         const mediaResult = await this.getFilteredMediaForPost(
           item.itemID,
           currentUserId,
         );
         
         if (mediaResult.shouldDelete) {
-          // Mark this bookmark item for deletion
+          // mark bookmark item for deletion
           itemsToMarkDeleted.push(item._id);
         } else if (mediaResult.media) {
           const thumbnailUrl = await this.processMediaForThumbnail(mediaResult.media);
@@ -162,25 +158,23 @@ export class BookmarkPlaylistService {
       }
     }
 
-    // Mark blocked/hidden items as deleted and adjust post count
+    // mark blocked/hidden items as deleted and adjust postCount
     if (itemsToMarkDeleted.length > 0) {
       await this.bookmarkItemModel.updateMany(
         { _id: { $in: itemsToMarkDeleted } },
         { $set: { isDeleted: true } }
       ).exec();
 
-      // Decrease the playlist's postCount by the number of deleted items
       await this.playlistModel.updateOne(
         { _id: playlistId },
         { $inc: { postCount: -itemsToMarkDeleted.length } }
       ).exec();
     }
 
-    // If we don't have enough thumbnails after filtering, try to get more
+    // get more if the filter allows less than 4 thumbnails
     if (thumbnails.length < 4 && itemsToMarkDeleted.length > 0) {
-      // Recursively call to get more items now that some are marked as deleted
       const additionalThumbnails = await this.getPlaylistThumbnails(playlistId, currentUserId);
-      // Merge results but avoid duplicates and limit to 4
+      // limit to 4
       const mergedThumbnails = [...new Set([...thumbnails, ...additionalThumbnails])];
       return this.padThumbnails(mergedThumbnails.slice(0, 4));
     }
@@ -188,9 +182,7 @@ export class BookmarkPlaylistService {
     return this.padThumbnails(thumbnails);
   }
 
-  /**
-   * Pad thumbnails array to exactly 4 items
-   */
+  // Pad thumbnails array to exactly 4 items
   private padThumbnails(thumbnails: string[]): string[] {
     while (thumbnails.length < 4) {
       thumbnails.push('');
@@ -210,13 +202,11 @@ export class BookmarkPlaylistService {
     shouldDelete: boolean;
   }> {
     try {
-      // Use the helpers service pipeline logic to check if this post should be visible
       const pipeline = this.helpersService.buildBasePipeline(
         currentUserId,
         { _id: postId }
       );
 
-      // Add media lookup to the pipeline
       pipeline.push(
         {
           $lookup: {
@@ -237,7 +227,7 @@ export class BookmarkPlaylistService {
             'media.videoUrl': 1,
             'media.imageUrl': 1,
             'media.postID': 1,
-            isBlocked: 1, // We need this to determine if item should be deleted
+            isBlocked: 1,
           },
         }
       );
@@ -245,13 +235,12 @@ export class BookmarkPlaylistService {
       const result = await this.postModel.aggregate(pipeline).exec();
       
       if (result.length === 0) {
-        // Post was filtered out (blocked/hidden), mark for deletion
+        // filtered out and marked for deletion
         return { media: null, shouldDelete: true };
       }
 
       const post = result[0];
       
-      // If post is blocked, mark for deletion
       if (post.isBlocked) {
         return { media: null, shouldDelete: true };
       }
@@ -263,7 +252,7 @@ export class BookmarkPlaylistService {
       
     } catch (error) {
       console.error('Error filtering post:', error);
-      // On error, assume post should be deleted to be safe
+      // assume post deleted on error to be safe
       return { media: null, shouldDelete: true };
     }
   }
@@ -277,18 +266,17 @@ export class BookmarkPlaylistService {
     imageUrl?: string;
     postID: Types.ObjectId;
   }): Promise<string | null> {
-    // If it's an image, return as is
     if (media.imageUrl) {
       return media.imageUrl;
     }
 
-    // If it's a video, generate thumbnail
+    // generate thumbnail
     if (media.videoUrl && media.videoUrl.endsWith('.mp4')) {
       try {
         return await this.generateVideoThumbnailBase64(media.videoUrl);
       } catch (error) {
         console.error('Error generating video thumbnail:', error);
-        // Fallback to video URL if thumbnail generation fails
+        // fallback to video URL if thumbnail generation fails
         return media.videoUrl;
       }
     }
@@ -296,28 +284,24 @@ export class BookmarkPlaylistService {
     return null;
   }
 
-  /**
-   * Generate base64 thumbnail from video using ffmpeg
-   * No storage needed - returns base64 data URL
-   */
+  // Generate base64 thumbnail from video using ffmpeg
   private async generateVideoThumbnailBase64(videoUrl: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      // Create temporary file path
+      // temporary file path
       const tempDir = os.tmpdir();
       const tempFileName = `thumb_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
       const tempPath = path.join(tempDir, tempFileName);
 
-      // Generate thumbnail using ffmpeg
+      // generate thumbnail using ffmpeg
       ffmpeg(videoUrl)
         .screenshots({
-          timestamps: ['00:00:01'], // Take screenshot at 1 second
+          timestamps: ['00:00:01'],
           filename: tempFileName,
           folder: tempDir,
-          size: '320x240', // Smaller size for faster processing and smaller base64
+          size: '320x240',
         })
         .on('end', async () => {
           try {
-            // Read the generated image and convert to base64
             const imageBuffer = fs.readFileSync(tempPath);
             const base64Image = `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
             
