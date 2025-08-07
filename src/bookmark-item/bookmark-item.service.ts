@@ -41,6 +41,12 @@ export class BookmarkItemService {
     page = 1,
     limit = 20,
   ): Promise<{
+    playlist: {
+      _id: Types.ObjectId;
+      playlistName: string;
+      coverImg: string;
+      postCount: number;
+    };
     items: any[];
     pagination: {
       currentPage: number;
@@ -57,11 +63,19 @@ export class BookmarkItemService {
       userId,
     );
 
-    // find all non‑deleted bookmark entries for this playlist
+    // build the playlist DTO to return
+    const playlistDto = {
+      _id: playlist._id,
+      playlistName: playlist.playlistName,
+      coverImg: playlist.coverImg,
+      postCount: playlist.postCount,
+    };
+
+    // find all non-deleted bookmark entries for this playlist
     const allEntries = await this.itemModel
       .find(
         { playlistID: playlist._id, isDeleted: false },
-        { itemID: 1 },          // project only the itemID
+        { itemID: 1 },
       )
       .sort({ createdAt: -1 })  // bookmark order
       .exec();
@@ -73,12 +87,11 @@ export class BookmarkItemService {
     if (playlist.playlistName === 'Âm nhạc') {
       const start = (page - 1) * limit;
       const slice = allIds.slice(start, start + limit);
-
       const data = await this.musicService.findManyByIds(slice);
-      // assume findManyByIds returns the same enriched shape for musics
 
       const totalPages = Math.max(Math.ceil(total / limit), 1);
       return {
+        playlist: playlistDto,
         items: data,
         pagination: {
           currentPage: page,
@@ -91,6 +104,7 @@ export class BookmarkItemService {
       };
     }
 
+    // otherwise use common paged aggregation for posts/reels
     const result = await this.commonService.runPagedAggregation(
       {
         _userId: userId,
@@ -100,8 +114,11 @@ export class BookmarkItemService {
       page,
       limit,
     );
-
-    return result;
+    
+    return {
+      playlist: playlistDto,
+      ...result,
+    };
   }
   
   // validate that a playlist belongs to the given user, used to create or delete
