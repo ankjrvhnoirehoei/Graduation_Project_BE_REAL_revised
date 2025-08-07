@@ -206,15 +206,16 @@ export class UserController {
     if (!trimmed) {
       throw new BadRequestException('Từ khóa không được để trống.');
     }
+
     const { items: rawUsers, totalCount } =
       await this.userService.searchUsersRawPaginated(
         trimmed,
         mode,
         page,
         limit,
+        currentUserId,
       );
 
-    // same following-follower relationship like before
     const enriched = await Promise.all(
       rawUsers.map(async (usr) => {
         const targetId = (usr as any)._id.toString();
@@ -251,7 +252,6 @@ export class UserController {
       }),
     );
 
-    // compute pagination metadata
     const totalPages = Math.ceil(totalCount / limit) || 1;
     const pagination = {
       currentPage: page,

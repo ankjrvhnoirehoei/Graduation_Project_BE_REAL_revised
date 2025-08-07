@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
-export type BookmarkItemDocument = BookmarkItem & Document;
+export type BookmarkItemDocument = Document<Types.ObjectId, any, BookmarkItem> & BookmarkItem;
 
 @Schema({ timestamps: true })
 export class BookmarkItem {
