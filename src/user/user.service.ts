@@ -236,12 +236,17 @@ export class UserService {
     mode: 'username' | 'handleName',
     page: number,
     limit: number,
+    currentUserId?: string,
   ): Promise<{ items: Partial<User>[]; totalCount: number }> {
     // build the 'match' stage based on mode
-    let matchStage: Record<string, any> = { deletedAt: { $eq: false } };
+    const matchStage: Record<string, any> = { deletedAt: { $eq: false } };
+
+    // exclude the current user if provided
+    if (currentUserId) {
+      matchStage._id = { $ne: new Types.ObjectId(currentUserId) };
+    }
 
     if (mode === 'username') {
-      // multi‐word, case‐insensitive: each token must appear somewhere in `username`
       const tokens = keyword
         .trim()
         .toLowerCase()
@@ -255,26 +260,16 @@ export class UserService {
             $options: 'i',
           },
         }));
-        matchStage = { ...matchStage, $and: andClauses };
-      } else {
-        // single token
+        matchStage.$and = andClauses;
+      } else if (tokens.length === 1) {
         const single = tokens[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        matchStage = {
-          ...matchStage,
-          username: { $regex: single, $options: 'i' },
-        };
+        matchStage.username = { $regex: single, $options: 'i' };
       }
     } else {
-      // mode === 'handleName'
-      // remove all whitespace from keyword
       const searchKey = keyword.replace(/\s+/g, '').toLowerCase();
-      // case‐insensitive substring match on handleName
-      matchStage = {
-        ...matchStage,
-        handleName: {
-          $regex: searchKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-          $options: 'i',
-        },
+      matchStage.handleName = {
+        $regex: searchKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        $options: 'i',
       };
     }
 
