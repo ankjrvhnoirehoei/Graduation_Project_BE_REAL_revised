@@ -11,6 +11,13 @@ import { BookmarkItem, BookmarkItemDocument } from 'src/bookmark-item/bookmark-i
 import { Media, MediaDocument } from 'src/media/media.schema';
 import { Music, MusicDocument } from 'src/music/music.schema';
 
+import ffmpeg from 'fluent-ffmpeg';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { Post, PostDocument } from 'src/post/post.schema';
+import { CommonServices } from 'src/admin/helpers/helpers.service';
+
 @Injectable()
 export class BookmarkPlaylistService {
   private readonly PROTECTED = ['Tất cả bài đăng', 'Âm nhạc'];
@@ -25,6 +32,9 @@ export class BookmarkPlaylistService {
     private readonly mediaModel: Model<MediaDocument>,
     @InjectModel(Music.name)
     private readonly musicModel: Model<MusicDocument>,
+    @InjectModel(Post.name)
+    private readonly postModel: Model<PostDocument>,
+    private readonly helpersService: CommonServices,
   ) {}
 
   /**
@@ -38,13 +48,13 @@ export class BookmarkPlaylistService {
     }
     const uid = new Types.ObjectId(userId);
 
-    // 1) load existing playlists
+    // 1) Load existing playlists
     let playlists = await this.playlistModel
       .find({ userID: uid, isDeleted: false })
       .sort({ createdAt: 1 })
       .exec();
 
-    // 2) if none exist, insert defaults and reload
+    // 2) If none exist, insert defaults and reload
     if (playlists.length === 0) {
       const defaults = [
         { userID: uid, playlistName: 'Tất cả bài đăng' },
@@ -57,65 +67,281 @@ export class BookmarkPlaylistService {
         .exec();
     }
 
-    // 3) enrich each with thumbnails
-    return this.addThumbnails(playlists);
+    // 3) Enrich each with filtered thumbnails and mark blocked/hidden items as deleted
+    return this.addFilteredThumbnails(playlists, uid);
   }
 
   /**
-   * For each playlist: grab its newest 4 bookmark‐items,
-   * fetch up to 4 media URLs for post/reel items and coverImgs for music items,
-   * merge, slice to 4, pad with "".
+   * Generate thumbnails for playlists while filtering out blocked users and hidden posts
+   * Also marks filtered items as deleted
    */
-  private async addThumbnails(
+  private async addFilteredThumbnails(
     playlists: BookmarkPlaylistDocument[],
+    currentUserId: Types.ObjectId,
   ): Promise<(BookmarkPlaylist & { thumbnails: string[] })[]> {
-    return Promise.all(
-      playlists.map(async (pl) => {
-        // a) load newest 4 items
-        const items = await this.bookmarkItemModel
-          .find({ playlistID: pl._id, isDeleted: false })
-          .sort({ createdAt: -1 })
-          .limit(4)
-          .exec();
-
-        // b) split types
-        const postIds: Types.ObjectId[] = [];
-        const musicIds: Types.ObjectId[] = [];
-        for (const it of items) {
-          if (it.itemType === 'music') {
-            musicIds.push(it.itemID);
-          } else {
-            postIds.push(it.itemID);
-          }
-        }
-
-        // c) fetch up to 4 medias for all post/reel IDs
-        const mediaDocs = await this.mediaModel
-          .find({ postID: { $in: postIds } })
-          .limit(4)
-          .exec();
-
-        const mediaUrls = mediaDocs.map((m) => m.videoUrl ?? m.imageUrl);
-
-        // d) fetch coverImg for each music ID
-        const musicDocs = await this.musicModel
-          .find({ _id: { $in: musicIds } })
-          .select('coverImg')
-          .exec();
-
-        const musicUrls = musicDocs.map((m) => m.coverImg);
-
-        // e) combine, slice/pad to exactly 4 entries
-        const combined = [...mediaUrls, ...musicUrls].slice(0, 4);
-        while (combined.length < 4) combined.push('');
-
-        // f) return playlist plus thumbnails
+    const results = await Promise.all(
+      playlists.map(async (playlist) => {
+        const thumbnails = await this.getPlaylistThumbnails(playlist._id, currentUserId);
         return {
-          ...pl.toObject(),
-          thumbnails: combined,
+          playlistId: playlist._id,
+          thumbnails,
         };
       }),
     );
+
+    // Reload playlists to get updated postCount values
+    const updatedPlaylists = await this.playlistModel
+      .find({ 
+        _id: { $in: playlists.map(p => p._id) }, 
+        isDeleted: false 
+      })
+      .sort({ createdAt: 1 })
+      .exec();
+
+    // Combine updated playlist data with thumbnails
+    return updatedPlaylists.map(playlist => {
+      const result = results.find(r => r.playlistId.equals(playlist._id));
+      return {
+        ...playlist.toObject(),
+        thumbnails: result?.thumbnails || ['', '', '', ''],
+      };
+    });
+  }
+
+  /**
+   * Get filtered thumbnails for a specific playlist
+   */
+  private async getPlaylistThumbnails(
+    playlistId: Types.ObjectId,
+    currentUserId: Types.ObjectId,
+  ): Promise<string[]> {
+    // Get bookmark items for this playlist (get more initially since some will be filtered)
+    const bookmarkItems = await this.bookmarkItemModel
+      .find({ playlistID: playlistId, isDeleted: false })
+      .sort({ createdAt: -1 })
+      .limit(50) // Get more items initially since some might be filtered out
+      .exec();
+
+    if (bookmarkItems.length === 0) {
+      return ['', '', '', ''];
+    }
+
+    const thumbnails: string[] = [];
+    const itemsToMarkDeleted: Types.ObjectId[] = [];
+
+    // Process items to get thumbnails
+    for (const item of bookmarkItems) {
+      if (thumbnails.length >= 4) break;
+
+      if (item.itemType === 'music') {
+        // Handle music items - these typically don't need filtering for blocks/hidden
+        const music = await this.musicModel
+          .findById(item.itemID)
+          .select('coverImg')
+          .exec();
+        
+        if (music?.coverImg) {
+          thumbnails.push(music.coverImg);
+        }
+      } else {
+        // Handle post/reel items - need filtering
+        const mediaResult = await this.getFilteredMediaForPost(
+          item.itemID,
+          currentUserId,
+        );
+        
+        if (mediaResult.shouldDelete) {
+          // Mark this bookmark item for deletion
+          itemsToMarkDeleted.push(item._id);
+        } else if (mediaResult.media) {
+          const thumbnailUrl = await this.processMediaForThumbnail(mediaResult.media);
+          if (thumbnailUrl) {
+            thumbnails.push(thumbnailUrl);
+          }
+        }
+      }
+    }
+
+    // Mark blocked/hidden items as deleted and adjust post count
+    if (itemsToMarkDeleted.length > 0) {
+      await this.bookmarkItemModel.updateMany(
+        { _id: { $in: itemsToMarkDeleted } },
+        { $set: { isDeleted: true } }
+      ).exec();
+
+      // Decrease the playlist's postCount by the number of deleted items
+      await this.playlistModel.updateOne(
+        { _id: playlistId },
+        { $inc: { postCount: -itemsToMarkDeleted.length } }
+      ).exec();
+    }
+
+    // If we don't have enough thumbnails after filtering, try to get more
+    if (thumbnails.length < 4 && itemsToMarkDeleted.length > 0) {
+      // Recursively call to get more items now that some are marked as deleted
+      const additionalThumbnails = await this.getPlaylistThumbnails(playlistId, currentUserId);
+      // Merge results but avoid duplicates and limit to 4
+      const mergedThumbnails = [...new Set([...thumbnails, ...additionalThumbnails])];
+      return this.padThumbnails(mergedThumbnails.slice(0, 4));
+    }
+
+    return this.padThumbnails(thumbnails);
+  }
+
+  /**
+   * Pad thumbnails array to exactly 4 items
+   */
+  private padThumbnails(thumbnails: string[]): string[] {
+    while (thumbnails.length < 4) {
+      thumbnails.push('');
+    }
+    return thumbnails.slice(0, 4);
+  }
+
+  /**
+   * Get media for a post while applying the same filters as the main feed
+   * Returns both the media and whether the item should be marked as deleted
+   */
+  private async getFilteredMediaForPost(
+    postId: Types.ObjectId,
+    currentUserId: Types.ObjectId,
+  ): Promise<{
+    media: { videoUrl?: string; imageUrl?: string; postID: Types.ObjectId } | null;
+    shouldDelete: boolean;
+  }> {
+    try {
+      // Use the helpers service pipeline logic to check if this post should be visible
+      const pipeline = this.helpersService.buildBasePipeline(
+        currentUserId,
+        { _id: postId }
+      );
+
+      // Add media lookup to the pipeline
+      pipeline.push(
+        {
+          $lookup: {
+            from: 'media',
+            localField: '_id',
+            foreignField: 'postID',
+            as: 'media',
+          },
+        },
+        {
+          $unwind: {
+            path: '$media',
+            preserveNullAndEmptyArrays: false,
+          },
+        },
+        {
+          $project: {
+            'media.videoUrl': 1,
+            'media.imageUrl': 1,
+            'media.postID': 1,
+            isBlocked: 1, // We need this to determine if item should be deleted
+          },
+        }
+      );
+
+      const result = await this.postModel.aggregate(pipeline).exec();
+      
+      if (result.length === 0) {
+        // Post was filtered out (blocked/hidden), mark for deletion
+        return { media: null, shouldDelete: true };
+      }
+
+      const post = result[0];
+      
+      // If post is blocked, mark for deletion
+      if (post.isBlocked) {
+        return { media: null, shouldDelete: true };
+      }
+
+      return { 
+        media: post.media || null, 
+        shouldDelete: false 
+      };
+      
+    } catch (error) {
+      console.error('Error filtering post:', error);
+      // On error, assume post should be deleted to be safe
+      return { media: null, shouldDelete: true };
+    }
+  }
+
+  /**
+   * Process media URL to generate thumbnail if it's a video
+   * Returns base64 encoded image for videos, original URL for images
+   */
+  private async processMediaForThumbnail(media: {
+    videoUrl?: string;
+    imageUrl?: string;
+    postID: Types.ObjectId;
+  }): Promise<string | null> {
+    // If it's an image, return as is
+    if (media.imageUrl) {
+      return media.imageUrl;
+    }
+
+    // If it's a video, generate thumbnail
+    if (media.videoUrl && media.videoUrl.endsWith('.mp4')) {
+      try {
+        return await this.generateVideoThumbnailBase64(media.videoUrl);
+      } catch (error) {
+        console.error('Error generating video thumbnail:', error);
+        // Fallback to video URL if thumbnail generation fails
+        return media.videoUrl;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Generate base64 thumbnail from video using ffmpeg
+   * No storage needed - returns base64 data URL
+   */
+  private async generateVideoThumbnailBase64(videoUrl: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      // Create temporary file path
+      const tempDir = os.tmpdir();
+      const tempFileName = `thumb_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+      const tempPath = path.join(tempDir, tempFileName);
+
+      // Generate thumbnail using ffmpeg
+      ffmpeg(videoUrl)
+        .screenshots({
+          timestamps: ['00:00:01'], // Take screenshot at 1 second
+          filename: tempFileName,
+          folder: tempDir,
+          size: '320x240', // Smaller size for faster processing and smaller base64
+        })
+        .on('end', async () => {
+          try {
+            // Read the generated image and convert to base64
+            const imageBuffer = fs.readFileSync(tempPath);
+            const base64Image = `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
+            
+            // Clean up temporary file
+            fs.unlinkSync(tempPath);
+            
+            resolve(base64Image);
+          } catch (error) {
+            // Clean up on error
+            try {
+              fs.unlinkSync(tempPath);
+            } catch {}
+            reject(error);
+          }
+        })
+        .on('error', (err) => {
+          // Clean up on error
+          try {
+            fs.unlinkSync(tempPath);
+          } catch {}
+          console.error('FFmpeg error:', err);
+          reject(err);
+        });
+    });
   }
 
   // find a single playlist by ID, ensure it belongs to user, and is not deleted.

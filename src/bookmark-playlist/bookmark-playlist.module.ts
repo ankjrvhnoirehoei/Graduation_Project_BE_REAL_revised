@@ -9,13 +9,19 @@ import {
 import { BookmarkItemModule } from 'src/bookmark-item/bookmark-item.module';
 import { MusicModule } from 'src/music/music.module';
 import { MediaModule } from 'src/media/media.module';
+import { Post, PostSchema } from 'src/post/post.schema';
+import { PostModule } from 'src/post/post.module';
+import { CommonUtilsModule } from 'src/admin/helpers/helpers.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: BookmarkPlaylist.name, schema: BookmarkPlaylistSchema },
+      { name: Post.name, schema: PostSchema },
     ]),
     forwardRef(() => BookmarkItemModule),
+    forwardRef(() => PostModule),
+    CommonUtilsModule,
     MusicModule,
     MediaModule,
   ],
