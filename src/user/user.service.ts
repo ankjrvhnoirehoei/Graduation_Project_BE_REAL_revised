@@ -882,19 +882,27 @@ export class UserService {
               $match: {
                 $expr: {
                   $or: [
-                    {
-                      $and: [
-                        { $eq: ['$userTwoID', '$$me'] },
-                        {
-                          $in: ['$relation', ['FOLLOW_NULL', 'FOLLOW_FOLLOW']],
-                        },
-                      ],
-                    },
+                    // Tôi là userOneID và tôi FOLLOW
                     {
                       $and: [
                         { $eq: ['$userOneID', '$$me'] },
                         {
-                          $in: ['$relation', ['NULL_FOLLOW', 'FOLLOW_FOLLOW']],
+                          $in: [
+                            '$relation',
+                            ['FOLLOW_NULL', 'FOLLOW_FOLLOW', 'FOLLOW_BLOCK'],
+                          ],
+                        },
+                      ],
+                    },
+                    // Tôi là userTwoID và tôi FOLLOW
+                    {
+                      $and: [
+                        { $eq: ['$userTwoID', '$$me'] },
+                        {
+                          $in: [
+                            '$relation',
+                            ['NULL_FOLLOW', 'FOLLOW_FOLLOW', 'BLOCK_FOLLOW'],
+                          ],
                         },
                       ],
                     },
@@ -904,10 +912,10 @@ export class UserService {
             },
             { $project: { _id: 1 } },
           ],
-          as: 'rels',
+          as: 'relsFollowing',
         },
       },
-      { $addFields: { totalFollowers: { $size: '$rels' } } },
+      { $addFields: { totalFollowing: { $size: '$relsFollowing' } } },
 
       // BOOKMARKS
       {
