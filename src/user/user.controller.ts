@@ -385,4 +385,11 @@ export class UserController {
 
     return { items, total, page, pageSize };
   }
+
+  @Patch('admin/users/:id/toggle-lock')
+  @UseGuards(JwtRefreshAuthGuard)
+  async toggleLock(@Param('id') id: string) {
+    const locked = await this.userService.disableUser(id);
+    return { message: locked ? 'Đã khoá' : 'Đã mở khoá', locked };
+  }
 }
