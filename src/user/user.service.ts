@@ -847,7 +847,7 @@ export class UserService {
                   $and: [
                     { $eq: ['$ownerId', '$$uid'] },
                     { $eq: ['$isEnable', true] },
-                    { $eq: ['$isArchived', false] },
+                    { $eq: ['$type', 'stories'] }, // chỉ story
                   ],
                 },
               },
