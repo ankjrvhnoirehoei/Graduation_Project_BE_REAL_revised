@@ -882,10 +882,10 @@ export class UserService {
               $match: {
                 $expr: {
                   $or: [
-                    // Tôi là userOneID và tôi FOLLOW
+                    // Tôi là userTwoID => bên trái (userOne) FOLLOW tôi
                     {
                       $and: [
-                        { $eq: ['$userOneID', '$$me'] },
+                        { $eq: ['$userTwoID', '$$me'] },
                         {
                           $in: [
                             '$relation',
@@ -894,10 +894,10 @@ export class UserService {
                         },
                       ],
                     },
-                    // Tôi là userTwoID và tôi FOLLOW
+                    // Tôi là userOneID => bên phải (userTwo) FOLLOW tôi
                     {
                       $and: [
-                        { $eq: ['$userTwoID', '$$me'] },
+                        { $eq: ['$userOneID', '$$me'] },
                         {
                           $in: [
                             '$relation',
@@ -912,10 +912,10 @@ export class UserService {
             },
             { $project: { _id: 1 } },
           ],
-          as: 'relsFollowing',
+          as: 'rels',
         },
       },
-      { $addFields: { totalFollowing: { $size: '$relsFollowing' } } },
+      { $addFields: { totalFollowers: { $size: '$rels' } } },
 
       // BOOKMARKS
       {
