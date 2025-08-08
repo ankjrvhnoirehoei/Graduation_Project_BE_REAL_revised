@@ -7,7 +7,7 @@ import {
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model, PipelineStage, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
 import { User, UserDocument } from './user.schema';
@@ -18,12 +18,10 @@ import {
   ChangePasswordDTO,
   ConfirmEmailDto,
   EditUserDto,
-  CheckUserEmailDto,
   SendVerificationCodeDto,
   VerifyCodeDto,
 } from './dto/update-user.dto';
 import { JwtService } from '@nestjs/jwt';
-import { Relation } from 'src/relation/relation.schema';
 import { QueryDto } from './dto/user.dto';
 
 @Injectable()
@@ -759,7 +757,8 @@ export class UserService {
   }
 
   async aggregateUsers({ q, status, from, to, page, pageSize }: QueryDto) {
-    const match: any = {};
+    const match: Record<string, any> = {};
+
     if (q?.trim()) {
       const rx = new RegExp(this.escapeRegex(q.trim()), 'i');
       match.$or = [
@@ -771,16 +770,24 @@ export class UserService {
     }
     if (status === 'active') match.deletedAt = false;
     if (status === 'locked') match.deletedAt = true;
+
     if (from || to) {
       match.createdAt = {};
       if (from) match.createdAt.$gte = new Date(`${from}T00:00:00.000Z`);
       if (to) match.createdAt.$lte = new Date(`${to}T23:59:59.999Z`);
     }
 
-    const pipeline: any[] = [
-      { $match: match },
+    const sortStage: PipelineStage.Sort = { $sort: { createdAt: -1 } };
+    const skip = (page - 1) * pageSize;
+    const limit = pageSize;
 
-      // POSTS -> array rồi đếm bằng $size
+    const items: PipelineStage[] = [
+      { $match: match },
+      sortStage,
+      { $skip: skip },
+      { $limit: limit },
+
+      // POSTS
       {
         $lookup: {
           from: 'posts',
@@ -805,7 +812,7 @@ export class UserService {
         $addFields: { totalPosts: { $size: '$posts' }, postIds: '$posts._id' },
       },
 
-      // POST LIKES -> array rồi $size
+      // POST LIKES
       {
         $lookup: {
           from: 'postlikes',
@@ -828,7 +835,7 @@ export class UserService {
       },
       { $addFields: { postLikes: { $size: '$postLikesArr' } } },
 
-      // STORIES -> array; đếm & cộng like bằng $sum + $map + $size
+      // STORIES
       {
         $lookup: {
           from: 'stories',
@@ -865,7 +872,7 @@ export class UserService {
         },
       },
 
-      // FOLLOWERS -> array rồi $size (logic 2 chiều)
+      // FOLLOWERS (2 chiều)
       {
         $lookup: {
           from: 'relations',
@@ -902,7 +909,7 @@ export class UserService {
       },
       { $addFields: { totalFollowers: { $size: '$rels' } } },
 
-      // BOOKMARKS -> playlists (ids) -> items -> $size
+      // BOOKMARKS
       {
         $lookup: {
           from: 'bookmarkplaylists',
@@ -945,7 +952,7 @@ export class UserService {
       },
       { $addFields: { totalBookmarks: { $size: '$bmItems' } } },
 
-      // Map fields + tổng like
+      // Map & cleanup
       {
         $addFields: {
           phone: '$phoneNumber',
@@ -956,8 +963,6 @@ export class UserService {
           totalLikesReceived: { $add: ['$storyLikes', '$postLikes'] },
         },
       },
-
-      // Gọn gàng: bỏ field thừa
       {
         $project: {
           posts: 0,
@@ -980,18 +985,15 @@ export class UserService {
           postLikes: 0,
         },
       },
+    ];
 
-      // Phân trang + tổng
-      {
-        $facet: {
-          items: [
-            { $sort: { createdAt: -1 } },
-            { $skip: (page - 1) * pageSize },
-            { $limit: pageSize },
-          ],
-          total: [{ $count: 'count' }],
-        },
-      },
+    const total = [
+      { $match: match },
+      { $count: 'count' },
+    ] as unknown as PipelineStage.FacetPipelineStage[];
+
+    const pipeline: PipelineStage[] = [
+      { $facet: { items, total } as any },
       {
         $project: {
           items: 1,
