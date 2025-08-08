@@ -16,6 +16,7 @@ import { PostLike, PostLikeDocument } from 'src/like_post/like_post.schema';
 import { ReportUser, ReportUserDocument } from 'src/report-user/report-user.schema';
 import { ReportContent, ReportContentDocument } from 'src/report-content/report-content.schema';
 import { CommonServices, RangeKey } from './helpers/helpers.service';
+import { ReportStory, ReportStoryDocument } from 'src/report-story/schema/report-story.schema';
 
 @Injectable()
 export class AdminService {
@@ -28,6 +29,7 @@ export class AdminService {
     @InjectModel(PostLike.name) private likeModel: Model<PostLikeDocument>,
     @InjectModel(ReportUser.name) private reportUserModel: Model<ReportUserDocument>,
     @InjectModel(ReportContent.name) private reportContentModel: Model<ReportContentDocument>,
+    @InjectModel(ReportStory.name) private reportStoryModel: Model<ReportStoryDocument>,
     private readonly userService: UserService,
     private readonly commonServices: CommonServices,
   ) {}
@@ -1397,4 +1399,192 @@ async compareLastSixMonths(userId: string) {
       data 
     };
   }
+
+  async getStoryActivity(
+    adminId: string,
+    range: RangeKey,
+  ): Promise<{
+    success: boolean;
+    range: RangeKey;
+    unit: 'day' | 'month';
+    from: string;
+    to: string;
+    data: Array<{ period: string; stories: number; views: number }>;
+  }> {
+    await this.ensureAdmin(adminId);
+    const { from, to, unit } = this.commonServices.buildRange(range);
+
+    const [storiesRaw, viewsRaw] = await Promise.all([
+      this.storyModel.aggregate(
+        this.commonServices.buildTimeAggregation(from, to, unit)
+      ),
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        {
+          $group: {
+            _id: unit === 'day'
+              ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
+              : { $month: '$createdAt' },
+            count: { $sum: '$viewCount' }
+          }
+        },
+      ]),
+    ]);
+
+    const dataMaps = [
+      new Map(storiesRaw.map(d => [d._id, d.count])),
+      new Map(viewsRaw.map(d => [d._id, d.count]))
+    ];
+
+    const data = this.commonServices.buildTimeSeriesData(from, to, unit, dataMaps, ['stories', 'views']);
+
+    return {
+      success: true,
+      range,
+      unit,
+      from: this.commonServices.formatDate(from),
+      to: this.commonServices.formatDate(to),
+      data
+    };
+  }
+
+  async getStorySummaryWithTrends(
+    adminId: string,
+  ): Promise<{
+    success: boolean;
+    currentWindow: {
+      active: number;
+      reported: number;
+      flagged: number;
+      disabled: number;
+      total: number;
+    };
+    percentageChange: number;
+    trend: 'increase' | 'decrease' | 'no_change';
+    start: string;
+    end: string;
+  }> {
+    await this.ensureAdmin(adminId);
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+
+    const currStart = new Date(year, month - 5, 1);
+    const currEnd = new Date(year, month + 1, 1);
+    const prevStart = new Date(year, month - 11, 1);
+    const prevEnd = new Date(year, month - 5, 1);
+
+    const countWindow = async (from: Date, to: Date) => {
+      const [total, active, reported, flagged, disabled] = await Promise.all([
+        this.storyModel.countDocuments({ createdAt: { $gte: from, $lt: to } }),
+        this.storyModel.countDocuments({
+          createdAt: { $gte: from, $lt: to },
+          isEnable: true,
+          isFlagged: false
+        }),
+        this.reportStoryModel.countDocuments({ createdAt: { $gte: from, $lt: to } }),
+        this.storyModel.countDocuments({
+          createdAt: { $gte: from, $lt: to },
+          isFlagged: true
+        }),
+        this.storyModel.countDocuments({
+          createdAt: { $gte: from, $lt: to },
+          isEnable: false
+        }),
+      ]);
+      return { total, active, reported, flagged, disabled };
+    };
+
+    const [currWindow, prevWindow] = await Promise.all([
+      countWindow(currStart, currEnd),
+      countWindow(prevStart, prevEnd),
+    ]);
+
+    const { percentageChange, trend } = this.commonServices.combinedFluct(currWindow.total, prevWindow.total);
+
+    const start = currStart.toLocaleString('en-US', {
+      month: 'short', year: 'numeric'
+    });
+    const endMonthDate = new Date(currEnd.getFullYear(), currEnd.getMonth() - 1, 1);
+    const end = endMonthDate.toLocaleString('en-US', {
+      month: 'short', year: 'numeric'
+    });
+
+    return {
+      success: true,
+      currentWindow: currWindow,
+      percentageChange,
+      trend: trend === 'no change' ? 'no_change' : trend as 'increase' | 'decrease',
+      start,
+      end,
+    };
+  }
+
+  async getStorySummary(
+    adminId: string,
+  ): Promise<{
+    success: boolean;
+    data: {
+      active: number;
+      flagged: number;
+      disabled: number;
+      total: number;
+    };
+  }> {
+    await this.ensureAdmin(adminId);
+
+    const [active, flagged, disabled, total] = await Promise.all([
+      this.storyModel.countDocuments({ isEnable: true, isFlagged: false }),
+      this.storyModel.countDocuments({ isFlagged: true }),
+      this.storyModel.countDocuments({ isEnable: false }),
+      this.storyModel.countDocuments({})
+    ]);
+
+    return {
+      success: true,
+      data: {
+        active,
+        flagged,
+        disabled,
+        total
+      }
+    };
+  }
+
+  async getStoryEngagement(
+    adminId: string,
+    range: RangeKey,
+  ): Promise<{
+    success: boolean;
+    data: Array<{ category: string; value: number }>;
+  }> {
+    await this.ensureAdmin(adminId);
+    const { from, to } = this.commonServices.buildRange(range);
+
+    const [interactions, views, shares] = await Promise.all([
+      // Count total likes on stories
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        { $project: { likeCount: { $size: '$likedByUsers' } } },
+        { $group: { _id: null, total: { $sum: '$likeCount' } } }
+      ]),
+      // Count total views
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        { $group: { _id: null, total: { $sum: '$viewCount' } } }
+      ]),
+      Promise.resolve([{ total: 0 }])
+    ]);
+
+    return {
+      success: true,
+      data: [
+        { category: 'Tương tác', value: interactions[0]?.total || 0 },
+        { category: 'Lượt xem', value: views[0]?.total || 0 },
+        { category: 'Chia sẻ', value: shares[0]?.total || 0 },
+      ]
+    };
+  }
+
 }
