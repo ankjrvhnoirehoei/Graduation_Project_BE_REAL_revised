@@ -241,7 +241,7 @@ export class UserService {
     // build the 'match' stage based on mode
     const matchStage: Record<string, any> = { deletedAt: { $eq: false } };
 
-    // exclude the current user if provided
+    // exclude the current user
     if (currentUserId) {
       matchStage._id = { $ne: new Types.ObjectId(currentUserId) };
     }
