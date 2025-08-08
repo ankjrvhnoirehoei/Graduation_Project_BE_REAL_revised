@@ -56,3 +56,12 @@ export class UserDto {
   @IsBoolean()
   deletedAt?: boolean;
 }
+
+export type QueryDto = {
+  q?: string;
+  status?: 'active' | 'locked';
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD
+  page: number;
+  pageSize: number;
+};

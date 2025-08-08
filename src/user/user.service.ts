@@ -24,6 +24,7 @@ import {
 } from './dto/update-user.dto';
 import { JwtService } from '@nestjs/jwt';
 import { Relation } from 'src/relation/relation.schema';
+import { QueryDto } from './dto/user.dto';
 
 @Injectable()
 export class UserService {
@@ -52,20 +53,29 @@ export class UserService {
       return { valid: false, message: 'Mật khẩu phải có ít nhất 6 ký tự' };
     }
     if (!/[a-z]/.test(password)) {
-      return { valid: false, message: 'Mật khẩu phải chứa ít nhất một chữ thường' };
+      return {
+        valid: false,
+        message: 'Mật khẩu phải chứa ít nhất một chữ thường',
+      };
     }
     if (!/[A-Z]/.test(password)) {
-      return { valid: false, message: 'Mật khẩu phải chứa ít nhất một chữ hoa' };
+      return {
+        valid: false,
+        message: 'Mật khẩu phải chứa ít nhất một chữ hoa',
+      };
     }
     if (!/\d/.test(password)) {
       return { valid: false, message: 'Mật khẩu phải chứa ít nhất một số' };
     }
     if (!/[\W_]/.test(password)) {
-      return { valid: false, message: `Mật khẩu phải chứa ít nhất một ký tự đặc biệt (${this.PASSWORD_SPECIAL_CHARS})` };
+      return {
+        valid: false,
+        message: `Mật khẩu phải chứa ít nhất một ký tự đặc biệt (${this.PASSWORD_SPECIAL_CHARS})`,
+      };
     }
     return {
       valid: true,
-      message: ''
+      message: '',
     };
   };
 
@@ -131,7 +141,9 @@ export class UserService {
     return { userId: user._id.toString() };
   }
 
-  async getUserById(userId: string): Promise<(Partial<User> & { _id: string }) | null> {
+  async getUserById(
+    userId: string,
+  ): Promise<(Partial<User> & { _id: string }) | null> {
     const user = await this.userModel.findById(userId).lean();
     if (!user) {
       throw new NotFoundException('Không tìm thấy User.');
@@ -476,7 +488,10 @@ export class UserService {
     };
   }> {
     // Build base filter
-    const filter = { createdAt: { $gte: from, $lte: to }, role: { $ne: 'admin' }, };
+    const filter = {
+      createdAt: { $gte: from, $lte: to },
+      role: { $ne: 'admin' },
+    };
 
     // Count total
     const totalCount = await this.userModel.countDocuments(filter);
@@ -503,79 +518,88 @@ export class UserService {
         hasPrevPage: page > 1,
       },
     };
-  };
+  }
 
   async changePassword(userId: string, body: ChangePasswordDTO) {
     const currentUser = await this.userModel.findById(userId).exec();
     if (!currentUser) {
       return {
         message: 'Failed',
-        error: 'Không tìm thấy người dùng'
-      }
+        error: 'Không tìm thấy người dùng',
+      };
     }
 
     const isCurrentPasswordCorrect = bcrypt.compareSync(
       body.currentPassword,
-      currentUser.password
+      currentUser.password,
     );
 
     if (!isCurrentPasswordCorrect) {
       return {
         message: 'Failed',
-        error: 'Sai mật khẩu hiện tại'
-      }
+        error: 'Sai mật khẩu hiện tại',
+      };
     }
 
     const hasStrongPas = this.isStrongPassword(body.newPassword);
     if (!hasStrongPas.valid) {
       return {
         message: hasStrongPas.message,
-        data: ''
-      }
+        data: '',
+      };
     }
 
-    await this.userModel.findByIdAndUpdate(
-      userId,
-      { password: bcrypt.hashSync(body.newPassword, 10) }
-    ).exec();
+    await this.userModel
+      .findByIdAndUpdate(userId, {
+        password: bcrypt.hashSync(body.newPassword, 10),
+      })
+      .exec();
 
     const { password, ...rest } = currentUser.toObject();
 
     return {
       message: 'Success',
-      data: rest
+      data: rest,
     };
   }
-  
-  // step 1: check if user 
-  async checkUserForPasswordReset(email: string): Promise<{ hasPhoneNumber: boolean }> {
+
+  // step 1: check if user
+  async checkUserForPasswordReset(
+    email: string,
+  ): Promise<{ hasPhoneNumber: boolean }> {
     const user = await this.userModel.findOne({ email }).lean();
-    
+
     if (!user || user.deletedAt) {
       throw new NotFoundException('Không tìm thấy tài khoản với email này.');
     }
 
     if (user.isGoogle) {
-      throw new BadRequestException('Tài khoản này được đăng ký bằng Google và không sử dụng mật khẩu. Vui lòng đăng nhập bằng Google.');
+      throw new BadRequestException(
+        'Tài khoản này được đăng ký bằng Google và không sử dụng mật khẩu. Vui lòng đăng nhập bằng Google.',
+      );
     }
 
     return {
-      hasPhoneNumber: !!user.phoneNumber
+      hasPhoneNumber: !!user.phoneNumber,
     };
   }
 
-  // step 2: send verification code 
-  async sendPasswordResetCode(dto: SendVerificationCodeDto): Promise<{ token: string }> {
+  // step 2: send verification code
+  async sendPasswordResetCode(
+    dto: SendVerificationCodeDto,
+  ): Promise<{ token: string }> {
     const { email, phoneNumber } = dto;
-    
+
     const user = await this.userModel.findOne({ email });
-    
+
     if (!user || user.deletedAt) {
       throw new NotFoundException('Không tìm thấy tài khoản với email này.');
     }
 
     if (user.isGoogle) {
-      throw new BadRequestException('Tài khoản này được đăng ký bằng Google và không sử dụng mật khẩu.');
+      throw new BadRequestException(
+        'Tài khoản này được đăng ký bằng Google và không sử dụng mật khẩu.',
+      );
     }
 
     let finalPhoneNumber = user.phoneNumber;
@@ -583,17 +607,23 @@ export class UserService {
     // If user doesn't have phone number, we need to add it
     if (!user.phoneNumber) {
       if (!phoneNumber) {
-        throw new BadRequestException('Vui lòng cung cấp số điện thoại để tiếp tục.');
+        throw new BadRequestException(
+          'Vui lòng cung cấp số điện thoại để tiếp tục.',
+        );
       }
 
       // Check if phone number is already used by another user
-      const existingPhoneUser = await this.userModel.findOne({ 
-        phoneNumber,
-        _id: { $ne: user._id } // Exclude current user
-      }).lean();
+      const existingPhoneUser = await this.userModel
+        .findOne({
+          phoneNumber,
+          _id: { $ne: user._id }, // Exclude current user
+        })
+        .lean();
 
       if (existingPhoneUser) {
-        throw new ConflictException('Số điện thoại này đã được sử dụng bởi tài khoản khác.');
+        throw new ConflictException(
+          'Số điện thoại này đã được sử dụng bởi tài khoản khác.',
+        );
       }
 
       // Save phone number to user
@@ -618,26 +648,30 @@ export class UserService {
       await firstValueFrom(
         this.httpService.post(
           'https://rest.esms.vn/MainService.svc/json/SendMultipleMessage_V4_post_json/',
-          smsPayload
-        )
+          smsPayload,
+        ),
       );
     } catch (error) {
-      throw new BadRequestException('Không thể gửi mã xác nhận. Vui lòng thử lại sau.');
+      throw new BadRequestException(
+        'Không thể gửi mã xác nhận. Vui lòng thử lại sau.',
+      );
     }
 
     // Create token with email and code
     const token = this.jwtService.sign(
       { email, code },
-      { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '15m' }
+      { secret: process.env.JWT_ACCESS_SECRET, expiresIn: '15m' },
     );
 
     return { token };
   }
 
   // step 3: verify code and generate refresh token
-  async verifyPasswordResetCode(dto: VerifyCodeDto): Promise<{ refreshToken: string }> {
+  async verifyPasswordResetCode(
+    dto: VerifyCodeDto,
+  ): Promise<{ refreshToken: string }> {
     let payload: { email: string; code: string };
-    
+
     try {
       payload = this.jwtService.verify(dto.token, {
         secret: process.env.JWT_ACCESS_SECRET,
@@ -652,9 +686,11 @@ export class UserService {
 
     // Find user by email
     const user = await this.userModel.findOne({ email: payload.email });
-    
+
     if (!user || user.deletedAt) {
-      throw new NotFoundException('Tài khoản không hợp lệ hoặc đã bị vô hiệu hóa.');
+      throw new NotFoundException(
+        'Tài khoản không hợp lệ hoặc đã bị vô hiệu hóa.',
+      );
     }
 
     // Create refresh token
@@ -671,7 +707,9 @@ export class UserService {
     return { refreshToken };
   }
 
-  async validateUser(userId: string): Promise<{ success: boolean; message: string }> {
+  async validateUser(
+    userId: string,
+  ): Promise<{ success: boolean; message: string }> {
     try {
       // Check if userId is a valid ObjectId
       if (!Types.ObjectId.isValid(userId)) {
@@ -705,15 +743,268 @@ export class UserService {
       };
     } catch (error) {
       // If it's already a NestJS exception, re-throw it
-      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
         throw error;
       }
-      
+
       // Handle any other unexpected errors
       throw new BadRequestException({
         success: false,
         message: 'Đã xảy ra lỗi khi xác thực người dùng',
       });
     }
+  }
+
+  async aggregateUsers({ q, status, from, to, page, pageSize }: QueryDto) {
+    const match: any = {};
+    if (q?.trim()) {
+      const rx = new RegExp(this.escapeRegex(q.trim()), 'i');
+      match.$or = [
+        { username: rx },
+        { email: rx },
+        { phoneNumber: rx },
+        { handleName: rx },
+      ];
+    }
+    if (status === 'active') match.deletedAt = false;
+    if (status === 'locked') match.deletedAt = true;
+    if (from || to) {
+      match.createdAt = {};
+      if (from) match.createdAt.$gte = new Date(`${from}T00:00:00.000Z`);
+      if (to) match.createdAt.$lte = new Date(`${to}T23:59:59.999Z`);
+    }
+
+    const pipeline: any[] = [
+      { $match: match },
+
+      // POSTS -> array rồi đếm bằng $size
+      {
+        $lookup: {
+          from: 'posts',
+          let: { uid: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userID', '$$uid'] },
+                    { $eq: ['$isEnable', true] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 1 } },
+          ],
+          as: 'posts',
+        },
+      },
+      {
+        $addFields: { totalPosts: { $size: '$posts' }, postIds: '$posts._id' },
+      },
+
+      // POST LIKES -> array rồi $size
+      {
+        $lookup: {
+          from: 'postlikes',
+          let: { pids: '$postIds' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $gt: [{ $size: { $ifNull: ['$$pids', []] } }, 0] },
+                    { $in: ['$postId', '$$pids'] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 1 } },
+          ],
+          as: 'postLikesArr',
+        },
+      },
+      { $addFields: { postLikes: { $size: '$postLikesArr' } } },
+
+      // STORIES -> array; đếm & cộng like bằng $sum + $map + $size
+      {
+        $lookup: {
+          from: 'stories',
+          let: { uid: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$ownerId', '$$uid'] },
+                    { $eq: ['$isEnable', true] },
+                    { $eq: ['$isArchived', false] },
+                  ],
+                },
+              },
+            },
+            { $project: { likedByUsers: 1 } },
+          ],
+          as: 'stories',
+        },
+      },
+      {
+        $addFields: {
+          totalStories: { $size: '$stories' },
+          storyLikes: {
+            $sum: {
+              $map: {
+                input: '$stories',
+                as: 's',
+                in: { $size: { $ifNull: ['$$s.likedByUsers', []] } },
+              },
+            },
+          },
+        },
+      },
+
+      // FOLLOWERS -> array rồi $size (logic 2 chiều)
+      {
+        $lookup: {
+          from: 'relations',
+          let: { me: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    {
+                      $and: [
+                        { $eq: ['$userTwoID', '$$me'] },
+                        {
+                          $in: ['$relation', ['FOLLOW_NULL', 'FOLLOW_FOLLOW']],
+                        },
+                      ],
+                    },
+                    {
+                      $and: [
+                        { $eq: ['$userOneID', '$$me'] },
+                        {
+                          $in: ['$relation', ['NULL_FOLLOW', 'FOLLOW_FOLLOW']],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 1 } },
+          ],
+          as: 'rels',
+        },
+      },
+      { $addFields: { totalFollowers: { $size: '$rels' } } },
+
+      // BOOKMARKS -> playlists (ids) -> items -> $size
+      {
+        $lookup: {
+          from: 'bookmarkplaylists',
+          let: { me: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userID', '$$me'] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 1 } },
+          ],
+          as: 'playlists',
+        },
+      },
+      {
+        $lookup: {
+          from: 'bookmarkitems',
+          let: { pids: '$playlists._id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $in: ['$playlistID', { $ifNull: ['$$pids', []] }] },
+                    { $eq: ['$isDeleted', false] },
+                  ],
+                },
+              },
+            },
+            { $project: { _id: 1 } },
+          ],
+          as: 'bmItems',
+        },
+      },
+      { $addFields: { totalBookmarks: { $size: '$bmItems' } } },
+
+      // Map fields + tổng like
+      {
+        $addFields: {
+          phone: '$phoneNumber',
+          avatar: '$profilePic',
+          status: {
+            $cond: [{ $eq: ['$deletedAt', true] }, 'locked', 'active'],
+          },
+          totalLikesReceived: { $add: ['$storyLikes', '$postLikes'] },
+        },
+      },
+
+      // Gọn gàng: bỏ field thừa
+      {
+        $project: {
+          posts: 0,
+          postIds: 0,
+          postLikesArr: 0,
+          stories: 0,
+          rels: 0,
+          playlists: 0,
+          bmItems: 0,
+          phoneNumber: 0,
+          profilePic: 0,
+          refreshToken: 0,
+          fcmToken: 0,
+          role: 0,
+          wantNotified: 0,
+          isGoogle: 0,
+          password: 0,
+          deletedAt: 0,
+          storyLikes: 0,
+          postLikes: 0,
+        },
+      },
+
+      // Phân trang + tổng
+      {
+        $facet: {
+          items: [
+            { $sort: { createdAt: -1 } },
+            { $skip: (page - 1) * pageSize },
+            { $limit: pageSize },
+          ],
+          total: [{ $count: 'count' }],
+        },
+      },
+      {
+        $project: {
+          items: 1,
+          total: { $ifNull: [{ $arrayElemAt: ['$total.count', 0] }, 0] },
+        },
+      },
+    ];
+
+    const [res] = await this.userModel.aggregate(pipeline).allowDiskUse(true);
+    return { items: res?.items ?? [], total: res?.total ?? 0 };
+  }
+
+  private escapeRegex(s: string) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

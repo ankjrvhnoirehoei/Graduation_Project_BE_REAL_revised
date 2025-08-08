@@ -31,10 +31,10 @@ import {
   ChangeEmailDto,
   ChangePasswordDTO,
   ConfirmEmailDto,
-  EditUserDto,  
-  CheckUserEmailDto, 
-  SendVerificationCodeDto, 
-  VerifyCodeDto
+  EditUserDto,
+  CheckUserEmailDto,
+  SendVerificationCodeDto,
+  VerifyCodeDto,
 } from './dto/update-user.dto';
 
 @Controller('users')
@@ -312,39 +312,39 @@ export class UserController {
   // step 1: check user's email and account status
   @Post('forgot-password/check-email')
   async checkUserEmail(
-    @Body() dto: CheckUserEmailDto
+    @Body() dto: CheckUserEmailDto,
   ): Promise<{ message: string; hasPhoneNumber: boolean }> {
     const result = await this.userService.checkUserForPasswordReset(dto.email);
-    
+
     return {
       message: 'Tài khoản hợp lệ.',
-      hasPhoneNumber: result.hasPhoneNumber
+      hasPhoneNumber: result.hasPhoneNumber,
     };
   }
 
-  // step 2: send verification code 
+  // step 2: send verification code
   @Post('forgot-password/send-code')
   async sendPasswordResetCode(
-    @Body() dto: SendVerificationCodeDto
+    @Body() dto: SendVerificationCodeDto,
   ): Promise<{ message: string; token: string }> {
     const result = await this.userService.sendPasswordResetCode(dto);
-    
+
     return {
       message: 'Mã xác nhận đã được gửi đến số điện thoại của bạn.',
-      token: result.token
+      token: result.token,
     };
   }
 
   // step 3: verify code and get refresh token
   @Post('forgot-password/verify-code')
   async verifyPasswordResetCode(
-    @Body() dto: VerifyCodeDto
+    @Body() dto: VerifyCodeDto,
   ): Promise<{ message: string; refreshToken: string }> {
     const result = await this.userService.verifyPasswordResetCode(dto);
-    
+
     return {
       message: 'Xác nhận thành công. Bạn có thể đặt lại mật khẩu.',
-      refreshToken: result.refreshToken
+      refreshToken: result.refreshToken,
     };
   }
 
@@ -357,5 +357,32 @@ export class UserController {
     } catch (error) {
       throw error;
     }
+  }
+
+  @Get('admin')
+  @UseGuards(JwtRefreshAuthGuard)
+  async adminListUsers(
+    @CurrentUser('sub') currentUserId: string,
+    @Query('q') q?: string,
+    @Query('status') status?: 'active' | 'locked',
+    @Query('from') from?: string, // YYYY-MM-DD
+    @Query('to') to?: string, // YYYY-MM-DD
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page = 1,
+    @Query('pageSize', new DefaultValuePipe(10), ParseIntPipe) pageSize = 10,
+  ) {
+    // Optional: check quyền admin
+    const me = await this.userService.getUserById(currentUserId);
+    if (me?.role !== 'admin') throw new UnauthorizedException('Only admin');
+
+    const { items, total } = await this.userService.aggregateUsers({
+      q,
+      status,
+      from,
+      to,
+      page,
+      pageSize,
+    });
+
+    return { items, total, page, pageSize };
   }
 }
