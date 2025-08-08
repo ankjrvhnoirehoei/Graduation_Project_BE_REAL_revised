@@ -495,15 +495,15 @@ export class AdminController {
     };
   }
 
-  // // Story Analytics & Statistics
-  // @Get('stories/activity')
-  // async getStoryActivity(
-  //   @CurrentUser('sub') adminId: string,
-  //   @Query('range', new DefaultValuePipe('7days'))
-  //   range: '7days' | '30days' | 'year',
-  // ) {
-  //   return this.adminService.getStoryActivity(adminId, range);
-  // }
+  // Story Analytics & Statistics
+  @Get('stories/activity')
+  async getStoryActivity(
+    @CurrentUser('sub') adminId: string,
+    @Query('range', new DefaultValuePipe('7days'))
+    range: '7days' | '30days' | 'year',
+  ) {
+    return this.adminService.getStoryActivity(adminId, range);
+  }
 
   // @Get('stories/engagement')
   // async getStoryEngagement(
@@ -519,10 +519,10 @@ export class AdminController {
   //   return this.adminService.getStorySummary(adminId);
   // }
 
-  // @Get('stories/summary-stories')
-  // async getStorySummaryWithTrends(@CurrentUser('sub') adminId: string) {
-  //   return this.adminService.getStorySummaryWithTrends(adminId);
-  // }
+  @Get('stories/summary-stories')
+  async getStorySummaryWithTrends(@CurrentUser('sub') adminId: string) {
+    return this.adminService.getStorySummaryWithTrends(adminId);
+  }
 
   // // Story Management
   // @Get('stories/new')
