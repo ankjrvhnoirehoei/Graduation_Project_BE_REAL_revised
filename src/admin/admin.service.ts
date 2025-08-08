@@ -1507,4 +1507,70 @@ async searchUsers(userId: string, handleName: string) {
     };
   }
 
+  async getStorySummary(
+    adminId: string,
+  ): Promise<{
+    success: boolean;
+    data: {
+      active: number;
+      flagged: number;
+      disabled: number;
+      total: number;
+    };
+  }> {
+    await this.ensureAdmin(adminId);
+
+    const [active, flagged, disabled, total] = await Promise.all([
+      this.storyModel.countDocuments({ isEnable: true, isFlagged: false }),
+      this.storyModel.countDocuments({ isFlagged: true }),
+      this.storyModel.countDocuments({ isEnable: false }),
+      this.storyModel.countDocuments({})
+    ]);
+
+    return {
+      success: true,
+      data: {
+        active,
+        flagged,
+        disabled,
+        total
+      }
+    };
+  }
+
+  async getStoryEngagement(
+    adminId: string,
+    range: RangeKey,
+  ): Promise<{
+    success: boolean;
+    data: Array<{ category: string; value: number }>;
+  }> {
+    await this.ensureAdmin(adminId);
+    const { from, to } = this.commonServices.buildRange(range);
+
+    const [interactions, views, shares] = await Promise.all([
+      // Count total likes on stories
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        { $project: { likeCount: { $size: '$likedByUsers' } } },
+        { $group: { _id: null, total: { $sum: '$likeCount' } } }
+      ]),
+      // Count total views
+      this.storyModel.aggregate([
+        { $match: { createdAt: { $gte: from, $lte: to } } },
+        { $group: { _id: null, total: { $sum: '$viewCount' } } }
+      ]),
+      Promise.resolve([{ total: 0 }])
+    ]);
+
+    return {
+      success: true,
+      data: [
+        { category: 'Tương tác', value: interactions[0]?.total || 0 },
+        { category: 'Lượt xem', value: views[0]?.total || 0 },
+        { category: 'Chia sẻ', value: shares[0]?.total || 0 },
+      ]
+    };
+  }
+
 }

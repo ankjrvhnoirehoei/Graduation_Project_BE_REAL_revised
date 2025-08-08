@@ -505,19 +505,19 @@ export class AdminController {
     return this.adminService.getStoryActivity(adminId, range);
   }
 
-  // @Get('stories/engagement')
-  // async getStoryEngagement(
-  //   @CurrentUser('sub') adminId: string,
-  //   @Query('range', new DefaultValuePipe('7days'))
-  //   range: '7days' | '30days' | 'year',
-  // ) {
-  //   return this.adminService.getStoryEngagement(adminId, range);
-  // }
+  @Get('stories/engagement')
+  async getStoryEngagement(
+    @CurrentUser('sub') adminId: string,
+    @Query('range', new DefaultValuePipe('7days'))
+    range: '7days' | '30days' | 'year',
+  ) {
+    return this.adminService.getStoryEngagement(adminId, range);
+  }
 
-  // @Get('stories/summary')
-  // async getStorySummary(@CurrentUser('sub') adminId: string) {
-  //   return this.adminService.getStorySummary(adminId);
-  // }
+  @Get('stories/summary')
+  async getStorySummary(@CurrentUser('sub') adminId: string) {
+    return this.adminService.getStorySummary(adminId);
+  }
 
   @Get('stories/summary-stories')
   async getStorySummaryWithTrends(@CurrentUser('sub') adminId: string) {
