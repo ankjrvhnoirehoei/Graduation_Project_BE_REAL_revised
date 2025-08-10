@@ -3,20 +3,20 @@ import { Type } from 'class-transformer';
 
 export class GetUserReportsDto {
   @IsOptional()
-  @IsIn(['resolved', 'ignored'])
-  status?: 'resolved' | 'ignored';
+  @IsIn(['resolved', 'ignored', 'pending'])
+  status?: 'resolved' | 'ignored' | 'pending';
 
   @IsOptional()
   @IsString()
-  q?: string; // tìm theo reporter/target username/handleName, reason, description
+  q?: string;
 
   @IsOptional()
   @IsString()
-  from?: string; // ISO date
+  from?: string;
 
   @IsOptional()
   @IsString()
-  to?: string; // ISO date
+  to?: string;
 
   @Type(() => Number)
   @IsInt()

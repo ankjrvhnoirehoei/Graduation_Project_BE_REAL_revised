@@ -629,13 +629,16 @@ export class ReportUserService {
   async getUserReports(qs: GetUserReportsDto) {
     const { status, q, from, to, page = 1, limit = 10 } = qs;
 
-    const match: any = {
-      // chỉ lấy report đã xử lý hoặc đã bỏ qua để map về 2 trạng thái
-      $or: [{ resolved: true }, { isDismissed: true }],
-    };
-
-    if (status === 'resolved') match.resolved = true;
-    if (status === 'ignored') match.isDismissed = true;
+    const match: any = {};
+    if (status === 'resolved') {
+      match.resolved = true;
+      // (tuỳ chọn) không cần set isDismissed, vì resolved đã đủ
+    } else if (status === 'ignored') {
+      match.isDismissed = true;
+    } else if (status === 'pending') {
+      match.resolved = false;
+      match.isDismissed = false;
+    }
 
     if (from || to) {
       match.createdAt = {};
@@ -643,10 +646,10 @@ export class ReportUserService {
       if (to) match.createdAt.$lte = new Date(to);
     }
 
-    // pipeline
     const pipeline: any[] = [
       { $match: match },
-      // join reporter
+
+      // reporter
       {
         $lookup: {
           from: 'users',
@@ -656,7 +659,8 @@ export class ReportUserService {
         },
       },
       { $unwind: { path: '$reporter', preserveNullAndEmptyArrays: true } },
-      // join target
+
+      // target
       {
         $lookup: {
           from: 'users',
@@ -667,7 +671,7 @@ export class ReportUserService {
       },
       { $unwind: { path: '$target', preserveNullAndEmptyArrays: true } },
 
-      // nếu có q, filter theo username/handleName/ly do/mô tả
+      // q search
       ...(q
         ? [
             {
@@ -685,13 +689,19 @@ export class ReportUserService {
           ]
         : []),
 
-      // project về đúng shape FE cần
+      // map status: ignored | resolved | pending
       {
         $project: {
           _id: 1,
           type: { $literal: 'user' },
           status: {
-            $cond: [{ $eq: ['$isDismissed', true] }, 'ignored', 'resolved'],
+            $switch: {
+              branches: [
+                { case: { $eq: ['$isDismissed', true] }, then: 'ignored' },
+                { case: { $eq: ['$resolved', true] }, then: 'resolved' },
+              ],
+              default: 'pending',
+            },
           },
           reason: 1,
           detail: '$description',
@@ -705,13 +715,10 @@ export class ReportUserService {
           },
           target: {
             _id: '$target._id',
-            username: {
-              $ifNull: ['$target.username', '$target.handleName'],
-            },
+            username: { $ifNull: ['$target.username', '$target.handleName'] },
             profilePic: '$target.profilePic',
             type: { $literal: 'user' },
           },
-          // evidence: không có trong schema -> bỏ
         },
       },
 
