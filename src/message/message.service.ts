@@ -65,7 +65,7 @@ export class MessageService {
       .limit(limit)
       .populate({
         path: 'senderId',
-        select: 'handleName profilePic',
+        select: 'handleName username profilePic',
       })
       .lean<LeanMessageWithSender[]>();
 

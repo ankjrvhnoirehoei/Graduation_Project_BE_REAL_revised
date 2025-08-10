@@ -1,16 +1,18 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import {
-  ReportUser,
-  ReportUserDocument,
-} from './report-user.schema';
+import { ReportUser, ReportUserDocument } from './report-user.schema';
 import { CreateReportUserDto } from './dto/create-report.dto';
 import { UserService } from 'src/user/user.service';
 import { AdminService } from 'src/admin/admin.service';
-import { ReportReason } from './report-user.schema'; 
+import { ReportReason } from './report-user.schema';
 import { CommonServices } from 'src/admin/helpers/helpers.service';
 import { NotificationService } from 'src/notification/notification.service';
+import { GetUserReportsDto } from './dto/get-user-reports.dto';
 
 interface PaginationOptions {
   page: number;
@@ -66,14 +68,16 @@ export class ReportUserService {
     if (!report) throw new NotFoundException('Không tìm thấy báo cáo!');
     return report;
   }
-  
+
   async revokeReport(id: string): Promise<void> {
     const result = await this.reportUserModel.findByIdAndDelete(id).exec();
     if (!result) throw new NotFoundException('Không tìm thấy báo cáo!');
   }
 
   // Admin-related
-  async getAllReports(options: PaginationOptions): Promise<PaginatedResponse<ReportUser>> {
+  async getAllReports(
+    options: PaginationOptions,
+  ): Promise<PaginatedResponse<ReportUser>> {
     const { page, limit } = options;
     const skip = (page - 1) * limit;
 
@@ -100,7 +104,9 @@ export class ReportUserService {
     };
   }
 
-  async getUnreadReports(options: PaginationOptions): Promise<PaginatedResponse<ReportUser>> {
+  async getUnreadReports(
+    options: PaginationOptions,
+  ): Promise<PaginatedResponse<ReportUser>> {
     const { page, limit } = options;
     const skip = (page - 1) * limit;
 
@@ -127,7 +133,9 @@ export class ReportUserService {
     };
   }
 
-  async getUnresolvedReports(options: PaginationOptions): Promise<PaginatedResponse<ReportUser>> {
+  async getUnresolvedReports(
+    options: PaginationOptions,
+  ): Promise<PaginatedResponse<ReportUser>> {
     const { page, limit } = options;
     const skip = (page - 1) * limit;
 
@@ -156,17 +164,17 @@ export class ReportUserService {
 
   async markAllReportsAsRead(): Promise<{ modifiedCount: number }> {
     const result = await this.reportUserModel
-      .updateMany(
-        { isRead: false },
-        { $set: { isRead: true } }
-      )
+      .updateMany({ isRead: false }, { $set: { isRead: true } })
       .lean()
       .exec();
 
     return { modifiedCount: result.modifiedCount };
   }
 
-  async getReportsByTargetId(targetId: string, options: PaginationOptions): Promise<PaginatedResponse<ReportUser>> {
+  async getReportsByTargetId(
+    targetId: string,
+    options: PaginationOptions,
+  ): Promise<PaginatedResponse<ReportUser>> {
     const { page, limit } = options;
     const skip = (page - 1) * limit;
 
@@ -178,7 +186,9 @@ export class ReportUserService {
         .skip(skip)
         .limit(limit)
         .exec(),
-      this.reportUserModel.countDocuments({ targetId: new Types.ObjectId(targetId) }).exec(),
+      this.reportUserModel
+        .countDocuments({ targetId: new Types.ObjectId(targetId) })
+        .exec(),
     ]);
 
     const totalPages = Math.ceil(totalCount / limit);
@@ -204,7 +214,7 @@ export class ReportUserService {
             isRead: true,
           },
         },
-        { new: true }
+        { new: true },
       )
       .lean()
       .exec();
@@ -223,7 +233,7 @@ export class ReportUserService {
             isRead: true,
           },
         },
-        { new: true }
+        { new: true },
       )
       // .lean()
       .exec();
@@ -285,7 +295,7 @@ export class ReportUserService {
                   resolved: true,
                   isRead: true,
                 },
-              }
+              },
             )
             .exec();
         }
@@ -297,7 +307,9 @@ export class ReportUserService {
           })
           .exec();
 
-        const allReporterIds = allResolvedReports.map(r => r.reporterId.toString());
+        const allReporterIds = allResolvedReports.map((r) =>
+          r.reporterId.toString(),
+        );
 
         // send ban notification to ALL reporters
         await this.notificationService.sendPushNotification(
@@ -310,7 +322,7 @@ export class ReportUserService {
             reportId: report._id.toString(),
             targetId: report.targetId.toString(),
             targetType: 'user',
-          }
+          },
         );
       } else {
         // send notification to the single reporter about resolution
@@ -324,7 +336,7 @@ export class ReportUserService {
             reportId: report._id.toString(),
             targetId: report.targetId.toString(),
             targetType: 'user',
-          }
+          },
         );
       }
     } catch (error) {
@@ -345,7 +357,7 @@ export class ReportUserService {
   }> {
     // Ensure admin access
     await this.adminService.ensureAdmin(adminId);
-    
+
     // Get range configuration using admin service helper
     const { from, to, unit } = this.commonService.buildRange(range);
 
@@ -356,7 +368,7 @@ export class ReportUserService {
         to,
         unit,
         {},
-        'createdAt'
+        'createdAt',
       ),
       {
         $lookup: {
@@ -369,30 +381,36 @@ export class ReportUserService {
                   $and: [
                     { $gte: ['$createdAt', from] },
                     { $lte: ['$createdAt', to] },
-                  ]
-                }
-              }
+                  ],
+                },
+              },
             },
             {
               $group: {
                 _id: {
                   targetId: '$targetId',
-                  period: unit === 'day'
-                    ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
-                    : { $month: '$createdAt' }
+                  period:
+                    unit === 'day'
+                      ? {
+                          $dateToString: {
+                            format: '%Y-%m-%d',
+                            date: '$createdAt',
+                          },
+                        }
+                      : { $month: '$createdAt' },
                 },
-                count: { $sum: 1 }
-              }
+                count: { $sum: 1 },
+              },
             },
             {
               $match: {
-                '_id.period': '$period'
-              }
-            }
+                '_id.period': '$period',
+              },
+            },
           ],
-          as: 'userReports'
-        }
-      }
+          as: 'userReports',
+        },
+      },
     ]);
 
     // Simplified approach: Get all reports in the time range and process them
@@ -400,18 +418,19 @@ export class ReportUserService {
       {
         $match: {
           createdAt: { $gte: from, $lte: to },
-        }
+        },
       },
       {
         $group: {
           _id: {
             targetId: '$targetId',
-            period: unit === 'day'
-              ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
-              : { $month: '$createdAt' }
+            period:
+              unit === 'day'
+                ? { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }
+                : { $month: '$createdAt' },
           },
-          count: { $sum: 1 }
-        }
+          count: { $sum: 1 },
+        },
       },
       {
         $group: {
@@ -419,42 +438,44 @@ export class ReportUserService {
           reports: {
             $push: {
               period: '$_id.period',
-              count: '$count'
-            }
+              count: '$count',
+            },
           },
-          totalReports: { $sum: '$count' }
-        }
+          totalReports: { $sum: '$count' },
+        },
       },
       {
-        $sort: { totalReports: -1 }
+        $sort: { totalReports: -1 },
       },
       {
-        $limit: 20
-      }
+        $limit: 20,
+      },
     ]);
 
     // Get user details for the reported users
-    const userIds = allReports.map(item => item._id);
-    const users = await this.userService.findManyByIds(userIds.map(id => id.toString()));
-    
+    const userIds = allReports.map((item) => item._id);
+    const users = await this.userService.findManyByIds(
+      userIds.map((id) => id.toString()),
+    );
+
     // Create a map of userId to handleName
     const userHandleMap = new Map();
-    users.forEach(user => {
+    users.forEach((user) => {
       userHandleMap.set(user._id.toString(), user.handleName);
     });
 
     // Create maps for each user's report data
-    const userDataMaps = allReports.map(userData => {
+    const userDataMaps = allReports.map((userData) => {
       const reportMap = new Map();
-      userData.reports.forEach(report => {
+      userData.reports.forEach((report) => {
         reportMap.set(report.period, report.count);
       });
       return reportMap;
     });
 
     // Get user handle names in the same order
-    const userHandles = allReports.map(userData => 
-      userHandleMap.get(userData._id.toString()) || 'Unknown'
+    const userHandles = allReports.map(
+      (userData) => userHandleMap.get(userData._id.toString()) || 'Unknown',
     );
 
     // Use commonService helper to build time series data
@@ -463,7 +484,7 @@ export class ReportUserService {
       to,
       unit,
       userDataMaps,
-      userHandles
+      userHandles,
     );
 
     return {
@@ -472,7 +493,7 @@ export class ReportUserService {
       unit,
       from: this.commonService.formatDate(from),
       to: this.commonService.formatDate(to),
-      data: timeSeriesData
+      data: timeSeriesData,
     };
   }
 
@@ -485,8 +506,8 @@ export class ReportUserService {
     unit: 'day' | 'month';
     from: string;
     to: string;
-    data: Array<{ 
-      period: string; 
+    data: Array<{
+      period: string;
       HARASSMENT_AND_BULLYING: number;
       HATE_SPEECH: number;
       IMPERSONATION_FAKE_ACCOUNTS: number;
@@ -500,7 +521,7 @@ export class ReportUserService {
   }> {
     // Ensure admin access
     await this.adminService.ensureAdmin(adminId);
-    
+
     // Get range configuration using admin service helper
     const { from, to, unit } = this.commonService.buildRange(range);
 
@@ -514,47 +535,65 @@ export class ReportUserService {
       scamsRaw,
       personalInfoRaw,
       selfHarmRaw,
-      otherRaw
+      otherRaw,
     ] = await Promise.all([
       this.reportUserModel.aggregate(
-        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HARASSMENT_AND_BULLYING })
+        this.commonService.buildTimeAggregation(from, to, unit, {
+          reason: ReportReason.HARASSMENT_AND_BULLYING,
+        }),
       ),
       this.reportUserModel.aggregate(
-        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.HATE_SPEECH })
+        this.commonService.buildTimeAggregation(from, to, unit, {
+          reason: ReportReason.HATE_SPEECH,
+        }),
       ),
       this.reportUserModel.aggregate(
-        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.IMPERSONATION_FAKE_ACCOUNTS })
+        this.commonService.buildTimeAggregation(from, to, unit, {
+          reason: ReportReason.IMPERSONATION_FAKE_ACCOUNTS,
+        }),
       ),
       this.reportUserModel.aggregate(
-        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.GRAPHIC_CONTENT })
+        this.commonService.buildTimeAggregation(from, to, unit, {
+          reason: ReportReason.GRAPHIC_CONTENT,
+        }),
       ),
       this.reportUserModel.aggregate(
-        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.THREATS_AND_VIOLENCE })
+        this.commonService.buildTimeAggregation(from, to, unit, {
+          reason: ReportReason.THREATS_AND_VIOLENCE,
+        }),
       ),
       this.reportUserModel.aggregate(
-        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SCAMS_AND_FRAUD })
+        this.commonService.buildTimeAggregation(from, to, unit, {
+          reason: ReportReason.SCAMS_AND_FRAUD,
+        }),
       ),
       this.reportUserModel.aggregate(
-        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SENSITIVE_PERSONAL_INFO })
+        this.commonService.buildTimeAggregation(from, to, unit, {
+          reason: ReportReason.SENSITIVE_PERSONAL_INFO,
+        }),
       ),
       this.reportUserModel.aggregate(
-        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.SELF_HARM })
+        this.commonService.buildTimeAggregation(from, to, unit, {
+          reason: ReportReason.SELF_HARM,
+        }),
       ),
       this.reportUserModel.aggregate(
-        this.commonService.buildTimeAggregation(from, to, unit, { reason: ReportReason.OTHER })
+        this.commonService.buildTimeAggregation(from, to, unit, {
+          reason: ReportReason.OTHER,
+        }),
       ),
     ]);
 
     const dataMaps = [
-      new Map(harassmentRaw.map(d => [d._id, d.count])),
-      new Map(hateSpeechRaw.map(d => [d._id, d.count])),
-      new Map(impersonationRaw.map(d => [d._id, d.count])),
-      new Map(graphicContentRaw.map(d => [d._id, d.count])),
-      new Map(threatsRaw.map(d => [d._id, d.count])),
-      new Map(scamsRaw.map(d => [d._id, d.count])),
-      new Map(personalInfoRaw.map(d => [d._id, d.count])),
-      new Map(selfHarmRaw.map(d => [d._id, d.count])),
-      new Map(otherRaw.map(d => [d._id, d.count]))
+      new Map(harassmentRaw.map((d) => [d._id, d.count])),
+      new Map(hateSpeechRaw.map((d) => [d._id, d.count])),
+      new Map(impersonationRaw.map((d) => [d._id, d.count])),
+      new Map(graphicContentRaw.map((d) => [d._id, d.count])),
+      new Map(threatsRaw.map((d) => [d._id, d.count])),
+      new Map(scamsRaw.map((d) => [d._id, d.count])),
+      new Map(personalInfoRaw.map((d) => [d._id, d.count])),
+      new Map(selfHarmRaw.map((d) => [d._id, d.count])),
+      new Map(otherRaw.map((d) => [d._id, d.count])),
     ];
 
     const dataKeys = [
@@ -566,7 +605,7 @@ export class ReportUserService {
       'SCAMS_AND_FRAUD',
       'SENSITIVE_PERSONAL_INFO',
       'SELF_HARM',
-      'OTHER'
+      'OTHER',
     ];
 
     const timeSeriesData = this.commonService.buildTimeSeriesData(
@@ -574,7 +613,7 @@ export class ReportUserService {
       to,
       unit,
       dataMaps,
-      dataKeys
+      dataKeys,
     );
 
     return {
@@ -583,7 +622,120 @@ export class ReportUserService {
       unit,
       from: this.commonService.formatDate(from),
       to: this.commonService.formatDate(to),
-      data: timeSeriesData
+      data: timeSeriesData,
+    };
+  }
+
+  async getUserReports(qs: GetUserReportsDto) {
+    const { status, q, from, to, page = 1, limit = 10 } = qs;
+
+    const match: any = {
+      // chỉ lấy report đã xử lý hoặc đã bỏ qua để map về 2 trạng thái
+      $or: [{ resolved: true }, { isDismissed: true }],
+    };
+
+    if (status === 'resolved') match.resolved = true;
+    if (status === 'ignored') match.isDismissed = true;
+
+    if (from || to) {
+      match.createdAt = {};
+      if (from) match.createdAt.$gte = new Date(from);
+      if (to) match.createdAt.$lte = new Date(to);
+    }
+
+    // pipeline
+    const pipeline: any[] = [
+      { $match: match },
+      // join reporter
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'reporterId',
+          foreignField: '_id',
+          as: 'reporter',
+        },
+      },
+      { $unwind: { path: '$reporter', preserveNullAndEmptyArrays: true } },
+      // join target
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'targetId',
+          foreignField: '_id',
+          as: 'target',
+        },
+      },
+      { $unwind: { path: '$target', preserveNullAndEmptyArrays: true } },
+
+      // nếu có q, filter theo username/handleName/ly do/mô tả
+      ...(q
+        ? [
+            {
+              $match: {
+                $or: [
+                  { 'reporter.username': { $regex: q, $options: 'i' } },
+                  { 'reporter.handleName': { $regex: q, $options: 'i' } },
+                  { 'target.username': { $regex: q, $options: 'i' } },
+                  { 'target.handleName': { $regex: q, $options: 'i' } },
+                  { reason: { $regex: q, $options: 'i' } },
+                  { description: { $regex: q, $options: 'i' } },
+                ],
+              },
+            },
+          ]
+        : []),
+
+      // project về đúng shape FE cần
+      {
+        $project: {
+          _id: 1,
+          type: { $literal: 'user' },
+          status: {
+            $cond: [{ $eq: ['$isDismissed', true] }, 'ignored', 'resolved'],
+          },
+          reason: 1,
+          detail: '$description',
+          createdAt: 1,
+          reporter: {
+            _id: '$reporter._id',
+            username: {
+              $ifNull: ['$reporter.username', '$reporter.handleName'],
+            },
+            profilePic: '$reporter.profilePic',
+          },
+          target: {
+            _id: '$target._id',
+            username: {
+              $ifNull: ['$target.username', '$target.handleName'],
+            },
+            profilePic: '$target.profilePic',
+            type: { $literal: 'user' },
+          },
+          // evidence: không có trong schema -> bỏ
+        },
+      },
+
+      { $sort: { createdAt: -1, _id: -1 } },
+      {
+        $facet: {
+          items: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+      {
+        $project: {
+          items: 1,
+          total: { $ifNull: [{ $arrayElemAt: ['$totalCount.count', 0] }, 0] },
+        },
+      },
+    ];
+
+    const [res] = await this.reportUserModel.aggregate(pipeline);
+    return {
+      data: res?.items ?? [],
+      total: res?.total ?? 0,
+      page,
+      limit,
     };
   }
 }
