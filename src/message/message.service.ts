@@ -69,7 +69,7 @@ export class MessageService {
       })
       .lean<LeanMessageWithSender[]>();
 
-    return messages.reverse().map((msg) => ({
+    return messages.map((msg) => ({
       _id: msg._id,
       roomId: msg.roomId,
       content: msg.isDeleted ? 'Tin nhắn đã bị thu hồi' : msg.content,
