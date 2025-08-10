@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model, PipelineStage, Types } from 'mongoose';
 import { ReportUser, ReportUserDocument } from './report-user.schema';
 import { CreateReportUserDto } from './dto/create-report.dto';
 import { UserService } from 'src/user/user.service';
@@ -12,7 +12,6 @@ import { AdminService } from 'src/admin/admin.service';
 import { ReportReason } from './report-user.schema';
 import { CommonServices } from 'src/admin/helpers/helpers.service';
 import { NotificationService } from 'src/notification/notification.service';
-import { GetUserReportsDto } from './dto/get-user-reports.dto';
 
 interface PaginationOptions {
   page: number;
@@ -626,123 +625,147 @@ export class ReportUserService {
     };
   }
 
-  async getUserReports(qs: GetUserReportsDto) {
-    const { status, q, from, to, page = 1, limit = 10 } = qs;
+  async listAdmin(params: {
+    search?: string; // search reporter/target username|handleName|email
+    reason?: string; // enum ReportReason
+    status?: '' | 'open' | 'resolved' | 'dismissed';
+    isRead?: '' | 'read' | 'unread';
+    start?: string; // ISO
+    end?: string; // ISO
+    page?: number;
+    limit?: number;
+    sort?: 'asc' | 'desc'; // by createdAt
+  }) {
+    const {
+      search,
+      reason,
+      status = '',
+      isRead = '',
+      start,
+      end,
+      page = 1,
+      limit = 10,
+      sort = 'desc',
+    } = params;
 
     const match: any = {};
-    if (status === 'resolved') {
-      match.resolved = true;
-      // (tuỳ chọn) không cần set isDismissed, vì resolved đã đủ
-    } else if (status === 'ignored') {
-      match.isDismissed = true;
-    } else if (status === 'pending') {
+    if (reason) match.reason = reason;
+    if (status === 'resolved') match.resolved = true;
+    if (status === 'dismissed') match.isDismissed = true;
+    if (status === 'open') {
       match.resolved = false;
       match.isDismissed = false;
     }
+    if (isRead === 'read') match.isRead = true;
+    if (isRead === 'unread') match.isRead = false;
 
-    if (from || to) {
+    if (start || end) {
       match.createdAt = {};
-      if (from) match.createdAt.$gte = new Date(from);
-      if (to) match.createdAt.$lte = new Date(to);
+      if (start) match.createdAt.$gte = new Date(start);
+      if (end) match.createdAt.$lte = new Date(end);
     }
 
-    const pipeline: any[] = [
+    const pipeline: PipelineStage[] = [
       { $match: match },
-
-      // reporter
       {
         $lookup: {
           from: 'users',
           localField: 'reporterId',
           foreignField: '_id',
           as: 'reporter',
+          pipeline: [{ $project: { username: 1, handleName: 1, email: 1 } }],
         },
       },
-      { $unwind: { path: '$reporter', preserveNullAndEmptyArrays: true } },
-
-      // target
+      { $unwind: '$reporter' },
       {
         $lookup: {
           from: 'users',
           localField: 'targetId',
           foreignField: '_id',
           as: 'target',
+          pipeline: [{ $project: { username: 1, handleName: 1, email: 1 } }],
         },
       },
-      { $unwind: { path: '$target', preserveNullAndEmptyArrays: true } },
+      { $unwind: '$target' },
+    ];
 
-      // q search
-      ...(q
-        ? [
-            {
-              $match: {
-                $or: [
-                  { 'reporter.username': { $regex: q, $options: 'i' } },
-                  { 'reporter.handleName': { $regex: q, $options: 'i' } },
-                  { 'target.username': { $regex: q, $options: 'i' } },
-                  { 'target.handleName': { $regex: q, $options: 'i' } },
-                  { reason: { $regex: q, $options: 'i' } },
-                  { description: { $regex: q, $options: 'i' } },
-                ],
-              },
-            },
-          ]
-        : []),
-
-      // map status: ignored | resolved | pending
-      {
-        $project: {
-          _id: 1,
-          type: { $literal: 'user' },
-          status: {
-            $switch: {
-              branches: [
-                { case: { $eq: ['$isDismissed', true] }, then: 'ignored' },
-                { case: { $eq: ['$resolved', true] }, then: 'resolved' },
-              ],
-              default: 'pending',
-            },
-          },
-          reason: 1,
-          detail: '$description',
-          createdAt: 1,
-          reporter: {
-            _id: '$reporter._id',
-            username: {
-              $ifNull: ['$reporter.username', '$reporter.handleName'],
-            },
-            profilePic: '$reporter.profilePic',
-          },
-          target: {
-            _id: '$target._id',
-            username: { $ifNull: ['$target.username', '$target.handleName'] },
-            profilePic: '$target.profilePic',
-            type: { $literal: 'user' },
-          },
+    if (search?.trim()) {
+      const regex = new RegExp(search.trim(), 'i');
+      pipeline.push({
+        $match: {
+          $or: [
+            { 'reporter.username': regex },
+            { 'reporter.handleName': regex },
+            { 'reporter.email': regex },
+            { 'target.username': regex },
+            { 'target.handleName': regex },
+            { 'target.email': regex },
+          ],
         },
-      },
+      });
+    }
 
-      { $sort: { createdAt: -1, _id: -1 } },
+    pipeline.push(
+      { $sort: { createdAt: sort === 'asc' ? 1 : -1 } },
       {
         $facet: {
-          items: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+          items: [
+            { $skip: Math.max(0, (page - 1) * limit) },
+            { $limit: Math.max(1, Math.min(100, limit)) },
+            {
+              $project: {
+                _id: 1,
+                reporterId: 1,
+                targetId: 1,
+                reason: 1,
+                description: 1,
+                resolved: 1,
+                isDismissed: 1,
+                isRead: 1,
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            },
+          ],
           totalCount: [{ $count: 'count' }],
         },
       },
-      {
-        $project: {
-          items: 1,
-          total: { $ifNull: [{ $arrayElemAt: ['$totalCount.count', 0] }, 0] },
-        },
-      },
-    ];
+    );
 
     const [res] = await this.reportUserModel.aggregate(pipeline);
-    return {
-      data: res?.items ?? [],
-      total: res?.total ?? 0,
-      page,
-      limit,
-    };
+    const items = res?.items ?? [];
+    const total = res?.totalCount?.[0]?.count ?? 0;
+
+    return { items, total, page, limit };
+  }
+
+  async markResolved(id: Types.ObjectId) {
+    const r = await this.reportUserModel.findByIdAndUpdate(
+      id,
+      { $set: { resolved: true, isDismissed: false } },
+      { new: true },
+    );
+    if (!r) throw new NotFoundException('Report not found');
+    return { success: true };
+  }
+
+  async markDismissed(id: Types.ObjectId) {
+    const r = await this.reportUserModel.findByIdAndUpdate(
+      id,
+      { $set: { isDismissed: true, resolved: false } },
+      { new: true },
+    );
+    if (!r) throw new NotFoundException('Report not found');
+    return { success: true };
+  }
+
+  async setRead(id: Types.ObjectId, isRead: boolean) {
+    const r = await this.reportUserModel.findByIdAndUpdate(
+      id,
+      { $set: { isRead } },
+      { new: true },
+    );
+    if (!r) throw new NotFoundException('Report not found');
+    return { success: true };
   }
 }
