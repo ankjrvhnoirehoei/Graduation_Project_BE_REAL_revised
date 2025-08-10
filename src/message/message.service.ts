@@ -14,6 +14,7 @@ interface LeanMessageWithSender {
   senderId: {
     _id: string;
     handleName: string;
+    username: string;
     profilePic?: string;
   };
   reactions?: {
@@ -43,7 +44,7 @@ export class MessageService {
 
     return saved.populate({
       path: 'senderId',
-      select: 'handleName profilePic',
+      select: 'handleName username profilePic',
     });
   }
 
@@ -79,6 +80,7 @@ export class MessageService {
       sender: {
         userId: msg.senderId._id,
         handleName: msg.senderId.handleName,
+        username: msg.senderId.username,
         profilePic: msg.senderId.profilePic,
       },
       reactions: msg.reactions ?? [],
@@ -128,7 +130,7 @@ export class MessageService {
 
     return message.populate({
       path: 'senderId',
-      select: 'handleName profilePic',
+      select: 'handleName username profilePic',
     });
   }
 
@@ -146,7 +148,7 @@ export class MessageService {
         isDeleted: false, // lọc bỏ các tin đã bị xóa
         'media.type': { $in: ['image', 'video'] },
       })
-      .populate('senderId', 'handleName profilePic')
+      .populate('senderId', 'handleName username profilePic')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -195,7 +197,7 @@ export class MessageService {
 
     return message.populate({
       path: 'senderId',
-      select: 'handleName profilePic',
+      select: 'handleName username profilePic',
     });
   }
 }
