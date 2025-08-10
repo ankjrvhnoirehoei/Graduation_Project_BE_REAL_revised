@@ -673,20 +673,28 @@ export class ReportUserService {
           localField: 'reporterId',
           foreignField: '_id',
           as: 'reporter',
-          pipeline: [{ $project: { username: 1, handleName: 1, email: 1 } }],
+          pipeline: [
+            {
+              $project: { username: 1, handleName: 1, email: 1, profilePic: 1 },
+            },
+          ],
         },
       },
-      { $unwind: '$reporter' },
+      { $unwind: { path: '$reporter', preserveNullAndEmptyArrays: true } },
       {
         $lookup: {
           from: 'users',
           localField: 'targetId',
           foreignField: '_id',
           as: 'target',
-          pipeline: [{ $project: { username: 1, handleName: 1, email: 1 } }],
+          pipeline: [
+            {
+              $project: { username: 1, handleName: 1, email: 1, profilePic: 1 },
+            },
+          ],
         },
       },
-      { $unwind: '$target' },
+      { $unwind: { path: '$target', preserveNullAndEmptyArrays: true } },
     ];
 
     if (search?.trim()) {
@@ -724,6 +732,20 @@ export class ReportUserService {
                 isRead: 1,
                 createdAt: 1,
                 updatedAt: 1,
+                reporter: {
+                  _id: '$reporter._id',
+                  username: '$reporter.username',
+                  handleName: '$reporter.handleName',
+                  email: '$reporter.email',
+                  profilePic: '$reporter.profilePic',
+                },
+                target: {
+                  _id: '$target._id',
+                  username: '$target.username',
+                  handleName: '$target.handleName',
+                  email: '$target.email',
+                  profilePic: '$target.profilePic',
+                },
               },
             },
           ],
