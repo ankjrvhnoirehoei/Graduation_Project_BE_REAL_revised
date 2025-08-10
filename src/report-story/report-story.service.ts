@@ -251,6 +251,8 @@ export class ReportStoryService {
     };
   }
 
+  async banResolveReport(){}
+
   async getUnresolvedReports(query: { page: number; limit: number }) {
     const { page, limit } = query;
     const skip = (page - 1) * limit;

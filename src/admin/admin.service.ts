@@ -1586,5 +1586,466 @@ async compareLastSixMonths(userId: string) {
       ]
     };
   }
+  async getUserContent(
+    userId: string,
+    postPage: number = 1,
+    postLimit: number = 10,
+    reelPage: number = 1,
+    reelLimit: number = 10,
+    storyPage: number = 1,
+    storyLimit: number = 10,
+  ) {
+    const targetUserId = new Types.ObjectId(userId);
+    const mockUserId = new Types.ObjectId();
 
+    // Execute all queries in parallel
+    const [postsResult, reelsResult, storiesResult] = await Promise.all([
+      this.getPaginatedPosts(mockUserId, targetUserId, postPage, postLimit),
+      this.getPaginatedReels(mockUserId, targetUserId, reelPage, reelLimit),
+      this.getPaginatedStories(targetUserId, storyPage, storyLimit),
+    ]);
+
+    return {
+      message: 'Success',
+      data: {
+        posts: postsResult,
+        reels: reelsResult,
+        stories: storiesResult,
+      },
+    };
+  }
+
+  private async getPaginatedPosts(mockUserId: Types.ObjectId, targetUserId: Types.ObjectId, page: number, limit: number) {
+    const skip = (page - 1) * limit;
+
+    // Count pipeline
+    const countPipeline = this.commonServices.buildAdminBasePipeline(mockUserId, {
+      userID: targetUserId,
+      type: { $ne: 'reel' }
+    });
+
+    const countResult = await this.postModel.aggregate([
+      ...countPipeline,
+      { $count: 'total' }
+    ]);
+    const totalCount = countResult[0]?.total || 0;
+
+    // Data pipeline
+    const dataPipeline = this.commonServices.buildAdminBasePipeline(mockUserId, {
+      userID: targetUserId,
+      type: { $ne: 'reel' }
+    });
+
+    const posts = await this.postModel.aggregate([
+      ...dataPipeline,
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ]);
+
+    return {
+      data: posts.map(doc => ({ ...doc, _id: doc._id.toString() })),
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+      currentPage: page,
+      hasNextPage: page < Math.ceil(totalCount / limit),
+      hasPrevPage: page > 1,
+    };
+  }
+
+  private async getPaginatedReels(mockUserId: Types.ObjectId, targetUserId: Types.ObjectId, page: number, limit: number) {
+    const skip = (page - 1) * limit;
+
+    // Count pipeline
+    const countPipeline = this.commonServices.buildAdminBasePipeline(mockUserId, {
+      userID: targetUserId,
+      type: 'reel'
+    });
+
+    const countResult = await this.postModel.aggregate([
+      ...countPipeline,
+      { $count: 'total' }
+    ]);
+    const totalCount = countResult[0]?.total || 0;
+
+    // Data pipeline
+    const dataPipeline = this.commonServices.buildAdminBasePipeline(mockUserId, {
+      userID: targetUserId,
+      type: 'reel'
+    });
+
+    const reels = await this.postModel.aggregate([
+      ...dataPipeline,
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ]);
+
+    return {
+      data: reels.map(doc => ({ ...doc, _id: doc._id.toString() })),
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+      currentPage: page,
+      hasNextPage: page < Math.ceil(totalCount / limit),
+      hasPrevPage: page > 1,
+    };
+  }
+
+  private async getPaginatedStories(targetUserId: Types.ObjectId, page: number, limit: number) {
+    const skip = (page - 1) * limit;
+
+    // Count total stories
+    const totalCount = await this.storyModel.countDocuments({
+      ownerId: targetUserId,
+      isEnable: true
+    });
+
+    // Get paginated stories with basic lookups
+    const stories = await this.storyModel.aggregate([
+      { $match: { ownerId: targetUserId, isEnable: true } },
+      
+      // User lookup
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'ownerId',
+          foreignField: '_id',
+          as: 'owner',
+        },
+      },
+      { $unwind: '$owner' },
+
+      // Music lookup if needed
+      {
+        $lookup: {
+          from: 'musics',
+          localField: 'music._id',
+          foreignField: '_id',
+          as: 'musicInfo',
+        },
+      },
+      { $unwind: { path: '$musicInfo', preserveNullAndEmptyArrays: true } },
+
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ]);
+
+    return {
+      data: stories.map(doc => ({ ...doc, _id: doc._id.toString() })),
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+      currentPage: page,
+      hasNextPage: page < Math.ceil(totalCount / limit),
+      hasPrevPage: page > 1,
+    };
+  }
+
+  public async getAllPosts(
+    page: number = 1,
+    limit: number = 10,
+    sortBy: 'type' | 'createdAt' | 'isEnable' = 'createdAt',
+    sortOrder: 'asc' | 'desc' = 'desc',
+    typeFilter?: 'post' | 'reel',
+    enabledFilter?: boolean
+  ) {
+    const mockUserId = new Types.ObjectId();
+    
+    const matchFilter: Record<string, any> = {
+    };
+    if (typeFilter) {
+      matchFilter.type = typeFilter;
+    }
+    if (enabledFilter !== undefined) {
+      matchFilter.isEnable = enabledFilter;
+    }
+
+    let pipeline = this.commonServices.buildAdminBasePipeline(mockUserId, {});
+    
+    pipeline[0] = {
+      $match: matchFilter
+    };
+
+    let sortStage: PipelineStage;
+    if (sortBy === 'createdAt') {
+      sortStage = {
+        $sort: { createdAt: sortOrder === 'asc' ? 1 : -1 }
+      };
+    } else if (sortBy === 'type') {
+      sortStage = {
+        $sort: { 
+          type: sortOrder === 'asc' ? 1 : -1, 
+          createdAt: -1
+        }
+      };
+    } else {
+      sortStage = {
+        $sort: { 
+          isEnable: sortOrder === 'asc' ? 1 : -1, 
+          createdAt: -1
+        }
+      };
+    }
+
+    // Count total
+    const countRes = await this.postModel
+      .aggregate([...pipeline, { $count: 'total' }])
+      .exec();
+    const total = countRes[0]?.total ?? 0;
+    const totalPages = Math.max(Math.ceil(total / limit), 1);
+
+    // Get paginated results
+    const items = await this.postModel
+      .aggregate([
+        ...pipeline,
+        sortStage,
+        { $skip: (page - 1) * limit },
+        { $limit: limit },
+        {
+          $addFields: {
+            createdAtLocal: {
+              $dateToString: {
+                format: '%Y-%m-%d %H:%M:%S',
+                date: {
+                  $dateAdd: {
+                    startDate: '$createdAt',
+                    unit: 'hour',
+                    amount: 7
+                  }
+                },
+                timezone: 'Asia/Ho_Chi_Minh'
+              }
+            }
+          }
+        }
+      ])
+      .exec();
+
+    return {
+      items,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount: total,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+      filters: {
+        sortBy,
+        sortOrder,
+        typeFilter,
+        enabledFilter
+      }
+    };
+  }
+
+  // Get hashtag analytics - most used hashtags with post counts
+  public async getHashtagAnalytics(limit: number = 50) {
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          isEnable: true,
+          nsfw: false,
+          caption: { $exists: true, $ne: '' }
+        }
+      },
+      {
+        $addFields: {
+          hashtags: {
+            $regexFindAll: {
+              input: '$caption',
+              regex: '#[a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF]+',
+              options: 'i'
+            }
+          }
+        }
+      },
+      {
+        $match: {
+          hashtags: { $ne: [] }
+        }
+      },
+      {
+        $unwind: '$hashtags'
+      },
+      {
+        $addFields: {
+          normalizedHashtag: {
+            $toLower: {
+              $substr: ['$hashtags.match', 1, -1]
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$normalizedHashtag',
+          postCount: { $sum: 1 },
+          postTypes: { $addToSet: '$type' },
+          originalHashtag: { $first: '$hashtags.match' }
+        }
+      },
+      {
+        $sort: { postCount: -1 }
+      },
+      {
+        $limit: limit
+      },
+      {
+        $project: {
+          _id: 0,
+          hashtag: '$originalHashtag',
+          normalizedHashtag: '$_id',
+          postCount: 1,
+          postTypes: 1,
+          hasPostType: { $in: ['post', '$postTypes'] },
+          hasReelType: { $in: ['reel', '$postTypes'] }
+        }
+      }
+    ];
+
+    const results = await this.postModel.aggregate(pipeline).exec();
+
+    // Get total hashtags count
+    const totalHashtagsRes = await this.postModel.aggregate([
+      {
+        $match: {
+          isEnable: true,
+          nsfw: false,
+          caption: { $exists: true, $ne: '' }
+        }
+      },
+      {
+        $addFields: {
+          hashtags: {
+            $regexFindAll: {
+              input: '$caption',
+              regex: '#[a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF]+',
+              options: 'i'
+            }
+          }
+        }
+      },
+      {
+        $match: { hashtags: { $ne: [] } }
+      },
+      {
+        $unwind: '$hashtags'
+      },
+      {
+        $group: {
+          _id: {
+            $toLower: {
+              $substr: ['$hashtags.match', 1, -1]
+            }
+          }
+        }
+      },
+      {
+        $count: 'totalUniqueHashtags'
+      }
+    ]).exec();
+
+    return {
+      hashtags: results,
+      summary: {
+        totalUniqueHashtags: totalHashtagsRes[0]?.totalUniqueHashtags || 0,
+        topHashtagsShown: results.length
+      }
+    };
+  }
+
+  // Search posts 
+  public async searchPosts(
+    query: string,
+    mode: 'caption' | 'hashtag' = 'caption',
+    page: number = 1,
+    limit: number = 10,
+    typeFilter?: 'post' | 'reel'
+  ) {
+    const mockUserId = new Types.ObjectId();
+    
+    let searchMatch: Record<string, any> = {
+      isEnable: true,
+      nsfw: false
+    };
+
+    if (typeFilter) {
+      searchMatch.type = typeFilter;
+    }
+
+    if (mode === 'caption') {
+      searchMatch.caption = {
+        $regex: query,
+        $options: 'i'
+      };
+    } else if (mode === 'hashtag') {
+      const normalizedQuery = query.toLowerCase().startsWith('#') ? query.toLowerCase() : `#${query.toLowerCase()}`;
+      searchMatch.caption = {
+        $regex: normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        $options: 'i'
+      };
+    }
+
+    const pipeline = this.commonServices.buildAdminBasePipeline(mockUserId, searchMatch);
+
+    // Count total results
+    const countRes = await this.postModel
+      .aggregate([...pipeline, { $count: 'total' }])
+      .exec();
+    const total = countRes[0]?.total ?? 0;
+    const totalPages = Math.max(Math.ceil(total / limit), 1);
+
+    // Get paginated results
+    const items = await this.postModel
+      .aggregate([
+        ...pipeline,
+        { $sort: { createdAt: -1 } }, // Most recent first
+        { $skip: (page - 1) * limit },
+        { $limit: limit },
+        {
+          $addFields: {
+            createdAtLocal: {
+              $dateToString: {
+                format: '%Y-%m-%d %H:%M:%S',
+                date: {
+                  $dateAdd: {
+                    startDate: '$createdAt',
+                    unit: 'hour',
+                    amount: 7
+                  }
+                },
+                timezone: 'Asia/Ho_Chi_Minh'
+              }
+            },
+            matchedText: mode === 'caption' ? {
+              $regexFindAll: {
+                input: '$caption',
+                regex: query,
+                options: 'i'
+              }
+            } : undefined
+          }
+        }
+      ])
+      .exec();
+
+    return {
+      items,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount: total,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+      searchParams: {
+        query,
+        mode,
+        typeFilter
+      }
+    };
+  }
 }

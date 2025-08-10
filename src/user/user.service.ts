@@ -80,7 +80,7 @@ export class UserService {
   async findById(id: string) {
     return this.userModel
       .findById(id)
-      .select('_id handleName username profilePic role fcmToken');
+      .select('_id handleName username profilePic role fcmToken deletedAt');
   }
 
   async register(registerDto: RegisterDto): Promise<User> {
