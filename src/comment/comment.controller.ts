@@ -13,27 +13,8 @@ export class CommentController {
   async getCommentsByPost(
     @Param('postID') postID: string,
     @CurrentUser('sub') userId: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
   ) {
-    const pageNum = Math.max(parseInt(page ?? '1', 10), 1);
-    const limitNum = Math.max(parseInt(limit ?? '20', 10), 1);
-
-    const { comments, totalCount } = await this.commentService.getCommentsByPost(postID, userId, pageNum, limitNum);
-    const totalPages = Math.max(Math.ceil(totalCount / limitNum), 1);
-
-    return {
-      message: 'Comments retrieved successfully',
-      data: comments,
-      pagination: {
-        currentPage: pageNum,
-        totalPages,
-        totalCount,
-        limit: limitNum,
-        hasNextPage: pageNum < totalPages,
-        hasPrevPage: pageNum > 1,
-      },
-    };
+    return this.commentService.getCommentsByPost(postID, userId);
   }
 
   @Post('add')
