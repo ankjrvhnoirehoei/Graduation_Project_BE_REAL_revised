@@ -1,4 +1,4 @@
-import { Body, Controller, DefaultValuePipe, Get, NotFoundException, Param, ParseBoolPipe, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, DefaultValuePipe, Get, NotFoundException, Param, ParseBoolPipe, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtRefreshAuthGuard } from 'src/auth/Middleware/jwt-auth.guard';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
@@ -105,6 +105,127 @@ export class AdminController {
   @Get('posts/summary-posts')
   async getPostsSummary(@CurrentUser('sub') userId: string) {
     return this.adminService.getPostsSummary(userId);
+  }
+
+  @Get('posts')
+  async getAllPosts(
+    @CurrentUser('sub') adminId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('sortBy', new DefaultValuePipe('createdAt')) sortBy: 'type' | 'createdAt' | 'isEnable',
+    @Query('sortOrder', new DefaultValuePipe('desc')) sortOrder: 'asc' | 'desc',
+    @Query('type') typeFilter?: 'post' | 'reel',
+    @Query('enabled', ParseBoolPipe) enabledFilter?: boolean,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    
+    // Validate pagination
+    if (page < 1) page = 1;
+    if (limit < 1 || limit > 100) limit = 10; // Max limit of 100
+    
+    // Validate sort parameters
+    if (!['type', 'createdAt', 'isEnable'].includes(sortBy)) {
+      throw new BadRequestException('sortBy must be one of: "type", "createdAt", or "isEnable"');
+    }
+    if (!['asc', 'desc'].includes(sortOrder)) {
+      throw new BadRequestException('sortOrder must be either "asc" or "desc"');
+    }
+    
+    // Validate type filter
+    if (typeFilter && !['post', 'reel'].includes(typeFilter)) {
+      throw new BadRequestException('type filter must be either "post" or "reel"');
+    }
+
+    const result = await this.adminService.getAllPosts(
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      typeFilter,
+      enabledFilter
+    );
+
+    return {
+      success: true,
+      message: `Retrieved ${result.items.length} posts`,
+      data: result
+    };
+  }
+
+  // hashtags analytics
+  @Get('hashtags/analytics')
+  async getHashtagAnalytics(
+    @CurrentUser('sub') adminId: string,
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    
+    // Validate limit
+    if (limit < 1 || limit > 500) limit = 50; // Max 500 hashtags
+    
+    const result = await this.adminService.getHashtagAnalytics(limit);
+    
+    return {
+      success: true,
+      message: `Retrieved top ${result.hashtags.length} hashtags`,
+      data: result
+    };
+  }
+
+  // Search posts by caption or hashtag
+  @Get('posts/search')
+  async searchPosts(
+    @CurrentUser('sub') adminId: string,
+    @Query('q') query: string,
+    @Query('mode', new DefaultValuePipe('caption')) mode: 'caption' | 'hashtag',
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query('type') typeFilter?: 'post' | 'reel',
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    
+    // Validate required query parameter
+    if (!query || query.trim().length === 0) {
+      throw new BadRequestException('Query parameter "q" is required and cannot be empty');
+    }
+    
+    // Validate pagination
+    if (page < 1) page = 1;
+    if (limit < 1 || limit > 100) limit = 10;
+    
+    // Validate mode
+    if (!['caption', 'hashtag'].includes(mode)) {
+      throw new BadRequestException('mode must be either "caption" or "hashtag"');
+    }
+    
+    // Validate type filter
+    if (typeFilter && !['post', 'reel'].includes(typeFilter)) {
+      throw new BadRequestException('type filter must be either "post" or "reel"');
+    }
+    
+    let cleanQuery = query.trim();
+    if (mode === 'hashtag') {
+      // Ensure hashtag starts with # for consistency
+      if (!cleanQuery.startsWith('#')) {
+        cleanQuery = `#${cleanQuery}`;
+      }
+    }
+
+    const result = await this.adminService.searchPosts(
+      cleanQuery,
+      mode,
+      page,
+      limit,
+      typeFilter
+    );
+
+    return {
+      success: true,
+      message: mode === 'caption' 
+        ? `Found ${result.pagination.totalCount} posts matching "${query}"`
+        : `Found ${result.pagination.totalCount} posts with hashtag "${cleanQuery}"`,
+      data: result
+    };
   }
 
   @Get('posts/new')
@@ -232,6 +353,29 @@ export class AdminController {
 
     const result = await this.userService.getNewUsersByDate(from, to, page, limit);
     return { success: true, data: result };
+  }
+
+  @Get('users/content/:userId')
+  async getUserContent(
+    @CurrentUser('sub') adminId: string,
+    @Param('userId') userId: string,
+    @Query('postPage') postPage: string = '1',
+    @Query('postLimit') postLimit: string = '10',
+    @Query('reelPage') reelPage: string = '1',
+    @Query('reelLimit') reelLimit: string = '10',
+    @Query('storyPage') storyPage: string = '1',
+    @Query('storyLimit') storyLimit: string = '10',
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+    return this.adminService.getUserContent(
+      userId,
+      parseInt(postPage),
+      parseInt(postLimit),
+      parseInt(reelPage),
+      parseInt(reelLimit),
+      parseInt(storyPage),
+      parseInt(storyLimit),
+    );
   }
 
   // General routes
@@ -491,6 +635,28 @@ export class AdminController {
 
     return {
       message: 'Báo cáo đã được giải quyết',
+      report,
+    };
+  }
+
+  // enforce a ban 
+  @Patch('reports/:mode/ban-resolve/:id')
+  async banResolveReport(
+    @CurrentUser('sub') adminId: string,
+    @Param('mode') reportMode: ReportMode,
+    @Param('id') reportId: string,
+  ) {
+    await this.adminService.ensureAdmin(adminId);
+
+    if (!['user', 'content'].includes(reportMode)) {
+      throw new NotFoundException('Invalid report mode. Must be "user" or "content"');
+    }
+
+    const reportService = this.getReportService(reportMode);
+    const report = await reportService.banResolveReport(reportId, adminId);
+
+    return {
+      message: 'Báo cáo đã được xử lý và mục tiêu đã bị khóa ngay lập tức',
       report,
     };
   }

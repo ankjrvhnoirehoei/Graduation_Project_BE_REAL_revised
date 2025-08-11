@@ -222,6 +222,37 @@ export class ReportUserService {
     return report;
   }
 
+  async banResolveReport(id: string, adminId: string): Promise<ReportUser> {
+    const report = await this.reportUserModel
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            resolved: true,
+            isRead: true,
+          },
+        },
+        { new: true }
+      )
+      .exec();
+
+    if (!report) throw new NotFoundException('Không tìm thấy báo cáo!');
+
+    // ban the user
+    let targetBanned = false;
+    try {
+      await this.userService.disableUser(report.targetId.toString());
+      targetBanned = true;
+    } catch (error) {
+      console.error('Error disabling user:', error);
+      throw error;
+    }
+
+    await this.sendNotifications(report, targetBanned, adminId);
+
+    return report;
+  }
+
   async resolveReport(id: string, adminId: string): Promise<ReportUser> {
     const report = await this.reportUserModel
       .findByIdAndUpdate(
@@ -234,7 +265,6 @@ export class ReportUserService {
         },
         { new: true },
       )
-      // .lean()
       .exec();
 
     if (!report) throw new NotFoundException('Không tìm thấy báo cáo!');
@@ -323,6 +353,7 @@ export class ReportUserService {
             targetType: 'user',
           },
         );
+
       } else {
         // send notification to the single reporter about resolution
         await this.notificationService.sendPushNotification(

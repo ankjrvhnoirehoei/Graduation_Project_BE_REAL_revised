@@ -208,6 +208,37 @@ async createReport(
     return report;
   }
 
+  async banResolveReport(id: string, adminId: string): Promise<ReportContent> {
+    const report = await this.reportModel
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            resolved: true,
+            isRead: true,
+          },
+        },
+        { new: true }
+      )
+      .exec();
+
+    if (!report) throw new NotFoundException('Không tìm thấy báo cáo!');
+
+    // disable the post
+    let targetBanned = false;
+    try {
+      await this.postService.disablePost(report.targetId.toString());
+      targetBanned = true;
+    } catch (error) {
+      console.error('Error disabling post:', error);
+      throw error;
+    }
+
+    await this.sendNotifications(report, targetBanned, adminId);
+
+    return report;
+  }
+
   async resolveReport(id: string, adminId: string): Promise<ReportContent> {
     const report = await this.reportModel
       .findByIdAndUpdate(
@@ -220,7 +251,6 @@ async createReport(
         },
         { new: true }
       )
-      // .lean()
       .exec();
 
     if (!report) throw new NotFoundException('Không tìm thấy báo cáo!');
@@ -306,6 +336,27 @@ async createReport(
             targetType: 'content',
           }
         );
+
+        // Send notification to content owner about their content being disabled
+        try {
+          const post = await this.postService.getPostById(report.targetId.toString(), adminId);
+          if (post && post.userID) {
+            await this.notificationService.sendPushNotification(
+              [post.userID.toString()],
+              adminId,
+              'Nội dung của bạn đã bị gỡ',
+              'Nội dung của bạn đã bị gỡ xuống do vi phạm quy định cộng đồng. Vui lòng tuân thủ các quy tắc để duy trì môi trường tích cực.',
+              {
+                type: 'CONTENT_DISABLED',
+                postId: report.targetId.toString(),
+                reportId: report._id.toString(),
+              }
+            );
+          }
+        } catch (error) {
+          console.error('Error notifying content owner:', error);
+        }
+
       } else {
         // send notification to the single reporter about resolution
         await this.notificationService.sendPushNotification(

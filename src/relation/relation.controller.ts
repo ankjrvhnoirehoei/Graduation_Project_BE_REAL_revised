@@ -83,109 +83,159 @@ export class RelationController {
 
   @UseGuards(JwtRefreshAuthGuard)
   @Post('followers')
-  async getFollowers(@Body() dto: GetFollowersDto) {
+  async getFollowers(
+    @Body() dto: GetFollowersDto,
+    @Query('page') pageQ?: string,
+    @Query('limit') limitQ?: string,
+  ) {
     const { userId } = dto;
+    const page = Math.max(parseInt(pageQ ?? '1', 10), 1);
+    const limit = Math.max(parseInt(limitQ ?? '20', 10), 1);
 
-    // fetch all relationship records where someone follows `userId`
-    const records = await this.relationService.findByUserAndFilter(
-      userId,
-      'followers',
-    );
-
-    // map each record to the follower's ID
+    const records = await this.relationService.findByUserAndFilter(userId, 'followers');
     const followerIds = records.map((r) => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
-
-      // Check which pattern matched and return the correct follower
-      if (u2 === userId && r.relation.startsWith('FOLLOW_')) {
-        return u1;
-      } else if (u1 === userId && r.relation.endsWith('_FOLLOW')) {
-        return u2;
-      }
+      if (u2 === userId && r.relation.startsWith('FOLLOW_')) return u1;
+      else if (u1 === userId && r.relation.endsWith('_FOLLOW')) return u2;
       throw new BadRequestException('Mối quan hệ bất hợp lệ.');
     });
-
-    // Remove duplicates
     const uniqueFollowerIds = [...new Set(followerIds)];
+    const totalCount = uniqueFollowerIds.length;
+    const totalPages = Math.max(Math.ceil(totalCount / limit), 1);
+    const pagedIds = uniqueFollowerIds.slice((page - 1) * limit, page * limit);
+    const followers = await this.userService.findManyByIds(pagedIds);
 
-    // Fetch detailed user information
-    const followers = await this.userService.findManyByIds(uniqueFollowerIds);
-
-    console.log('Request Body:', dto);
-    console.log('Followers count:', uniqueFollowerIds.length);
-
-    return { userId, followers };
+    return {
+      userId,
+      followers,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
   }
 
   @UseGuards(JwtRefreshAuthGuard)
   @Post('following')
-  async getFollowing(@Body() dto: GetFollowingDto) {
+  async getFollowing(
+    @Body() dto: GetFollowingDto,
+    @Query('page') pageQ?: string,
+    @Query('limit') limitQ?: string,
+  ) {
     const { userId } = dto;
+    const page = Math.max(parseInt(pageQ ?? '1', 10), 1);
+    const limit = Math.max(parseInt(limitQ ?? '20', 10), 1);
 
-    // fetch all relationship records where userId follows someone
-    const records = await this.relationService.findByUserAndFilter(
-      userId,
-      'following',
-    );
-
-    // map each record to the followed user's ID
+    const records = await this.relationService.findByUserAndFilter(userId, 'following');
     const followingIds = records.map((r) => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
-
-      // Check which pattern matched and return the correct following
-      if (u1 === userId && r.relation.startsWith('FOLLOW_')) {
-        return u2;
-      } else if (u2 === userId && r.relation.endsWith('_FOLLOW')) {
-        return u1;
-      }
+      if (u1 === userId && r.relation.startsWith('FOLLOW_')) return u2;
+      else if (u2 === userId && r.relation.endsWith('_FOLLOW')) return u1;
       throw new BadRequestException('Mối quan hệ bất hợp lệ.');
     });
-
-    // Remove duplicates
     const uniqueFollowingIds = [...new Set(followingIds)];
+    const totalCount = uniqueFollowingIds.length;
+    const totalPages = Math.max(Math.ceil(totalCount / limit), 1);
+    const pagedIds = uniqueFollowingIds.slice((page - 1) * limit, page * limit);
+    const following = await this.userService.findManyByIds(pagedIds);
 
-    // Fetch detailed user information
-    const following = await this.userService.findManyByIds(uniqueFollowingIds);
-
-    console.log('Request Body:', dto);
-    console.log('Following count:', uniqueFollowingIds.length);
-
-    return { userId, following };
+    return {
+      userId,
+      following,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
   }
 
   /**
    * POST /relations/blocking
    * body: { userId: string }
-   *
    * Returns an array of "who userId is blocking."
    */
   @UseGuards(JwtRefreshAuthGuard)
   @Post('blocking')
-  async getBlocking(@Body() dto: GetBlockingDto) {
+  async getBlocking(
+    @Body() dto: GetBlockingDto,
+    @Query('page') pageQ?: string,
+    @Query('limit') limitQ?: string,
+  ) {
     const { userId } = dto;
+    const page = Math.max(parseInt(pageQ ?? '1', 10), 1);
+    const limit = Math.max(parseInt(limitQ ?? '20', 10), 1);
 
-    // fetch all relationship records where userId blocks someone
-    const records = await this.relationService.findByUserAndFilter(
-      userId,
-      'blocking',
-    );
-
-    // map each record to the blocked-user's ID
+    const records = await this.relationService.findByUserAndFilter(userId, 'blocking');
     const blockingIds = records.map((r) => {
       const u1 = r.userOneID.toString();
       const u2 = r.userTwoID.toString();
-      // if userId is in userTwoID, then userId blocks userOneID; otherwise userId blocks userTwoID
       return u2 === userId ? u1 : u2;
     });
+    const uniqueBlockingIds = [...new Set(blockingIds)];
+    const totalCount = uniqueBlockingIds.length;
+    const totalPages = Math.max(Math.ceil(totalCount / limit), 1);
+    const pagedIds = uniqueBlockingIds.slice((page - 1) * limit, page * limit);
+    const blocking = await this.userService.findManyByIds(pagedIds);
 
-    // Fetch detailed user information
-    const blocking = await Promise.all(
-      blockingIds.map((id) => this.userService.getUserById(id)),
-    );
+    return {
+      userId,
+      blocking,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
+  }
 
-    return { userId, blocking };
+  @UseGuards(JwtRefreshAuthGuard)
+  @Post('blockers')
+  async getBlockers(
+    @Body() dto: GetBlockingDto,
+    @Query('page') pageQ?: string,
+    @Query('limit') limitQ?: string,
+  ) {
+    const { userId } = dto;
+    const page = Math.max(parseInt(pageQ ?? '1', 10), 1);
+    const limit = Math.max(parseInt(limitQ ?? '20', 10), 1);
+
+    const records = await this.relationService.findByUserAndFilter(userId, 'blockers');
+    const blockerIds = records.map((r) => {
+      const u1 = r.userOneID.toString();
+      const u2 = r.userTwoID.toString();
+      return u2 === userId ? u1 : u2;
+    });
+    const uniqueBlockerIds = [...new Set(blockerIds)];
+    const totalCount = uniqueBlockerIds.length;
+    const totalPages = Math.max(Math.ceil(totalCount / limit), 1);
+    const pagedIds = uniqueBlockerIds.slice((page - 1) * limit, page * limit);
+    const blockers = await this.userService.findManyByIds(pagedIds);
+
+    return {
+      userId,
+      blockers,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
   }
 
   /**

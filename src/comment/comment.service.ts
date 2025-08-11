@@ -49,25 +49,32 @@ export class CommentService {
   async getCommentsByPost(
     postID: string,
     currentUserId: string,
-  ): Promise<any[]> {
+    page: number = 1,
+    limit: number = 20,
+  ): Promise<{ comments: any[]; totalCount: number }> {
+    const totalCount = await this.commentModel.countDocuments({
+      postID: new Types.ObjectId(postID),
+      parentID: null,
+    });
+
     const allComments = await this.commentModel.aggregate([
       { $match: { postID: new Types.ObjectId(postID) } },
-
-      // join user for root & replies
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: '$user' },
-
       {
         $facet: {
           rootComments: [
             { $match: { parentID: null } },
+            { $sort: { createdAt: -1 } },
+            { $skip: (page - 1) * limit },
+            { $limit: limit },
+            {
+              $lookup: {
+                from: 'users',
+                localField: 'userID',
+                foreignField: '_id',
+                as: 'user',
+              },
+            },
+            { $unwind: '$user' },
             {
               $project: {
                 _id: 1,
@@ -121,7 +128,7 @@ export class CommentService {
     ]);
     const { rootComments, replies } = allComments[0];
 
-    const result = rootComments.map((comment: any) => {
+    const comments = rootComments.map((comment: any) => {
       // build replies list
       const replyList = replies
         .filter((r: any) => r.parentID.toString() === comment._id.toString())
@@ -149,7 +156,7 @@ export class CommentService {
       };
     });
 
-    return result;
+    return { comments, totalCount };
   }
 
   async findByPostId(postID: string): Promise<Comment[]> {

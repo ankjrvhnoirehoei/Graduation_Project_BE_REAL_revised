@@ -121,11 +121,31 @@ export class PostLikeController {
 
   @Get('likers/:postId')
   @UseGuards(JwtRefreshAuthGuard)
-  async getPostLikers(@Param('postId') postId: string, @CurrentUser('sub') currentUserId: string,) {
+  async getPostLikers(
+    @Param('postId') postId: string,
+    @CurrentUser('sub') currentUserId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = Math.max(parseInt(page ?? '1', 10), 1);
+    const limitNum = Math.max(parseInt(limit ?? '20', 10), 1);
+
     const likers = await this.postLikeService.getPostLikers(postId, currentUserId);
+    const totalCount = likers.length;
+    const totalPages = Math.max(Math.ceil(totalCount / limitNum), 1);
+    const pagedLikers = likers.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+
     return {
       message: 'Post likers retrieved successfully',
-      data: likers
+      data: pagedLikers,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalCount,
+        limit: limitNum,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1,
+      },
     };
   }
 }
