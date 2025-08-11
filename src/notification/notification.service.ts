@@ -14,16 +14,41 @@ export class NotificationService {
     private userModel: Model<UserDocument>,
   ) {}
 
+  private normalizeData(data?: Record<string, any>): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (!data) return out;
+    for (const [k, v] of Object.entries(data)) {
+      if (v === undefined || v === null) {
+        out[k] = '';
+      } else if (typeof v === 'string') {
+        out[k] = v;
+      } else if (
+        typeof v === 'number' ||
+        typeof v === 'boolean' ||
+        typeof v === 'bigint'
+      ) {
+        out[k] = String(v);
+      } else {
+        try {
+          out[k] = JSON.stringify(v);
+        } catch (err) {
+          out[k] = String(v);
+        }
+      }
+    }
+    return out;
+  }
+
   async sendPushNotification(
     receiverIds: string[],
     senderId: string,
     title: string,
     body: string,
     data?: Record<string, any>,
+    saveToDb: boolean = true,
   ) {
     try {
       const objectIds = receiverIds.map((id) => new Types.ObjectId(id));
-
       const users = await this.userModel
         .find({ _id: { $in: objectIds } })
         .select('fcmToken');
@@ -32,34 +57,75 @@ export class NotificationService {
         .map((user) => user.fcmToken)
         .filter((token) => !!token);
 
-      const dataPayload: Record<string, string> = Object.entries(
-        data || {},
-      ).reduce((acc, [key, value]) => {
-        acc[key] = typeof value === 'string' ? value : JSON.stringify(value);
-        return acc;
-      }, {});
-
-      for (const token of allTokens) {
-        const message = {
-          token,
-          notification: { title, body },
-          data: dataPayload,
-        };
-        await admin.messaging().send(message);
+      if (!allTokens.length) {
+        console.log('[NotificationService] no tokens to send to');
+        return { success: true, message: 'No tokens to send to' };
       }
 
-      await this.notificationModel.create({
-        receiver: objectIds.map((id) => ({ userId: id, isRead: false })),
-        senderId: new Types.ObjectId(senderId),
-        title,
-        body,
-        data,
+      const dataPayload = this.normalizeData(data || {});
+      dataPayload.senderId = String(senderId);
+
+      console.log('[NotificationService] sending data payload:', dataPayload);
+      console.log('[NotificationService] sending to tokens count:', allTokens.length);
+
+      const message: admin.messaging.MulticastMessage = {
+        tokens: allTokens,
+        data: dataPayload,
+        notification: {
+          title,
+          body,
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'default',
+          },
+        },
+        apns: {
+          headers: { 
+            'apns-priority': '10' 
+          },
+          payload: { 
+            aps: { 
+              'content-available': 1,
+              alert: {
+                title,
+                body,
+              }
+            } 
+          },
+        },
+      };
+
+      const resp = await admin.messaging().sendEachForMulticast(message);
+      
+      console.log('[NotificationService] FCM send result:', {
+        successCount: resp.successCount,
+        failureCount: resp.failureCount,
+        responses: resp.responses.map((r, index) => ({
+          token: allTokens[index],
+          success: r.success,
+          error: r.error?.message,
+          messageId: r.messageId,
+        })),
       });
 
-      return { success: true };
+      if (saveToDb && Types.ObjectId.isValid(senderId)) {
+        await this.notificationModel.create({
+          receiver: objectIds.map((id) => ({ userId: id, isRead: false })),
+          senderId: new Types.ObjectId(senderId),
+          title,
+          body,
+          data,
+        });
+      } else if (saveToDb) {
+        console.log('[NotificationService] Skipping DB save - invalid senderId:', senderId);
+      }
+
+      return { success: true, resp };
     } catch (error) {
       console.error('❌ Error sending or saving notification:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: error?.message || String(error) };
     }
   }
 
