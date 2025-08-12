@@ -461,7 +461,12 @@ export class PostService {
 
     //  Lấy raw docs đã đầy đủ các lookup & counts
     const rawDocs = await this.postModel
-      .aggregate([...basePipeline, ...recPipeline, projectStage])
+      .aggregate([
+        ...basePipeline,
+        ...recPipeline,
+        ...musicLookup,
+        projectStage,
+      ])
       .exec();
 
     // convert sang PostItem[] rồi sort + paginate
