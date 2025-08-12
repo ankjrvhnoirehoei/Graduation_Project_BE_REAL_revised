@@ -267,24 +267,22 @@ export class RoomService {
     return roomsWithMessages.map(({ createdAt, ...rest }) => rest);
   }
 
-  async getWaitingRoomsOfUser(userId: string): Promise<any[]> {
-    const rooms = await this.roomModel
-      .find({
-        user_ids: new Types.ObjectId(userId),
-        type: 'waiting',
-        created_by: { $ne: new Types.ObjectId(userId) }, // loại bỏ các room mình tạo
-      })
-      .populate('user_ids', '_id handleName username profilePic')
-      .lean();
-
+  private async buildResponse(
+    rooms: Array<{
+      _id: Types.ObjectId;
+      name: string;
+      theme?: string;
+      type: string;
+      user_ids: any[];
+      created_by: Types.ObjectId;
+      createdAt: Date;
+    }>,
+    messageModel: any,
+  ) {
     const stringRoomIds = rooms.map((room) => room._id.toString());
 
-    const messages = await this.messageModel.aggregate([
-      {
-        $match: {
-          roomId: { $in: stringRoomIds },
-        },
-      },
+    const messages = await messageModel.aggregate([
+      { $match: { roomId: { $in: stringRoomIds } } },
       { $sort: { createdAt: -1 } },
       {
         $group: {
@@ -294,18 +292,25 @@ export class RoomService {
           senderId: { $first: '$senderId' },
           media: { $first: '$media' },
           createdAt: { $first: '$createdAt' },
+          isDeleted: { $first: '$isDeleted' },
         },
       },
     ]);
 
     const latestMessageMap = new Map<string, any>();
-    messages.forEach((msg) => {
+    for (const msg of messages) {
+      if (msg.isDeleted) {
+        msg.content = 'Tin nhắn đã bị thu hồi';
+        msg.media = null;
+      }
+      if (msg.media?.type === 'image') {
+        msg.content = 'Hình ảnh';
+      }
       latestMessageMap.set(msg._id, msg);
-    });
+    }
 
     const roomsWithMessages = rooms.map((room) => {
       const latestMessage = latestMessageMap.get(room._id.toString()) ?? null;
-
       return {
         _id: room._id,
         name: room.name,
@@ -317,6 +322,7 @@ export class RoomService {
       };
     });
 
+    // Sort theo thời điểm latestMessage
     roomsWithMessages.sort((a, b) => {
       const aTime = a.latestMessage?.createdAt
         ? new Date(a.latestMessage.createdAt).getTime()
@@ -328,6 +334,91 @@ export class RoomService {
     });
 
     return roomsWithMessages;
+  }
+
+  async getWaitingRoomsOfUser(userId: string): Promise<any[]> {
+    const currentUser = new Types.ObjectId(userId);
+
+    const rooms = await this.roomModel
+      .find({
+        user_ids: currentUser,
+        type: 'waiting',
+        created_by: { $ne: currentUser },
+      })
+      .populate('user_ids', '_id handleName username profilePic')
+      .lean<
+        {
+          _id: Types.ObjectId;
+          name: string;
+          theme?: string;
+          type: string;
+          user_ids: Array<
+            | Types.ObjectId
+            | {
+                _id: Types.ObjectId;
+                handleName?: string;
+                username?: string;
+                profilePic?: string;
+              }
+          >;
+          created_by: Types.ObjectId;
+          createdAt: Date;
+        }[]
+      >();
+
+    const getId = (u: any): Types.ObjectId =>
+      u && u._id ? new Types.ObjectId(u._id) : new Types.ObjectId(u);
+
+    const otherUserIdsUnique = Array.from(
+      new Set(
+        rooms.flatMap((room) =>
+          (room.user_ids || [])
+            .map(getId)
+            .filter((id) => !id.equals(currentUser))
+            .map((id) => id.toString()),
+        ),
+      ),
+    ).map((s) => new Types.ObjectId(s));
+
+    if (otherUserIdsUnique.length === 0) {
+      return await this.buildResponse(rooms, this.messageModel);
+    }
+
+    const blockTypes: RelationType[] = [
+      RelationType.FOLLOW_BLOCK,
+      RelationType.BLOCK_FOLLOW,
+      RelationType.BLOCK_BLOCK,
+      RelationType.BLOCK_NULL,
+      RelationType.NULL_BLOCK,
+    ];
+
+    const relations = await this.relationModel
+      .find({
+        relation: { $in: blockTypes },
+        $or: [
+          { userOneID: currentUser, userTwoID: { $in: otherUserIdsUnique } },
+          { userTwoID: currentUser, userOneID: { $in: otherUserIdsUnique } },
+        ],
+      })
+      .select('userOneID userTwoID')
+      .lean();
+
+    const blockedSet = new Set<string>();
+    for (const rel of relations) {
+      const one = new Types.ObjectId(rel.userOneID);
+      const two = new Types.ObjectId(rel.userTwoID);
+      const otherId = one.equals(currentUser) ? two : one;
+      blockedSet.add(otherId.toString());
+    }
+
+    const allowedRooms = rooms.filter((room) => {
+      const others = (room.user_ids || [])
+        .map(getId)
+        .filter((id) => !id.equals(currentUser));
+      return !others.some((id) => blockedSet.has(id.toString()));
+    });
+
+    return await this.buildResponse(allowedRooms, this.messageModel);
   }
 
   async updateTheme(
