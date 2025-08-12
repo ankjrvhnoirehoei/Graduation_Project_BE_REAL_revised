@@ -494,11 +494,9 @@ export class PostService {
         handleName: d.user.handleName,
         profilePic: d.user.profilePic,
       },
-      music: d.music
+      music: d.music,
+      musicInfo: d.music
         ? {
-            musicId: d.music.musicId?.toString(),
-            timeStart: d.music.timeStart,
-            timeEnd: d.music.timeEnd,
             song: d.music.song,
             link: d.music.link,
             author: d.music.author,
