@@ -109,21 +109,16 @@ export class RoomService {
   }
 
   async getRoomsOfUser(userId: string): Promise<any[]> {
-    // 1) Lấy danh sách room
+    const currentUser = new Types.ObjectId(userId);
+
     const rooms = await this.roomModel
       .find({
         $or: [
           {
-            $and: [
-              { user_ids: new Types.ObjectId(userId) },
-              { type: 'accept' },
-            ],
+            $and: [{ user_ids: currentUser }, { type: 'accept' }],
           },
           {
-            $and: [
-              { created_by: new Types.ObjectId(userId) },
-              { type: 'waiting' },
-            ],
+            $and: [{ created_by: currentUser }, { type: 'waiting' }],
           },
         ],
       })
@@ -134,19 +129,90 @@ export class RoomService {
           name: string;
           theme?: string;
           type: string;
-          user_ids: Types.ObjectId[];
+          user_ids: Array<
+            | Types.ObjectId
+            | {
+                _id: Types.ObjectId;
+                handleName?: string;
+                username?: string;
+                profilePic?: string;
+              }
+          >;
           created_by: Types.ObjectId;
           createdAt: Date;
         }[]
       >();
 
-    // 2) Nếu muốn an toàn, có thể filter thêm
     const validRooms = rooms.filter((r) => r && typeof r.type === 'string');
 
-    // 3) Chuẩn bị danh sách roomId dưới dạng string
-    const stringRoomIds = validRooms.map((room) => room._id.toString());
+    const getId = (u: any): Types.ObjectId =>
+      u && u._id ? new Types.ObjectId(u._id) : new Types.ObjectId(u);
 
-    // 4) Lấy tin nhắn mới nhất cho mỗi room
+    const otherUserIdsUnique = Array.from(
+      new Set(
+        validRooms.flatMap((room) =>
+          (room.user_ids || [])
+            .map(getId)
+            .filter((id) => !id.equals(currentUser))
+            .map((id) => id.toString()),
+        ),
+      ),
+    ).map((s) => new Types.ObjectId(s));
+
+    if (otherUserIdsUnique.length === 0) {
+      return await this.buildRoomsResponse(validRooms);
+    }
+
+    const blockTypes: RelationType[] = [
+      RelationType.FOLLOW_BLOCK,
+      RelationType.BLOCK_FOLLOW,
+      RelationType.BLOCK_BLOCK,
+      RelationType.BLOCK_NULL,
+      RelationType.NULL_BLOCK,
+    ];
+
+    const relations = await this.relationModel
+      .find({
+        relation: { $in: blockTypes },
+        $or: [
+          { userOneID: currentUser, userTwoID: { $in: otherUserIdsUnique } },
+          { userTwoID: currentUser, userOneID: { $in: otherUserIdsUnique } },
+        ],
+      })
+      .select('userOneID userTwoID')
+      .lean();
+
+    const blockedSet = new Set<string>();
+    for (const rel of relations) {
+      const one = new Types.ObjectId(rel.userOneID);
+      const two = new Types.ObjectId(rel.userTwoID);
+      const otherId = one.equals(currentUser) ? two : one;
+      blockedSet.add(otherId.toString());
+    }
+
+    const allowedRooms = validRooms.filter((room) => {
+      const others = (room.user_ids || [])
+        .map(getId)
+        .filter((id) => !id.equals(currentUser));
+      return !others.some((id) => blockedSet.has(id.toString()));
+    });
+
+    return await this.buildRoomsResponse(allowedRooms);
+  }
+
+  private async buildRoomsResponse(
+    rooms: Array<{
+      _id: Types.ObjectId;
+      name: string;
+      theme?: string;
+      type: string;
+      user_ids: any[];
+      created_by: Types.ObjectId;
+      createdAt: Date;
+    }>,
+  ) {
+    const stringRoomIds = rooms.map((room) => room._id.toString());
+
     const messages = await this.messageModel.aggregate([
       { $match: { roomId: { $in: stringRoomIds } } },
       { $sort: { createdAt: -1 } },
@@ -163,22 +229,19 @@ export class RoomService {
       },
     ]);
 
-    // 5) Build map _id → latestMessage, có guard media null
     const latestMessageMap = new Map<string, any>();
     for (const msg of messages) {
       if (msg.isDeleted) {
         msg.content = 'Tin nhắn đã bị thu hồi';
         msg.media = null;
       }
-      // chỉ check type khi media khác null
       if (msg.media?.type === 'image') {
         msg.content = 'Hình ảnh';
       }
       latestMessageMap.set(msg._id, msg);
     }
 
-    // 6) Ghép room với latestMessage, giữ createdAt để sort
-    const roomsWithMessages = validRooms.map((room) => ({
+    const roomsWithMessages = rooms.map((room) => ({
       _id: room._id,
       name: room.name,
       theme: room.theme,
@@ -189,10 +252,9 @@ export class RoomService {
       latestMessage: latestMessageMap.get(room._id.toString()) ?? null,
     }));
 
-    // 7) Sort theo thời gian (tạo room vs tin nhắn mới nhất)
     roomsWithMessages.sort((a, b) => {
-      const aRoomTime = a.createdAt.getTime();
-      const bRoomTime = b.createdAt.getTime();
+      const aRoomTime = a.createdAt?.getTime?.() ?? 0;
+      const bRoomTime = b.createdAt?.getTime?.() ?? 0;
       const aMsgTime = a.latestMessage?.createdAt
         ? new Date(a.latestMessage.createdAt).getTime()
         : 0;
@@ -202,7 +264,6 @@ export class RoomService {
       return Math.max(bRoomTime, bMsgTime) - Math.max(aRoomTime, aMsgTime);
     });
 
-    // 8) Trả về cấu trúc ban đầu, bỏ createdAt tạm
     return roomsWithMessages.map(({ createdAt, ...rest }) => rest);
   }
 
