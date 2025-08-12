@@ -398,6 +398,33 @@ export class PostService {
       currentUser,
       baseMatch,
     );
+
+    const musicLookup: PipelineStage[] = [
+      {
+        $lookup: {
+          from: 'musics', // tên collection trong Mongo
+          localField: 'music.musicId',
+          foreignField: '_id',
+          as: 'musicInfo',
+        },
+      },
+      { $unwind: { path: '$musicInfo', preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          music: {
+            musicId: '$music.musicId',
+            timeStart: '$music.timeStart',
+            timeEnd: '$music.timeEnd',
+            song: '$musicInfo.song',
+            link: '$musicInfo.link',
+            author: '$musicInfo.author',
+            coverImg: '$musicInfo.coverImg',
+          },
+        },
+      },
+      { $project: { musicInfo: 0 } }, // bỏ mảng tạm
+    ];
+
     const recPipeline =
       recommendationConfig.enableRecommendation && userHandleName
         ? this.commonService.buildRecommendationStages(
@@ -428,6 +455,7 @@ export class PostService {
         isBookmarked: 1,
         isFollow: 1,
         user: 1,
+        music: 1,
       },
     };
 
@@ -461,6 +489,17 @@ export class PostService {
         handleName: d.user.handleName,
         profilePic: d.user.profilePic,
       },
+      music: d.music
+        ? {
+            musicId: d.music.musicId?.toString(),
+            timeStart: d.music.timeStart,
+            timeEnd: d.music.timeEnd,
+            song: d.music.song,
+            link: d.music.link,
+            author: d.music.author,
+            coverImg: d.music.coverImg,
+          }
+        : null,
     }));
 
     return runPagedAggregation(postItems, page, limit);
