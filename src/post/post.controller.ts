@@ -20,6 +20,7 @@ import { SearchDto } from './dto/search.dto';
 import { UserService } from 'src/user/user.service';
 import { DeletePostsDto } from './dto/delete-posts.dto';
 import { RecommendationConfig } from 'src/admin/helpers/helpers.service';
+import { Types } from 'mongoose';
 
 @Controller('posts')
 @UseGuards(JwtRefreshAuthGuard)
@@ -73,7 +74,6 @@ export class PostController {
     return this.postService.findRecommendedPostsWithMedia(userId, page, limit);
   }
 
-
   @Get('get-all-reel-media')
   async getAllReelMedia(
     @CurrentUser('sub') userId: string,
@@ -109,6 +109,31 @@ export class PostController {
       default:
         return this.postService.findAllWithMedia(userId, page, limit);
     }
+  }
+  
+  @Get(':postId/similar')
+  async getSimilarPosts(
+    @Param('postId') postId: string,
+    @CurrentUser('sub') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ): Promise<{
+    items: any[];
+    pagination: {
+      currentPage: number;
+      totalPages: number;
+      totalCount: number;
+      limit: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
+  }> {
+    // Validate postId
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new BadRequestException('Invalid post ID');
+    }
+
+    return this.postService.findSimilarPosts(postId, userId, page, limit);
   }
 
   @Get('custom-recommendation')
@@ -231,18 +256,18 @@ export class PostController {
   @Get('user/:targetUserId/all')
   async getOtherUserContent(
     @Param('targetUserId') targetUserId: string,
-    @CurrentUser('sub') viewerId:        string,
-    @Query('page')      page?:           string,
-    @Query('limit')     limit?:          string,
-    @Query('type')      type?:           'posts' | 'reels',
+    @CurrentUser('sub') viewerId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('type') type?: 'posts' | 'reels',
   ) {
-    const pageNum  = parseInt(page  || '1',  10) || 1;
+    const pageNum = parseInt(page || '1', 10) || 1;
     const limitNum = parseInt(limit || '20', 10) || 20;
 
-    if (pageNum  < 1)               throw new BadRequestException('Page must be ≥ 1');
+    if (pageNum < 1) throw new BadRequestException('Page must be ≥ 1');
     if (limitNum < 1 || limitNum > 50)
       throw new BadRequestException('Limit must be between 1 and 50');
-    if (type && !['posts','reels'].includes(type))
+    if (type && !['posts', 'reels'].includes(type))
       throw new BadRequestException('Type must be "posts" or "reels"');
 
     return this.postService.getOtherUserContent(
@@ -253,7 +278,6 @@ export class PostController {
       type,
     );
   }
-
 
   @Post('search')
   async searchByCaption(
