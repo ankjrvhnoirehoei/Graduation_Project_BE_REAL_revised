@@ -243,9 +243,6 @@ export class PostService {
     // Sort by similarity score
     const sortStages = this.commonService.buildSimilaritySortStages();
 
-    // Pagination
-    const skip = (page - 1) * limit;
-
     // Get total count for pagination
     const countPipeline = [
       ...basePipeline,
@@ -254,39 +251,61 @@ export class PostService {
     ];
     
     const countResult = await this.postModel.aggregate(countPipeline).exec();
-    const total = countResult[0]?.total || 0;
+    const totalSimilarPosts = countResult[0]?.total || 0;
 
-    // Get similar posts
-    const similarPostsPipeline = [
-      ...basePipeline,
-      ...similarityStages,
-      ...musicLookup,
-      ...sortStages,
-      { $skip: skip },
-      { $limit: limit },
-      {
-        $project: {
-          similarityScore: 0,
-          similarityMeta: 0,
+    let allPosts: any[] = [];
+    
+    if (page === 1) {
+      const referencePostPipeline = [
+        { $match: { _id: referencePostId } },
+        ...this.commonService.buildBasePipeline(currentUser, {}),
+        ...musicLookup
+      ];
+
+      const referencePostWithDetails = await this.postModel.aggregate(referencePostPipeline).exec();
+      
+      const similarPostsLimit = Math.max(limit - 1, 0);
+      const similarPostsPipeline = [
+        ...basePipeline,
+        ...similarityStages,
+        ...musicLookup,
+        ...sortStages,
+        { $limit: similarPostsLimit },
+        {
+          $project: {
+            similarityScore: 0,
+            similarityMeta: 0,
+          }
         }
-      }
-    ];
+      ];
 
-    const similarPosts = await this.postModel.aggregate(similarPostsPipeline).exec();
+      const similarPosts = await this.postModel.aggregate(similarPostsPipeline).exec();
 
-    // reference post with full details to put at the top
-    const referencePostPipeline = [
-      { $match: { _id: referencePostId } },
-      ...this.commonService.buildBasePipeline(currentUser, {}),
-      ...musicLookup
-    ];
+      allPosts = [
+        ...(referencePostWithDetails.length > 0 ? referencePostWithDetails : []),
+        ...similarPosts
+      ];
+    } else {
+      const skip = (page - 1) * limit - 1;
+      
+      const similarPostsPipeline = [
+        ...basePipeline,
+        ...similarityStages,
+        ...musicLookup,
+        ...sortStages,
+        { $skip: skip },
+        { $limit: limit },
+        {
+          $project: {
+            similarityScore: 0,
+            similarityMeta: 0,
+          }
+        }
+      ];
 
-    const referencePostWithDetails = await this.postModel.aggregate(referencePostPipeline).exec();
-
-    const allPosts = [
-      ...(referencePostWithDetails.length > 0 ? referencePostWithDetails : []),
-      ...similarPosts
-    ];
+      const similarPosts = await this.postModel.aggregate(similarPostsPipeline).exec();
+      allPosts = similarPosts;
+    }
 
     const postItems: PostItem[] = allPosts.map((d) => ({
       _id: d._id.toString(),
@@ -323,21 +342,23 @@ export class PostService {
         : null,
     }));
 
-    const totalPages = Math.max(Math.ceil((total + 1) / limit), 1);
+    // Calculate pagination considering reference post takes 1 slot in page 1
+    const totalItems = totalSimilarPosts + 1; // +1 for reference post
+    const totalPages = Math.max(Math.ceil(totalItems / limit), 1);
 
     return {
       items: postItems,
       pagination: {
         currentPage: page,
         totalPages,
-        totalCount: total + 1,
+        totalCount: totalItems,
         limit,
         hasNextPage: page < totalPages,
         hasPrevPage: page > 1,
       },
     };  
   }
-
+  
   async findRecommendedPostsWithMedia(
     userId: string,
     page = 1,
