@@ -332,16 +332,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeMessage('callCancelled')
-  handleCallCancelled(
-    @MessageBody() payload: { roomId: string; senderId: string },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { roomId, senderId } = payload;
-    console.log(`📞 Call cancelled by ${senderId} in room ${roomId}`);
-    client.to(roomId).emit('callCancelled', { senderId });
-  }
-
   @SubscribeMessage('deleteMessage')
   async handleDeleteMessage(
     @MessageBody()
