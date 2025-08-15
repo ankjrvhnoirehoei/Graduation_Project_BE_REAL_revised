@@ -27,6 +27,23 @@ export interface RecommendationConfig {
   };
 }
 
+export interface SimilarityConfig {
+  enableSimilarity: boolean;
+  weights: {
+    sameAuthor: number;        // Posts from the same author
+    sameMusic: number;         // Posts with same music
+    similarCaption: number;    // Posts with similar keywords in caption
+    sameLocation: number;      // Posts from same location
+    similarEngagement: number; // Posts with similar engagement levels
+    sameType: number;          // Same type (post/reel)
+    followedUsersBonus: number;// Bonus for posts from followed users
+    recencyBonus: number;      // Bonus for recent posts
+  };
+  similarity: {
+    captionKeywordThreshold: number; // Minimum matching keywords
+    engagementTolerancePercent: number; // +/- percentage for similar engagement
+  };
+}
 
 @Injectable()
 export class CommonServices {
@@ -705,8 +722,22 @@ export class CommonServices {
       {
         $lookup: {
           from: 'musics',
-          localField: 'music.musicId',
-          foreignField: '_id',
+          let: { 
+            musicId: '$music.musicId',
+            directMusicId: '$musicID'
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: ['$_id', '$$musicId'] },
+                    { $eq: ['$_id', '$$directMusicId'] }
+                  ]
+                }
+              }
+            }
+          ],
           as: 'musicInfo',
         },
       },
@@ -801,6 +832,7 @@ export class CommonServices {
           likeCount: 1,
           commentCount: 1,
           music: 1,
+          musicID: 1,
           'musicInfo.song': 1,
           'musicInfo.link': 1,
           'musicInfo.coverImg': 1,
@@ -1094,6 +1126,258 @@ export class CommonServices {
     ];
   }
 
+  public buildSimilarityStages(
+    referencePost: any,
+    currentUser: Types.ObjectId,
+    config: SimilarityConfig
+  ): PipelineStage[] {
+    if (!config.enableSimilarity) {
+      return [];
+    }
+
+    // Extract keywords from reference post caption
+    const captionKeywords = (referencePost.caption || '')
+      .toString()
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 3)
+      .slice(0, 10)
+      .map(w => w.toLowerCase());
+
+    // Calculate engagement range for similarity
+    const refEngagement = (referencePost.likeCount || 0) + (referencePost.commentCount || 0) * 2;
+    const engagementTolerance = refEngagement * (config.similarity.engagementTolerancePercent / 100);
+    const minEngagement = Math.max(0, refEngagement - engagementTolerance);
+    const maxEngagement = refEngagement + engagementTolerance;
+
+    return [
+      {
+        $addFields: {
+          similarityScore: {
+            $add: [
+              // Same author bonus (but lower weight to encourage diversity)
+              {
+                $multiply: [
+                  config.weights.sameAuthor,
+                  {
+                    $cond: [
+                      { $eq: ['$userID', new Types.ObjectId(referencePost.userID)] },
+                      1,
+                      0
+                    ]
+                  }
+                ]
+              },
+
+              // Same music bonus
+              {
+                $multiply: [
+                  config.weights.sameMusic,
+                  {
+                    $cond: [
+                      {
+                        $and: [
+                          { $ne: ['$music.musicId', null] },
+                          { $ne: [referencePost.music?.musicId, null] },
+                          { $eq: ['$music.musicId', new Types.ObjectId(referencePost.music?.musicId || '000000000000000000000000')] }
+                        ]
+                      },
+                      1,
+                      0
+                    ]
+                  }
+                ]
+              },
+
+              // Similar caption keywords
+              {
+                $multiply: [
+                  config.weights.similarCaption,
+                  {
+                    $cond: [
+                      { $gt: [{ $size: { $ifNull: [captionKeywords, []] } }, 0] },
+                      {
+                        $let: {
+                          vars: {
+                            matchedCount: {
+                              $size: {
+                                $ifNull: [
+                                  {
+                                    $filter: {
+                                      input: captionKeywords,
+                                      as: 'kw',
+                                      cond: {
+                                        $gt: [
+                                          {
+                                            $indexOfCP: [
+                                              { $toLower: { $ifNull: ['$caption', ''] } },
+                                              { $toLower: '$$kw' }
+                                            ]
+                                          },
+                                          -1
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  []
+                                ]
+                              }
+                            }
+                          },
+                          in: {
+                            $divide: [
+                              '$$matchedCount',
+                              Math.max(captionKeywords.length, 1)
+                            ]
+                          }
+                        }
+                      },
+                      0
+                    ]
+                  }
+                ]
+              },
+
+              // Same location bonus
+              {
+                $multiply: [
+                  config.weights.sameLocation,
+                  {
+                    $cond: [
+                      {
+                        $and: [
+                          { $ne: ['$location', null] },
+                          { $ne: [referencePost.location, null] },
+                          { $eq: ['$location', referencePost.location] }
+                        ]
+                      },
+                      1,
+                      0
+                    ]
+                  }
+                ]
+              },
+
+              // Similar engagement level
+              {
+                $multiply: [
+                  config.weights.similarEngagement,
+                  {
+                    $let: {
+                      vars: {
+                        postEngagement: {
+                          $add: [
+                            { $ifNull: ['$likeCount', 0] },
+                            { $multiply: [{ $ifNull: ['$commentCount', 0] }, 2] }
+                          ]
+                        }
+                      },
+                      in: {
+                        $cond: [
+                          {
+                            $and: [
+                              { $gte: ['$$postEngagement', minEngagement] },
+                              { $lte: ['$$postEngagement', maxEngagement] }
+                            ]
+                          },
+                          1,
+                          0
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+
+              // Same type bonus
+              {
+                $multiply: [
+                  config.weights.sameType,
+                  {
+                    $cond: [
+                      { $eq: ['$type', referencePost.type] },
+                      1,
+                      0
+                    ]
+                  }
+                ]
+              },
+
+              // Followed users bonus
+              {
+                $multiply: [
+                  config.weights.followedUsersBonus,
+                  {
+                    $cond: [
+                      { $eq: ['$isFollow', true] },
+                      1,
+                      0
+                    ]
+                  }
+                ]
+              },
+
+              // Recency bonus (posts from last 30 days)
+              {
+                $multiply: [
+                  config.weights.recencyBonus,
+                  {
+                    $let: {
+                      vars: {
+                        daysDiff: {
+                          $divide: [
+                            { $subtract: [new Date(), '$createdAt'] },
+                            86400000
+                          ]
+                        }
+                      },
+                      in: {
+                        $cond: [
+                          { $lte: ['$$daysDiff', 7] }, 1.5,
+                          {
+                            $cond: [
+                              { $lte: ['$$daysDiff', 30] }, 1,
+                              0.5
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+
+              // Add some randomness for diversity
+              { $multiply: [{ $rand: {} }, 0.5] }
+            ]
+          },
+
+          // Add metadata for debugging
+          similarityMeta: {
+            isSameAuthor: { $eq: ['$userID', new Types.ObjectId(referencePost.userID)] },
+            hasSameMusic: {
+              $and: [
+                { $ne: ['$music.musicId', null] },
+                { $ne: [referencePost.music?.musicId, null] },
+                { $eq: ['$music.musicId', new Types.ObjectId(referencePost.music?.musicId || '000000000000000000000000')] }
+              ]
+            },
+            isSameType: { $eq: ['$type', referencePost.type] },
+            isSameLocation: {
+              $and: [
+                { $ne: ['$location', null] },
+                { $ne: [referencePost.location, null] },
+                { $eq: ['$location', referencePost.location] }
+              ]
+            },
+            isFromFollowed: { $eq: ['$isFollow', true] }
+          }
+        }
+      }
+    ];
+  }
+
   // recommendation pipeline
   public buildRecommendationSortStages(config: RecommendationConfig): PipelineStage[] {
     if (!config.enableRecommendation) {
@@ -1244,4 +1528,37 @@ export class CommonServices {
       },
     };
   }  
+
+  // Add this method to get similarity sort stages
+  public buildSimilaritySortStages(): PipelineStage[] {
+    return [
+      {
+        $sort: {
+          similarityScore: -1,
+          createdAt: -1
+        }
+      }
+    ];
+  }
+
+  // Add this method to get default similarity config
+  public getDefaultSimilarityConfig(): SimilarityConfig {
+    return {
+      enableSimilarity: true,
+      weights: {
+        sameAuthor: 3,         // Lower weight to encourage diversity
+        sameMusic: 8,          // High weight for same music
+        similarCaption: 6,     // Medium-high for similar keywords
+        sameLocation: 4,       // Medium for same location  
+        similarEngagement: 5,  // Medium for similar engagement
+        sameType: 7,           // High for same type
+        followedUsersBonus: 2, // Small bonus for followed users
+        recencyBonus: 3,       // Small bonus for recent posts
+      },
+      similarity: {
+        captionKeywordThreshold: 2,
+        engagementTolerancePercent: 50, // +/- 50% engagement range
+      }
+    };
+  }
 }

@@ -155,193 +155,6 @@ export class PostService {
     return post.type as 'post' | 'reel' | 'music';
   }
 
-  private buildUserMediaPipeline(currentUser: Types.ObjectId): PipelineStage[] {
-    return [
-      // attach media[]
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        },
-      },
-
-      // attach user[]
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-
-      // compute likeCount
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes',
-        },
-      },
-      {
-        $addFields: {
-          likeCount: { $size: '$likes' },
-        },
-      },
-
-      // compute isLike for currentUser
-      {
-        $lookup: {
-          from: 'postlikes',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', currentUser] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'userLikeEntry',
-        },
-      },
-      {
-        $addFields: {
-          isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] },
-        },
-      },
-
-      // attach music (if any)
-      {
-        $lookup: {
-          from: 'music',
-          localField: 'musicID',
-          foreignField: '_id',
-          as: 'music',
-        },
-      },
-      {
-        $unwind: {
-          path: '$music',
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-
-      // load this user's non‑deleted playlists
-      {
-        $lookup: {
-          from: 'bookmarkplaylists',
-          let: { uid: currentUser },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$userID', '$$uid'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-            { $project: { _id: 1 } },
-          ],
-          as: 'myPlaylists',
-        },
-      },
-
-      // count non‑deleted comments
-      {
-        $lookup: {
-          from: 'comments',
-          let: { postID: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postID'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'comments',
-        },
-      },
-      {
-        $addFields: {
-          commentCount: { $size: '$comments' },
-        },
-      },
-
-      // check bookmark‐item in those playlists
-      {
-        $lookup: {
-          from: 'bookmarkitems',
-          let: { postId: '$_id', pls: '$myPlaylists._id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $in: ['$playlistID', '$$pls'] },
-                    { $eq: ['$itemID', '$$postId'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-            { $limit: 1 },
-          ],
-          as: 'bookmarkEntry',
-        },
-      },
-      {
-        $addFields: {
-          isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] },
-        },
-      },
-
-      // final shape
-      {
-        $project: {
-          _id: 1,
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          location: 1,
-          isArchived: 1,
-          viewCount: 1,
-          share: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          media: 1,
-          isLike: 1,
-          likeCount: 1,
-          commentCount: 1,
-          music: 1,
-          'user._id': 1,
-          'user.handleName': 1,
-          'user.username': 1,
-          'user.profilePic': 1,
-          isBookmarked: 1,
-        },
-      },
-    ];
-  }
-
   async findAllWithMedia(userId: string, page = 1, limit = 20) {
     return this.commonService.runPagedAggregation(
       { _userId: userId, type: { $in: ['post', 'reel'] } },
@@ -370,6 +183,160 @@ export class PostService {
   //     recommendationConfig,
   //   );
   // }
+
+  async findSimilarPosts(
+    postId: string,
+    userId: string,
+    page = 1,
+    limit = 10
+  ): Promise<PagedResult> {
+    const currentUser = new Types.ObjectId(userId);
+    const referencePostId = new Types.ObjectId(postId);
+    
+    const referencePost = await this.postModel.findById(referencePostId).lean();
+    if (!referencePost) {
+      throw new NotFoundException('Reference post not found');
+    }
+
+    const similarityConfig = this.commonService.getDefaultSimilarityConfig();
+
+    const baseMatch = {
+      _id: { $ne: referencePostId },
+      type: { $in: ['post', 'reel'] }
+    };
+
+    const basePipeline = this.commonService.buildBasePipeline(currentUser, baseMatch);
+    
+    // Add similarity scoring
+    const similarityStages = this.commonService.buildSimilarityStages(
+      referencePost,
+      currentUser,
+      similarityConfig
+    );
+
+    const musicLookup: PipelineStage[] = [
+      {
+        $lookup: {
+          from: 'musics',
+          localField: 'music.musicId',
+          foreignField: '_id',
+          as: 'musicInfo',
+        },
+      },
+      { $unwind: { path: '$musicInfo', preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          music: {
+            musicId: '$music.musicId',
+            timeStart: '$music.timeStart',
+            timeEnd: '$music.timeEnd',
+            song: '$musicInfo.song',
+            link: '$musicInfo.link',
+            author: '$musicInfo.author',
+            coverImg: '$musicInfo.coverImg',
+          },
+        },
+      },
+      { $project: { musicInfo: 0 } },
+    ];
+
+    // Sort by similarity score
+    const sortStages = this.commonService.buildSimilaritySortStages();
+
+    // Pagination
+    const skip = (page - 1) * limit;
+
+    // Get total count for pagination
+    const countPipeline = [
+      ...basePipeline,
+      ...similarityStages,
+      { $count: 'total' }
+    ];
+    
+    const countResult = await this.postModel.aggregate(countPipeline).exec();
+    const total = countResult[0]?.total || 0;
+
+    // Get similar posts
+    const similarPostsPipeline = [
+      ...basePipeline,
+      ...similarityStages,
+      ...musicLookup,
+      ...sortStages,
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $project: {
+          similarityScore: 0,
+          similarityMeta: 0,
+        }
+      }
+    ];
+
+    const similarPosts = await this.postModel.aggregate(similarPostsPipeline).exec();
+
+    // reference post with full details to put at the top
+    const referencePostPipeline = [
+      { $match: { _id: referencePostId } },
+      ...this.commonService.buildBasePipeline(currentUser, {}),
+      ...musicLookup
+    ];
+
+    const referencePostWithDetails = await this.postModel.aggregate(referencePostPipeline).exec();
+
+    const allPosts = [
+      ...(referencePostWithDetails.length > 0 ? referencePostWithDetails : []),
+      ...similarPosts
+    ];
+
+    const postItems: PostItem[] = allPosts.map((d) => ({
+      _id: d._id.toString(),
+      userID: d.userID.toString(),
+      type: d.type,
+      caption: d.caption,
+      isFlagged: d.isFlagged,
+      nsfw: d.nsfw,
+      isEnable: d.isEnable,
+      viewCount: d.viewCount,
+      share: d.share,
+      createdAt: (d.createdAt as Date).toISOString(),
+      updatedAt: (d.updatedAt as Date).toISOString(),
+      media: d.media,
+      likeCount: d.likeCount,
+      commentCount: d.commentCount,
+      isLike: d.isLike,
+      isBookmarked: d.isBookmarked,
+      isFollow: d.isFollow,
+      user: {
+        _id: d.user._id.toString(),
+        username: d.user.username,
+        handleName: d.user.handleName,
+        profilePic: d.user.profilePic,
+      },
+      music: d.music,
+      musicInfo: d.music
+        ? {
+            song: d.music.song,
+            link: d.music.link,
+            author: d.music.author,
+            coverImg: d.music.coverImg,
+          }
+        : null,
+    }));
+
+    const totalPages = Math.max(Math.ceil((total + 1) / limit), 1);
+
+    return {
+      items: postItems,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount: total + 1,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };  
+  }
 
   async findRecommendedPostsWithMedia(
     userId: string,
@@ -691,76 +658,6 @@ export class PostService {
     return post;
   }
 
-  async getUserPostsWithMedia(
-    userId: string,
-    page: number = 1,
-    limit: number = 20,
-  ): Promise<{ total: number; items: any[] }> {
-    if (!Types.ObjectId.isValid(userId)) {
-      throw new BadRequestException('Invalid user ID format');
-    }
-    const objectUserId = new Types.ObjectId(userId);
-    const skip = (page - 1) * limit;
-
-    const total = await this.postModel.countDocuments({
-      userID: objectUserId,
-      type: 'post',
-    });
-
-    const items = await this.postModel
-      .aggregate([
-        {
-          $match: {
-            userID: objectUserId,
-            type: 'post',
-          },
-        },
-        { $sort: { createdAt: -1 } },
-        { $skip: skip },
-        { $limit: limit },
-
-        ...this.buildUserMediaPipeline(objectUserId),
-      ])
-      .exec();
-
-    return { total, items };
-  }
-
-  async getUserReelsWithMedia(
-    userId: string,
-    page: number = 1,
-    limit: number = 20,
-  ): Promise<{ total: number; items: any[] }> {
-    if (!Types.ObjectId.isValid(userId)) {
-      throw new BadRequestException('Invalid user ID format');
-    }
-    const objectUserId = new Types.ObjectId(userId);
-    const skip = (page - 1) * limit;
-
-    const total = await this.postModel.countDocuments({
-      userID: objectUserId,
-      type: 'reel',
-    });
-
-    const items = await this.postModel
-      .aggregate([
-        {
-          $match: {
-            userID: objectUserId,
-            type: 'reel',
-          },
-        },
-        { $sort: { createdAt: -1 } },
-        { $skip: skip },
-        { $limit: limit },
-
-        ...this.buildUserMediaPipeline(objectUserId),
-      ])
-      .exec();
-
-    return { total, items };
-  }
-
   private buildCaptionSearchFilter(keyword: string): Record<string, any> {
     const keywordLower = keyword.toLowerCase();
     const tokens = keywordLower.split(/\s+/).filter((w) => w.length > 0);
@@ -850,385 +747,6 @@ export class PostService {
         pagination: reelsResult.pagination,
       },
     };
-  }
-
-  /**
-   * Fetches another user's posts/reels, with full lookups for
-   * isFollow, media, bookmarks, likes, comments, music, etc.
-   */
-  async getOtherUserContent(
-    viewerId: string,
-    targetUserId: string,
-    page: number = 1,
-    limit: number = 20,
-    type?: 'posts' | 'reels',
-  ): Promise<any> {
-    const results: any = { message: 'Content retrieved successfully' };
-
-    if (!type || type === 'posts') {
-      const posts = await this.fetchByType(
-        viewerId,
-        targetUserId,
-        'post',
-        page,
-        limit,
-      );
-      results.posts = {
-        items: posts.items,
-        pagination: {
-          currentPage: page,
-          totalPages: Math.ceil(posts.total / limit),
-          totalCount: posts.total,
-          limit,
-          hasNextPage: page < Math.ceil(posts.total / limit),
-          hasPrevPage: page > 1,
-        },
-      };
-    }
-
-    if (!type || type === 'reels') {
-      const reels = await this.fetchByType(
-        viewerId,
-        targetUserId,
-        'reel',
-        page,
-        limit,
-      );
-      results.reels = {
-        items: reels.items,
-        pagination: {
-          currentPage: page,
-          totalPages: Math.ceil(reels.total / limit),
-          totalCount: reels.total,
-          limit,
-          hasNextPage: page < Math.ceil(reels.total / limit),
-          hasPrevPage: page > 1,
-        },
-      };
-    }
-
-    return results;
-  }
-
-  private async fetchByType(
-    viewerId: string,
-    targetUserId: string,
-    docType: 'post' | 'reel',
-    page: number,
-    limit: number,
-  ): Promise<{ total: number; items: any[] }> {
-    if (
-      !Types.ObjectId.isValid(viewerId) ||
-      !Types.ObjectId.isValid(targetUserId)
-    ) {
-      throw new BadRequestException('Invalid user ID format.');
-    }
-    const viewerObj = new Types.ObjectId(viewerId);
-    const targetObj = new Types.ObjectId(targetUserId);
-    const skip = (page - 1) * limit;
-
-    // total count for pagination
-    const total = await this.postModel.countDocuments({
-      userID: targetObj,
-      type: docType,
-      isEnable: true,
-      nsfw: false,
-    });
-
-    const pipeline: PipelineStage[] = [
-      // 1) Only the target user's documents
-      {
-        $match: {
-          userID: targetObj,
-          type: docType,
-          isEnable: true,
-          nsfw: false,
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      { $skip: skip },
-      { $limit: limit },
-
-      // 2) Compute isFollow
-      {
-        $lookup: {
-          from: 'relations',
-          let: { pu: '$userID', cu: viewerObj },
-          pipeline: [
-            {
-              $addFields: {
-                pair: {
-                  $cond: [
-                    { $lt: ['$$cu', '$$pu'] },
-                    { u1: '$$cu', u2: '$$pu', userOneIsCurrent: true },
-                    { u1: '$$pu', u2: '$$cu', userOneIsCurrent: false },
-                  ],
-                },
-              },
-            },
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$userOneID', '$pair.u1'] },
-                    { $eq: ['$userTwoID', '$pair.u2'] },
-                  ],
-                },
-              },
-            },
-            {
-              $project: {
-                _id: 0,
-                relation: 1,
-                userOneIsCurrent: '$pair.userOneIsCurrent',
-              },
-            },
-          ],
-          as: 'relationLookup',
-        },
-      },
-      {
-        $addFields: {
-          isFollow: {
-            $let: {
-              vars: { rel: { $arrayElemAt: ['$relationLookup', 0] } },
-              in: {
-                $cond: [
-                  { $eq: ['$$rel', null] },
-                  false,
-                  {
-                    $switch: {
-                      branches: [
-                        {
-                          case: { $eq: ['$$rel.userOneIsCurrent', true] },
-                          then: {
-                            $eq: [
-                              {
-                                $arrayElemAt: [
-                                  { $split: ['$$rel.relation', '_'] },
-                                  0,
-                                ],
-                              },
-                              'FOLLOW',
-                            ],
-                          },
-                        },
-                        {
-                          case: { $eq: ['$$rel.userOneIsCurrent', false] },
-                          then: {
-                            $eq: [
-                              {
-                                $arrayElemAt: [
-                                  { $split: ['$$rel.relation', '_'] },
-                                  1,
-                                ],
-                              },
-                              'FOLLOW',
-                            ],
-                          },
-                        },
-                      ],
-                      default: false,
-                    },
-                  },
-                ],
-              },
-            },
-          },
-        },
-      },
-      { $project: { relationLookup: 0 } },
-
-      // 3) Exclude hidden posts
-      {
-        $lookup: {
-          from: 'hiddenposts',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'hidden',
-        },
-      },
-      {
-        $match: {
-          $expr: {
-            $not: { $in: [viewerObj, '$hidden.userId'] },
-          },
-        },
-      },
-
-      // 4) Media
-      {
-        $lookup: {
-          from: 'media',
-          localField: '_id',
-          foreignField: 'postID',
-          as: 'media',
-        },
-      },
-
-      // 5) Author profile
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userID',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-
-      // 6) likeCount
-      {
-        $lookup: {
-          from: 'postlikes',
-          localField: '_id',
-          foreignField: 'postId',
-          as: 'likes',
-        },
-      },
-      { $addFields: { likeCount: { $size: '$likes' } } },
-
-      // 7) isLike
-      {
-        $lookup: {
-          from: 'postlikes',
-          let: { postId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postId', '$$postId'] },
-                    { $eq: ['$userId', viewerObj] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'userLikeEntry',
-        },
-      },
-      { $addFields: { isLike: { $gt: [{ $size: '$userLikeEntry' }, 0] } } },
-
-      // 8) commentCount
-      {
-        $lookup: {
-          from: 'comments',
-          let: { postID: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$postID', '$$postID'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-          ],
-          as: 'comments',
-        },
-      },
-      { $addFields: { commentCount: { $size: '$comments' } } },
-
-      // 9) Music info
-      {
-        $lookup: {
-          from: 'musics',
-          localField: 'music.musicId',
-          foreignField: '_id',
-          as: 'musicInfo',
-        },
-      },
-      { $unwind: { path: '$musicInfo', preserveNullAndEmptyArrays: true } },
-
-      // 10) Bookmark
-      {
-        $lookup: {
-          from: 'bookmarkplaylists',
-          let: { uid: viewerObj },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$userID', '$$uid'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-            { $project: { _id: 1 } },
-          ],
-          as: 'myPlaylists',
-        },
-      },
-      {
-        $lookup: {
-          from: 'bookmarkitems',
-          let: { postId: '$_id', pls: '$myPlaylists._id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $in: ['$playlistID', '$$pls'] },
-                    { $eq: ['$itemID', '$$postId'] },
-                    { $eq: ['$isDeleted', false] },
-                  ],
-                },
-              },
-            },
-            { $limit: 1 },
-          ],
-          as: 'bookmarkEntry',
-        },
-      },
-      {
-        $addFields: { isBookmarked: { $gt: [{ $size: '$bookmarkEntry' }, 0] } },
-      },
-
-      // 11) Final projection
-      {
-        $project: {
-          _id: 1,
-          userID: 1,
-          type: 1,
-          caption: 1,
-          isFlagged: 1,
-          nsfw: 1,
-          isEnable: 1,
-          location: 1,
-          isArchived: 1,
-          viewCount: 1,
-          share: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          media: 1,
-          user: {
-            _id: 1,
-            handleName: 1,
-            username: 1,
-            profilePic: 1,
-          },
-          isFollow: 1,
-          isLike: 1,
-          likeCount: 1,
-          commentCount: 1,
-          musicInfo: {
-            song: 1,
-            link: 1,
-            coverImg: 1,
-            author: 1,
-          },
-          isBookmarked: 1,
-        },
-      },
-    ];
-
-    const items = await this.postModel.aggregate(pipeline).exec();
-    return { total, items };
   }
 
   async getAllReelsForUser(targetUserId: string): Promise<any[]> {
@@ -1372,6 +890,117 @@ export class PostService {
     ];
 
     return this.postModel.aggregate(pipeline).exec();
+  }
+
+  async getUserPostsWithMedia(
+    userId: string,
+    page: number = 1,
+    limit: number = 20,
+  ): Promise<{ total: number; items: any[] }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID format');
+    }
+
+    const matchFilter = {
+      _userId: userId,
+      userID: new Types.ObjectId(userId),
+      type: 'post',
+    };
+
+    const result = await this.commonService.runPagedAggregation(
+      matchFilter,
+      page,
+      limit,
+    );
+
+    return {
+      total: result.pagination.totalCount,
+      items: result.items,
+    };
+  }
+
+  async getUserReelsWithMedia(
+    userId: string,
+    page: number = 1,
+    limit: number = 20,
+  ): Promise<{ total: number; items: any[] }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID format');
+    }
+
+    const matchFilter = {
+      _userId: userId,
+      userID: new Types.ObjectId(userId),
+      type: 'reel',
+    };
+
+    const result = await this.commonService.runPagedAggregation(
+      matchFilter,
+      page,
+      limit,
+    );
+
+    return {
+      total: result.pagination.totalCount,
+      items: result.items,
+    };
+  }
+
+  async getOtherUserContent(
+    viewerId: string,
+    targetUserId: string,
+    page: number = 1,
+    limit: number = 20,
+    type?: 'posts' | 'reels',
+  ): Promise<any> {
+    if (
+      !Types.ObjectId.isValid(viewerId) ||
+      !Types.ObjectId.isValid(targetUserId)
+    ) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+
+    const results: any = { message: 'Content retrieved successfully' };
+
+    if (!type || type === 'posts') {
+      const matchFilter = {
+        _userId: viewerId, // Current user
+        userID: new Types.ObjectId(targetUserId), // Target user
+        type: 'post',
+      };
+
+      const posts = await this.commonService.runPagedAggregation(
+        matchFilter,
+        page,
+        limit,
+      );
+
+      results.posts = {
+        items: posts.items,
+        pagination: posts.pagination,
+      };
+    }
+
+    if (!type || type === 'reels') {
+      const matchFilter = {
+        _userId: viewerId, // Current user
+        userID: new Types.ObjectId(targetUserId), // Target user
+        type: 'reel',
+      };
+
+      const reels = await this.commonService.runPagedAggregation(
+        matchFilter,
+        page,
+        limit,
+      );
+
+      results.reels = {
+        items: reels.items,
+        pagination: reels.pagination,
+      };
+    }
+
+    return results;
   }
 
   async disablePost(postId: string): Promise<Boolean> {
