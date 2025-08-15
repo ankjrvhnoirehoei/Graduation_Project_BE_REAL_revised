@@ -52,6 +52,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  @SubscribeMessage('joinRoom')
+  handleJoinRoom(
+    @MessageBody() payload: { roomId: string; userId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { roomId, userId } = payload;
+    client.data.userId = userId;
+    this.onlineUsers.set(userId, client.id);
+    client.join(roomId.toString());
+    console.log(`📥 User ${userId} (${client.id}) joined room: ${roomId}`);
+  }
+
   @SubscribeMessage('leaveRoom')
   handleLeaveRoom(
     @MessageBody('roomId') roomId: string,
@@ -187,192 +199,51 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeMessage('callAnswered')
-  async handleCallAnswered(
-    @MessageBody()
-    payload: { roomId: string; calleeId: string; callerId: string },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { roomId, calleeId, callerId } = payload;
-    
-    console.log(`📞 Call answered by ${calleeId} for caller ${callerId} in room ${roomId}`);
-    
-    // Notify the caller that the call was answered
-    this.server.to(roomId).emit('callAnswered', {
-      roomId,
-      calleeId,
-      callerId,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Also emit to caller's personal room in case they're not in the chat room
-    this.server.to(`user-${callerId}`).emit('callAnswered', {
-      roomId,
-      calleeId,
-      callerId,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  @SubscribeMessage('callDeclined')
-  async handleCallDeclined(
-    @MessageBody()
-    payload: { roomId: string; calleeId: string; callerId: string; reason?: string },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { roomId, calleeId, callerId, reason } = payload;
-    
-    console.log(`📞 Call declined by ${calleeId} for caller ${callerId} in room ${roomId}`);
-    
-    // Notify the caller that the call was declined
-    this.server.to(roomId).emit('callDeclined', {
-      roomId,
-      calleeId,
-      callerId,
-      reason: reason || 'declined',
-      timestamp: new Date().toISOString(),
-    });
-
-    // Also emit to caller's personal room
-    this.server.to(`user-${callerId}`).emit('callDeclined', {
-      roomId,
-      calleeId,
-      callerId,
-      reason: reason || 'declined',
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  @SubscribeMessage('joinCall')
-  async handleJoinCall(
-    @MessageBody()
-    payload: { roomId: string; userId: string; callType: 'video' | 'voice' },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { roomId, userId, callType } = payload;
-    
-    console.log(`📞 User ${userId} joining call in room ${roomId}`);
-    
-    // Join the user to the call room
-    client.join(`call-${roomId}`);
-    
-    // Notify others in the call that someone joined
-    client.to(`call-${roomId}`).emit('userJoinedCall', {
-      roomId,
-      userId,
-      callType,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Also notify the chat room
-    this.server.to(roomId).emit('userJoinedCall', {
-      roomId,
-      userId,
-      callType,
-      timestamp: new Date().toISOString(),
-    });
-    
-    // Send back confirmation
-    client.emit('callJoined', {
-      roomId,
-      userId,
-      callType,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  @SubscribeMessage('leaveCall')
-  async handleLeaveCall(
-    @MessageBody()
-    payload: { roomId: string; userId: string; reason?: string },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { roomId, userId, reason } = payload;
-    
-    console.log(`📞 User ${userId} leaving call in room ${roomId}. Reason: ${reason || 'unknown'}`);
-    
-    // Leave the call room
-    client.leave(`call-${roomId}`);
-    
-    // Notify others in the call that someone left
-    client.to(`call-${roomId}`).emit('userLeftCall', {
-      roomId,
-      userId,
-      reason: reason || 'left',
-      timestamp: new Date().toISOString(),
-    });
-
-    // Also notify the chat room
-    this.server.to(roomId).emit('userLeftCall', {
-      roomId,
-      userId,
-      reason: reason || 'left',
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  @SubscribeMessage('joinRoom')
-  handleJoinRoom(
-    @MessageBody() payload: { roomId: string; userId: string },
-    @ConnectedSocket() client: Socket,
-  ) {
-    const { roomId, userId } = payload;
-    
-    client.data.userId = userId;
-    this.onlineUsers.set(userId, client.id);
-    client.join(roomId.toString());
-    
-    if (roomId.startsWith('user-')) {
-      console.log(`👤 User ${userId} joined personal room: ${roomId}`);
-    } else {
-      console.log(`📥 User ${userId} (${client.id}) joined chat room: ${roomId}`);
-    }
-    
-    // Store in handshake for backup access
-    if (!client.handshake.auth) {
-      client.handshake.auth = {};
-    }
-    client.handshake.auth.userId = userId;
-  }
-
   @SubscribeMessage('incomingCall')
   async handleIncomingCall(
     @MessageBody()
-    payload: { callerId?: string; callerName: string; type: 'video' | 'voice'; roomId: string },
+    payload: {
+      callerId?: string;
+      callerName: string;
+      type: 'video' | 'voice';
+      roomId: string;
+    },
     @ConnectedSocket() client: Socket,
   ) {
     const { callerName, type, roomId } = payload;
-    
+
+    // Lấy callerId từ payload hoặc socket data
     let callerId = payload.callerId || client.data?.userId;
-    
     if (!callerId) {
-      callerId = client.handshake?.auth?.userId || client.handshake?.query?.userId;
+      callerId =
+        client.handshake?.auth?.userId || client.handshake?.query?.userId;
     }
-    
+
     if (!callerId) {
       console.error('❗ No callerId found for incoming call');
       client.emit('errorMessage', 'Unable to identify caller');
       return;
     }
 
-    console.log(`📞 Incoming call from ${callerId} (${callerName}) to room ${roomId}`);
-    
-    // Join the caller to the call room immediately
+    console.log(
+      `📞 Incoming call from ${callerId} (${callerName}) to room ${roomId}`,
+    );
+
+    // Cho caller join vào call-room
     client.join(`call-${roomId}`);
     console.log(`📞 Caller ${callerId} joined call room: call-${roomId}`);
-    
-    // Emit to room first, notifying online users
-    client.to(roomId).emit('incomingCall', { 
-      callerId, 
-      callerName, 
-      type, 
-      roomId 
+
+    // Emit cho tất cả client khác trong room chat
+    client.to(roomId).emit('incomingCall', {
+      callerId,
+      callerName,
+      type,
+      roomId,
     });
 
     try {
       const recipientIds = await this.roomService.getUserIdsInRoom(roomId);
-      const targets = recipientIds.filter(id => id !== callerId);
-      
+      const targets = recipientIds.filter((id) => id !== callerId);
       if (!targets.length) {
         console.log('📞 No targets found for call notification');
         return;
@@ -380,7 +251,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       console.log(`📞 Sending call notification to: ${targets.join(', ')}`);
 
-      const callUuid = `call-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      // Tạo callUuid để FE sử dụng hiển thị
+      const callUuid = `call-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
       const dataPayload = {
         type: 'incoming_call',
@@ -392,6 +264,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         roomId: String(roomId),
       };
 
+      // Gửi push notification cho các user còn lại
       await this.notificationService.sendPushNotification(
         targets,
         callerId,
@@ -401,7 +274,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         false,
       );
 
-      console.log(`✔ Sent incoming_call push for callUuid=${callUuid} to`, targets);
+      console.log(
+        `✔ Sent incoming_call push for callUuid=${callUuid} to`,
+        targets,
+      );
     } catch (err) {
       console.error('❗ Error sending incoming-call push:', err);
     }
