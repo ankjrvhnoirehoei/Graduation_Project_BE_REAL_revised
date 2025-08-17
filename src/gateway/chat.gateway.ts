@@ -41,26 +41,60 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   handleConnection(client: Socket) {
-    console.log(`🔌 Client connected: ${client.id}`);
+    const userId =
+      (client.handshake?.auth?.userId as string) ||
+      (client.handshake?.query?.userId as string);
+
+    console.log(`🔌 Client connected: ${client.id}, userId=${userId ?? 'N/A'}`);
+
+    if (userId) {
+      client.data.userId = String(userId);
+      this.onlineUsers.set(String(userId), client.id);
+      // Private room theo user để emit trực tiếp
+      client.join(`user:${String(userId)}`);
+    }
   }
 
   handleDisconnect(client: Socket) {
     const userId = client.data.userId;
     if (userId) {
-      this.onlineUsers.delete(userId);
+      this.onlineUsers.delete(String(userId));
       console.log(`❌ User ${userId} disconnected`);
     }
+    // Rời tất cả rooms (set có client.id chính nó)
+    for (const room of client.rooms) {
+      if (room !== client.id) client.leave(room);
+    }
+  }
+
+  private getUserIdFromClient(client: Socket): string | null {
+    return (
+      client.data?.userId ||
+      (client.handshake?.auth?.userId as string) ||
+      (client.handshake?.query?.userId as string) ||
+      null
+    );
   }
 
   @SubscribeMessage('joinRoom')
   handleJoinRoom(
-    @MessageBody() payload: { roomId: string; userId: string },
+    @MessageBody() payload: { roomId?: string; userId?: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const { roomId, userId } = payload;
+    const roomId = String(payload?.roomId ?? '').trim();
+    let userId = String(payload?.userId ?? '').trim();
+
+    if (!userId) {
+      userId = this.getUserIdFromClient(client) ?? '';
+    }
+    if (!roomId || !userId) {
+      client.emit('errorMessage', 'Missing roomId or userId in joinRoom');
+      return;
+    }
+
     client.data.userId = userId;
     this.onlineUsers.set(userId, client.id);
-    client.join(roomId.toString());
+    client.join(roomId);
     console.log(`📥 User ${userId} (${client.id}) joined room: ${roomId}`);
   }
 
@@ -69,8 +103,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody('roomId') roomId: string,
     @ConnectedSocket() client: Socket,
   ) {
-    client.leave(roomId.toString());
-    console.log(`📤 Client ${client.id} left room: ${roomId}`);
+    const rid = String(roomId);
+    client.leave(rid);
+    console.log(`📤 Client ${client.id} left room: ${rid}`);
   }
 
   @SubscribeMessage('sendMessage')
@@ -300,19 +335,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     },
     @ConnectedSocket() client: Socket,
   ) {
-    const { roomId, senderId, missed, duration } = payload;
-    const messageContent = missed ? 'Cuộc gọi nhỡ' : 'Cuộc gọi đã kết thúc';
+    const roomId = String(payload.roomId || '');
+    const senderId = String(
+      payload.senderId || this.getUserIdFromClient(client) || '',
+    );
+    const { missed, duration } = payload;
 
+    if (!roomId || !senderId) {
+      client.emit('errorMessage', 'Missing roomId or senderId');
+      return;
+    }
+
+    const messageContent = missed ? 'Cuộc gọi nhỡ' : 'Cuộc gọi đã kết thúc';
     try {
       const message = await this.messageService.create({
         roomId,
         senderId,
         content: messageContent,
-        media: {
-          type: 'call',
-          url: '',
-          duration: missed ? 0 : duration || 0,
-        },
+        media: { type: 'call', url: '', duration: missed ? 0 : duration || 0 },
       });
 
       const populatedMessage = await message.populate({
@@ -332,10 +372,42 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           profilePic: populatedMessage.senderId.profilePic,
         },
       });
+
+      this.server
+        .to(roomId)
+        .emit('callEnded', { roomId, endedBy: senderId, missed, duration });
     } catch (err) {
       console.error('❗ Error saving call message:', err);
       client.emit('errorMessage', 'Failed to save call message');
     }
+  }
+
+  @SubscribeMessage('acceptCall')
+  handleAcceptCall(
+    @MessageBody()
+    payload: { roomId: string; userId: string; callType: 'video' | 'voice' },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const { roomId, userId, callType } = payload;
+    if (!roomId || !userId) {
+      client.emit('errorMessage', 'Missing roomId or userId');
+      return;
+    }
+
+    // đảm bảo socket có userId để map onlineUsers
+    client.data.userId = userId;
+    this.onlineUsers.set(userId, client.id);
+
+    // cho callee join room chat (để cùng nhận tín hiệu)
+    client.join(roomId.toString());
+    console.log(`✅ ${userId} accepted call and joined room: ${roomId}`);
+
+    // phát cho tất cả client trong room (bao gồm caller)
+    this.server.to(roomId.toString()).emit('callAccepted', {
+      roomId,
+      userId,
+      callType,
+    });
   }
 
   @SubscribeMessage('deleteMessage')
