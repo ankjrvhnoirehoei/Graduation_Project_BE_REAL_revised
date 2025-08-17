@@ -212,12 +212,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const { callerName, type, roomId } = payload;
 
-    // Lấy callerId từ payload hoặc socket data
-    let callerId = payload.callerId || client.data?.userId;
-    if (!callerId) {
-      callerId =
-        client.handshake?.auth?.userId || client.handshake?.query?.userId;
-    }
+    let callerId =
+      payload.callerId ||
+      client.data?.userId ||
+      (client.handshake?.auth?.userId as string) ||
+      (client.handshake?.query?.userId as string);
 
     if (!callerId) {
       console.error('❗ No callerId found for incoming call');
@@ -229,31 +228,40 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       `📞 Incoming call from ${callerId} (${callerName}) to room ${roomId}`,
     );
 
-    // Cho caller join vào call-room
+    // Caller join call-room (tùy bạn giữ hay bỏ; không ảnh hưởng flow FE)
     client.join(`call-${roomId}`);
-    console.log(`📞 Caller ${callerId} joined call room: call-${roomId}`);
 
-    // Emit cho tất cả client khác trong room chat
+    // Tạo callUuid dùng chung cho socket + push
+    const callUuid = `call-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // 1) Emit cho ai ĐANG ở trong room chat
     client.to(roomId).emit('incomingCall', {
       callerId,
       callerName,
       type,
       roomId,
+      callUuid,
     });
 
     try {
       const recipientIds = await this.roomService.getUserIdsInRoom(roomId);
       const targets = recipientIds.filter((id) => id !== callerId);
-      if (!targets.length) {
-        console.log('📞 No targets found for call notification');
-        return;
+
+      // 2) Emit TRỰC TIẾP tới user online nhưng KHÔNG mở room
+      for (const uid of targets) {
+        const sid = this.onlineUsers.get(uid);
+        if (sid) {
+          this.server.to(sid).emit('incomingCall', {
+            callerId,
+            callerName,
+            type,
+            roomId,
+            callUuid,
+          });
+        }
       }
 
-      console.log(`📞 Sending call notification to: ${targets.join(', ')}`);
-
-      // Tạo callUuid để FE sử dụng hiển thị
-      const callUuid = `call-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
+      // 3) Push FCM (để backup khi user offline)
       const dataPayload = {
         type: 'incoming_call',
         callId: String(roomId),
@@ -263,8 +271,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         callType: String(type || 'video'),
         roomId: String(roomId),
       };
-
-      // Gửi push notification cho các user còn lại
       await this.notificationService.sendPushNotification(
         targets,
         callerId,
