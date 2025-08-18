@@ -376,6 +376,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.server
         .to(roomId)
         .emit('callEnded', { roomId, endedBy: senderId, missed, duration });
+
+      console.log(`📞 Call ended in room ${roomId} by ${senderId}`);
     } catch (err) {
       console.error('❗ Error saving call message:', err);
       client.emit('errorMessage', 'Failed to save call message');
