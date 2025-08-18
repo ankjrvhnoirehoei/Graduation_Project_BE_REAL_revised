@@ -385,29 +385,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('acceptCall')
   handleAcceptCall(
     @MessageBody()
-    payload: { roomId: string; userId: string; callType: 'video' | 'voice' },
+    payload: { roomId: string; userId?: string; callType: 'video' | 'voice' },
     @ConnectedSocket() client: Socket,
   ) {
-    const { roomId, userId, callType } = payload;
+    const roomId = String(payload?.roomId || '').trim();
+    let userId = String(payload?.userId || '').trim();
+
+    if (!userId) {
+      userId = this.getUserIdFromClient(client) || '';
+    }
     if (!roomId || !userId) {
       client.emit('errorMessage', 'Missing roomId or userId');
       return;
     }
 
-    // đảm bảo socket có userId để map onlineUsers
     client.data.userId = userId;
     this.onlineUsers.set(userId, client.id);
-
-    // cho callee join room chat (để cùng nhận tín hiệu)
-    client.join(roomId.toString());
+    client.join(roomId);
     console.log(`✅ ${userId} accepted call and joined room: ${roomId}`);
 
-    // phát cho tất cả client trong room (bao gồm caller)
-    this.server.to(roomId.toString()).emit('callAccepted', {
-      roomId,
-      userId,
-      callType,
-    });
+    this.server
+      .to(roomId)
+      .emit('callAccepted', { roomId, userId, callType: payload.callType });
   }
 
   @SubscribeMessage('deleteMessage')
