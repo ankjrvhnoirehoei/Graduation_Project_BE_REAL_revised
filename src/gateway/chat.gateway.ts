@@ -15,7 +15,7 @@ import { CreateMessageDto } from 'src/message/dto/message.dto';
 import { NotificationService } from 'src/notification/notification.service';
 import { RoomService } from 'src/room/room.service';
 
-type CallStatus = 'ringing' | 'accepted' | 'ended';
+type CallStatus = 'ringing' | 'accepted' | 'ended' | 'declined'; // ⬅️ thêm 'declined'
 
 @WebSocketGateway({
   cors: {
@@ -31,7 +31,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private onlineUsers = new Map<string, string>();
 
-  // ======= Call idempotency / state =======
   private activeCalls = new Map<
     string,
     {
@@ -41,8 +40,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       endedAt?: number;
     }
   >();
-  private processedAccepts = new Set<string>(); // key: `${roomId}:${callUuid||'noid'}`
-  private processedEnds = new Set<string>(); // key: `${roomId}:${callUuid||'noid'}`
+  private processedAccepts = new Set<string>(); // `${roomId}:${callUuid||'noid'}`
+  private processedEnds = new Set<string>(); // `${roomId}:${callUuid||'noid'}`
+  private processedDeclines = new Set<string>(); // ⬅️ guard cho decline
 
   constructor(
     private readonly messageService: MessageService,
@@ -51,7 +51,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly roomService: RoomService,
   ) {}
 
-  // ======= Helpers for idempotency =======
   private keyFor(roomId: string, callUuid?: string) {
     return `${roomId}:${callUuid || 'noid'}`;
   }
@@ -68,10 +67,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.processedEnds.add(key);
     return false;
   }
+  private isDupDecline(roomId: string, callUuid?: string) {
+    // ⬅️ guard decline
+    const key = this.keyFor(roomId, callUuid);
+    if (this.processedDeclines.has(key)) return true;
+    this.processedDeclines.add(key);
+    return false;
+  }
 
   afterInit() {
     console.log('✅ WebSocket server initialized');
-    // cleanup ended calls every minute (older than 10 minutes)
     setInterval(() => {
       const now = Date.now();
       for (const [roomId, meta] of this.activeCalls) {
@@ -96,7 +101,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (userId) {
       client.data.userId = String(userId);
       this.onlineUsers.set(String(userId), client.id);
-      // private user room (optional)
       client.join(`user:${String(userId)}`);
     }
   }
@@ -171,7 +175,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         ...payload,
         senderId,
       });
-
       const populatedMessage = await message.populate({
         path: 'senderId',
         select: 'handleName profilePic',
@@ -198,10 +201,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       for (const recipientId of recipientIds) {
         if (recipientId === senderId) continue;
-
         const socketId = this.onlineUsers.get(recipientId);
         const isOnline = !!socketId;
-
         const recipientSocket = socketId
           ? this.server.sockets.sockets.get(socketId)
           : null;
@@ -302,7 +303,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       `📞 Incoming call from ${callerId} (${callerName}) to room ${roomId}`,
     );
 
-    // Create callUuid and store state
     const callUuid = `call-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.activeCalls.set(roomId, {
       callUuid,
@@ -310,20 +310,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       startedAt: Date.now(),
     });
 
-    // 1) Emit to users currently in the chat room
-    client.to(roomId).emit('incomingCall', {
-      callerId,
-      callerName,
-      type,
-      roomId,
-      callUuid,
-    });
+    client
+      .to(roomId)
+      .emit('incomingCall', { callerId, callerName, type, roomId, callUuid });
 
     try {
       const recipientIds = await this.roomService.getUserIdsInRoom(roomId);
       const targets = recipientIds.filter((id) => id !== callerId);
 
-      // 2) Direct emit to online users not in room
       for (const uid of targets) {
         const sid = this.onlineUsers.get(uid);
         if (sid) {
@@ -337,7 +331,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
       }
 
-      // 3) FCM backup (offline)
       const dataPayload = {
         type: 'incoming_call',
         callId: String(roomId),
@@ -384,7 +377,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const callUuid = callMeta.callUuid;
 
     if (this.isDupAccept(roomId)) {
-      // idempotent re-emit for late listeners
       this.server.to(roomId).emit('callAccepted', {
         roomId,
         userId,
@@ -404,10 +396,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       roomId,
       userId,
       callType: payload.callType,
-      callUuid, // allow FE to guard by uuid
+      callUuid,
     });
 
-    // FCM fallback to the other side
     try {
       const memberIds = await this.roomService.getUserIdsInRoom(roomId);
       const targets = memberIds.filter((id) => id !== userId);
@@ -436,6 +427,66 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`✅ ${userId} accepted call and joined room: ${roomId}`);
   }
 
+  // ⬇️⬇️⬇️ MỚI: callee từ chối (Decline) – chỉ emit/push, KHÔNG ghi message/ended
+  @SubscribeMessage('declineCall')
+  async handleDeclineCall(
+    @MessageBody()
+    payload: {
+      roomId: string;
+      userId?: string;
+      callUuid?: string;
+      callType?: 'video' | 'voice';
+    },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const roomId = String(payload?.roomId || '').trim();
+    let userId = String(payload?.userId || '').trim();
+    if (!userId) userId = this.getUserIdFromClient(client) || '';
+    if (!roomId || !userId) {
+      client.emit('errorMessage', 'Missing roomId or userId');
+      return;
+    }
+
+    const meta: any = this.activeCalls.get(roomId) || {};
+    const callUuid = payload.callUuid || meta.callUuid;
+
+    if (this.isDupDecline(roomId, callUuid)) return;
+
+    // cập nhật trạng thái (không end)
+    this.activeCalls.set(roomId, { ...meta, status: 'declined' });
+
+    // Thông báo realtime cho room/caller
+    this.server.to(roomId).emit('callDeclined', { roomId, userId, callUuid });
+
+    // FCM backup
+    try {
+      const memberIds = await this.roomService.getUserIdsInRoom(roomId);
+      const targets = memberIds.filter((id) => id !== userId);
+      const user = await this.userService.findById(userId);
+      if (targets.length) {
+        await this.notificationService.sendPushNotification(
+          targets,
+          userId,
+          'Cuộc gọi bị từ chối',
+          `${user?.username || 'Người dùng'} đã từ chối cuộc gọi`,
+          {
+            type: 'call_declined',
+            roomId: String(roomId),
+            userId: String(userId),
+            userName: String(user?.username || ''),
+            callUuid: String(callUuid || ''),
+          },
+          false,
+        );
+      }
+    } catch (e) {
+      console.warn('[declineCall] push error:', (e as any)?.message || e);
+    }
+
+    console.log(`🚫 ${userId} declined call in room: ${roomId}`);
+  }
+  // ⬆️⬆️⬆️ END decline
+
   @SubscribeMessage('callEnded')
   async handleCallEnded(
     @MessageBody()
@@ -463,7 +514,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const meta: any = this.activeCalls.get(roomId) || {};
     const effectiveUuid = payload.callUuid || meta.callUuid;
 
-    // idempotent end
     if (this.isDupEnd(roomId, effectiveUuid)) return;
 
     this.activeCalls.set(roomId, {
@@ -507,7 +557,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         callUuid: effectiveUuid,
       });
 
-      // FCM fallback
       try {
         const memberIds = await this.roomService.getUserIdsInRoom(roomId);
         const targets = memberIds.filter((id) => id !== senderId);
@@ -542,7 +591,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // ======= Message delete / room theme / typing =======
+  // ======= Misc =======
   @SubscribeMessage('deleteMessage')
   async handleDeleteMessage(
     @MessageBody()
@@ -550,17 +599,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const { messageId, userId, roomId } = payload;
-
     try {
       const result = await this.messageService.deleteMessageById(
         messageId,
         userId,
       );
-      if (result.deleted) {
+      if (result.deleted)
         this.server.to(roomId).emit('messageDeleted', { messageId });
-      } else {
-        client.emit('errorMessage', 'Không thể xoá tin nhắn');
-      }
+      else client.emit('errorMessage', 'Không thể xoá tin nhắn');
     } catch (err) {
       console.error('❗ Error deleting message:', err);
       client.emit('errorMessage', 'Lỗi xoá tin nhắn');
@@ -573,12 +619,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const { roomId, theme } = payload;
-
     if (!roomId || !theme) {
       client.emit('errorMessage', 'Missing roomId or theme');
       return;
     }
-
     client.to(roomId).emit('room:update-theme', { roomId, theme });
     console.log(`🎨 Theme updated in room ${roomId}: ${theme}`);
   }
@@ -589,16 +633,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const { roomId, userId } = payload;
-
     if (!roomId || !userId) {
       client.emit('errorMessage', 'Missing roomId or userId');
       return;
     }
-
     try {
       const user = await this.userService.findById(userId);
       if (!user) return;
-
       this.server.to(roomId).emit('userTyping', {
         roomId,
         userId,
@@ -616,12 +657,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
   ) {
     const { roomId, userId } = payload;
-
     if (!roomId || !userId) {
       client.emit('errorMessage', 'Missing roomId or userId');
       return;
     }
-
     try {
       this.server.to(roomId).emit('userStoppedTyping', { roomId, userId });
     } catch (err) {

@@ -13,6 +13,7 @@ import { NotificationService } from 'src/notification/notification.service';
 import { MessageService } from 'src/message/message.service';
 import { AcceptCallDto } from './dto/accept-call.dto';
 import { EndCallDto } from './dto/end-call.dto';
+import { DeclineCallDto } from './dto/decline-call.dto';
 
 @Controller('calls')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
@@ -25,33 +26,24 @@ export class CallsController {
     private readonly messageService: MessageService,
   ) {}
 
-  /**
-   * Callee/bên nhận bấm "Nghe" (fallback khi socket bị suspend)
-   */
   @Post('accept')
   @HttpCode(200)
   async acceptCall(@Body() dto: AcceptCallDto) {
     const { roomId, userId, callType } = dto;
-
-    // (Optional) verify user & room tồn tại
     const [user, room] = await Promise.all([
       this.userService.findById(userId),
       this.roomService.findById(roomId),
     ]);
-    if (!user || !room) {
+    if (!user || !room)
       return { ok: false, message: 'Room hoặc User không tồn tại' };
-    }
 
-    // Emit cho tất cả client trong room (caller sẽ nhận được)
     this.gateway.server
       .to(String(roomId))
       .emit('callAccepted', { roomId, userId, callType });
 
-    // Push backup cho người còn lại (phòng 1-1: những người != userId)
     try {
       const memberIds = await this.roomService.getUserIdsInRoom(roomId);
       const targets = memberIds.filter((id) => id !== userId);
-
       if (targets.length) {
         await this.notificationService.sendPushNotification(
           targets,
@@ -69,31 +61,68 @@ export class CallsController {
         );
       }
     } catch (e) {
-      // log nhẹ, không fail API
       console.warn('[calls/accept] push error:', e?.message || e);
     }
 
     return { ok: true };
   }
 
-  /**
-   * Kết thúc cuộc gọi (local end hoặc missed) – fallback REST
-   */
-  @Post('end')
+  // ⬇️⬇️⬇️ MỚI: Callee từ chối — chỉ emit/push, KHÔNG ghi message
+  @Post('decline')
   @HttpCode(200)
-  async endCall(@Body() dto: EndCallDto) {
-    const { roomId, userId, missed, duration = 0, callType } = dto;
-
-    // (Optional) verify user & room
+  async declineCall(@Body() dto: DeclineCallDto) {
+    const { roomId, userId, callUuid } = dto;
     const [user, room] = await Promise.all([
       this.userService.findById(userId),
       this.roomService.findById(roomId),
     ]);
-    if (!user || !room) {
+    if (!user || !room)
       return { ok: false, message: 'Room hoặc User không tồn tại' };
+
+    // Thông báo realtime cho room
+    this.gateway.server
+      .to(String(roomId))
+      .emit('callDeclined', { roomId, userId, callUuid });
+
+    // Push backup tới bên còn lại
+    try {
+      const memberIds = await this.roomService.getUserIdsInRoom(roomId);
+      const targets = memberIds.filter((id) => id !== userId);
+      if (targets.length) {
+        await this.notificationService.sendPushNotification(
+          targets,
+          userId,
+          'Cuộc gọi bị từ chối',
+          `${user.username || 'Người dùng'} đã từ chối cuộc gọi`,
+          {
+            type: 'call_declined',
+            roomId: String(roomId),
+            userId: String(userId),
+            userName: String(user.username || ''),
+            callUuid: String(callUuid || ''),
+          },
+          false,
+        );
+      }
+    } catch (e) {
+      console.warn('[calls/decline] push error:', e?.message || e);
     }
 
-    // Lưu message system như bên socket handler
+    return { ok: true };
+  }
+  // ⬆️⬆️⬆️ END decline
+
+  @Post('end')
+  @HttpCode(200)
+  async endCall(@Body() dto: EndCallDto) {
+    const { roomId, userId, missed, duration = 0, callType } = dto;
+    const [user, room] = await Promise.all([
+      this.userService.findById(userId),
+      this.roomService.findById(roomId),
+    ]);
+    if (!user || !room)
+      return { ok: false, message: 'Room hoặc User không tồn tại' };
+
     const messageContent = missed ? 'Cuộc gọi nhỡ' : 'Cuộc gọi đã kết thúc';
     try {
       const message = await this.messageService.create({
@@ -102,13 +131,11 @@ export class CallsController {
         content: messageContent,
         media: { type: 'call', url: '', duration: missed ? 0 : duration },
       });
-
       const populatedMessage = await message.populate({
         path: 'senderId',
         select: 'handleName profilePic',
       });
 
-      // Broadcast message + callEnded
       this.gateway.server.to(String(roomId)).emit('receiveMessage', {
         _id: populatedMessage._id,
         roomId: populatedMessage.roomId,
@@ -126,11 +153,9 @@ export class CallsController {
         .to(String(roomId))
         .emit('callEnded', { roomId, endedBy: userId, missed, duration });
 
-      // Push backup
       try {
         const memberIds = await this.roomService.getUserIdsInRoom(roomId);
         const targets = memberIds.filter((id) => id !== userId);
-
         if (targets.length) {
           await this.notificationService.sendPushNotification(
             targets,
