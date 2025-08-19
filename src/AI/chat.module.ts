@@ -7,6 +7,7 @@ import { MessageModule } from 'src/message/message.module';
 import { UserModule } from 'src/user/user.module';
 import { NotificationModule } from 'src/notification/notification.module';
 import { RoomModule } from 'src/room/room.module';
+import { CallsController } from 'src/gateway/calls.controller';
 @Module({
   imports: [
     ChatBoxModule,
@@ -15,7 +16,7 @@ import { RoomModule } from 'src/room/room.module';
     NotificationModule,
     RoomModule,
   ],
-  controllers: [ChatController],
+  controllers: [ChatController, CallsController],
   providers: [ChatService, ChatGateway],
   exports: [ChatGateway],
 })
