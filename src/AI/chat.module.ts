@@ -3,21 +3,9 @@ import { ChatService } from './chat.service';
 import { ChatController } from './chat.controller';
 import { ChatBoxModule } from 'src/chat-box/chat-box.module';
 import { ChatGateway } from 'src/gateway/chat.gateway';
-import { MessageModule } from 'src/message/message.module';
-import { UserModule } from 'src/user/user.module';
-import { NotificationModule } from 'src/notification/notification.module';
-import { RoomModule } from 'src/room/room.module';
-import { CallsController } from 'src/gateway/calls.controller';
 @Module({
-  imports: [
-    ChatBoxModule,
-    MessageModule,
-    UserModule,
-    NotificationModule,
-    RoomModule,
-  ],
-  controllers: [ChatController, CallsController],
-  providers: [ChatService, ChatGateway],
-  exports: [ChatGateway],
+  imports: [ChatBoxModule],
+  controllers: [ChatController],
+  providers: [ChatService],
 })
 export class ChatModule {}
