@@ -329,7 +329,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody()
     payload: {
       roomId: string;
-      senderId: string;
+      senderId?: string;
       missed: boolean;
       duration?: number;
     },
@@ -339,20 +339,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const senderId = String(
       payload.senderId || this.getUserIdFromClient(client) || '',
     );
-    const { missed, duration } = payload;
+    const missed = Boolean(payload.missed);
+    const duration = Number(payload.duration ?? 0);
 
     if (!roomId || !senderId) {
       client.emit('errorMessage', 'Missing roomId or senderId');
       return;
     }
 
-    const messageContent = missed ? 'Cuộc gọi nhỡ' : 'Cuộc gọi đã kết thúc';
+    const content = missed ? 'Cuộc gọi nhỡ' : 'Cuộc gọi đã kết thúc';
     try {
       const message = await this.messageService.create({
         roomId,
         senderId,
-        content: messageContent,
-        media: { type: 'call', url: '', duration: missed ? 0 : duration || 0 },
+        content,
+        media: { type: 'call', url: '', duration: missed ? 0 : duration },
       });
 
       const populatedMessage = await message.populate({
@@ -372,43 +373,63 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           profilePic: populatedMessage.senderId.profilePic,
         },
       });
-
-      this.server
-        .to(roomId)
-        .emit('callEnded', { roomId, endedBy: senderId, missed, duration });
-
-      console.log(`📞 Call ended in room ${roomId} by ${senderId}`);
     } catch (err) {
       console.error('❗ Error saving call message:', err);
       client.emit('errorMessage', 'Failed to save call message');
     }
+
+    const endedPayload = { roomId, endedBy: senderId, missed, duration };
+
+    this.server.to(roomId).emit('callEnded', endedPayload);
+
+    try {
+      const userIds = await this.roomService.getUserIdsInRoom(roomId);
+      for (const uid of userIds) {
+        if (uid === senderId) continue;
+        const sid = this.onlineUsers.get(uid);
+        if (sid) this.server.to(sid).emit('callEnded', endedPayload);
+      }
+    } catch (e) {
+      console.error('callEnded direct emit error:', e);
+    }
+
+    console.log(
+      `📞 Call ended in room ${roomId} by ${senderId} (missed=${missed}, duration=${duration})`,
+    );
   }
 
   @SubscribeMessage('acceptCall')
-  handleAcceptCall(
+  async handleAcceptCall(
     @MessageBody()
     payload: { roomId: string; userId?: string; callType: 'video' | 'voice' },
     @ConnectedSocket() client: Socket,
   ) {
     const roomId = String(payload?.roomId || '').trim();
     let userId = String(payload?.userId || '').trim();
-
-    if (!userId) {
-      userId = this.getUserIdFromClient(client) || '';
-    }
-    if (!roomId || !userId) {
-      client.emit('errorMessage', 'Missing roomId or userId');
-      return;
-    }
+    if (!userId) userId = this.getUserIdFromClient(client) || '';
+    if (!roomId || !userId)
+      return client.emit('errorMessage', 'Missing roomId or userId');
 
     client.data.userId = userId;
     this.onlineUsers.set(userId, client.id);
     client.join(roomId);
     console.log(`✅ ${userId} accepted call and joined room: ${roomId}`);
 
-    this.server
-      .to(roomId)
-      .emit('callAccepted', { roomId, userId, callType: payload.callType });
+    const callAcceptedPayload = { roomId, userId, callType: payload.callType };
+    // 1) theo room
+    this.server.to(roomId).emit('callAccepted', callAcceptedPayload);
+
+    // 2) direct-to-user còn lại (caller)
+    try {
+      const ids = await this.roomService.getUserIdsInRoom(roomId);
+      for (const uid of ids) {
+        if (uid === userId) continue;
+        const sid = this.onlineUsers.get(uid);
+        if (sid) this.server.to(sid).emit('callAccepted', callAcceptedPayload);
+      }
+    } catch (e) {
+      console.error('acceptCall direct emit error:', e);
+    }
   }
 
   @SubscribeMessage('deleteMessage')
