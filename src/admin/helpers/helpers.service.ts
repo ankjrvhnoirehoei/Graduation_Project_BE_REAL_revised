@@ -1541,7 +1541,6 @@ export class CommonServices {
     ];
   }
 
-  // Add this method to get default similarity config
   public getDefaultSimilarityConfig(): SimilarityConfig {
     return {
       enableSimilarity: true,
